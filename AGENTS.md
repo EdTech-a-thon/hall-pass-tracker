@@ -80,7 +80,7 @@ When appropriate, set up scripts in `package.json` for type checking, linting, a
 ### When Not to Build a Web App
 
 - If the user requests to build a **browser extension**, explain that this VM is not the best way to do that, and recommend that they ask an EdTech-a-thon Director about alternative templates.
-- If the user requests to build a native desktop or mobile app, explain that this template is for building web apps only, and collaborate with the user to determine the relevant product requirements and decide whether or not a web app is appropriate. Prefer building as a web app if possible. If the product requirements require a native app, reccomend that the user ask an EdTech-a-thon Director for assistance.
+- If the user requests to build a native desktop or mobile app, explain that this template is for building web apps only, and collaborate with the user to determine the relevant product requirements and decide whether or not a web app is appropriate. Prefer building as a web app if possible. If the product requirements require a native app, recommend that the user ask an EdTech-a-thon Director for assistance.
 
 <!-- edtechathon:branch-workflow -->
 
