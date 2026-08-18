@@ -13,3 +13,8 @@ dist
 
 # Finder (MacOS) folder config
 .DS_Store
+pb_data/
+pocketbase
+playwright-report/
+test-results/
+tsconfig.tsbuildinfo
