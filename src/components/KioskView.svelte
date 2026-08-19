@@ -1,6 +1,6 @@
 <script lang="ts">
   import Shell from './Shell.svelte';
-  import { app, forgetKiosk, submitStudentId } from '../lib/store.svelte';
+  import { app, requestKioskExit, submitStudentId } from '../lib/store.svelte';
 
   let error = $state('');
 
@@ -54,6 +54,6 @@
       </div>
     </section>
 
-    <button class="corner-link" onclick={forgetKiosk}>Stop using this device as a kiosk</button>
+    <button class="corner-link" onclick={requestKioskExit}>Exit kiosk mode</button>
   </main>
 </Shell>

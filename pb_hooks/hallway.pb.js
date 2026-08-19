@@ -1,72 +1,41 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// A kiosk is a link, not an account. The teacher opens the link once on the
-// device by the door; the token inside it lets that device do exactly two
-// things — read the class roster, and append to the hall pass log. It can
-// never read the log it writes to, edit an entry, or reach another class.
-//
-// PocketBase runs each route handler in its own isolated VM, so these handlers
-// cannot share helper functions. The token lookup is repeated on purpose.
+// The teacher signs in on the classroom device, then locks the interface in
+// kiosk mode. Only a salted password hash is stored; the six-digit PIN itself
+// is never written to the database or returned to the browser.
+routerAdd("GET", "/api/hallway/kiosk/pin/status", (e) => {
+  return e.json(200, { hasPin: e.auth.getString("kioskPin:hash") !== "" });
+}, $apis.requireAuth("teachers"));
 
-routerAdd("POST", "/api/hallway/kiosk/links", (e) => {
-  const body = new DynamicModel({ label: "" });
+routerAdd("POST", "/api/hallway/kiosk/pin", (e) => {
+  const body = new DynamicModel({ pin: "" });
   e.bindBody(body);
-  const token = $security.randomString(40);
-  const record = new Record(e.app.findCollectionByNameOrId("kiosk_links"));
-  record.set("teacher", e.auth.id);
-  record.set("label", (body.label || "Classroom door").substring(0, 80));
-  record.set("tokenHash", $security.sha256(token));
-  record.set("active", true);
-  e.app.save(record);
-  // The only time the raw token exists. It is shown once, then only its hash remains.
-  return e.json(200, { id: record.id, label: record.getString("label"), token });
-}, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
-
-routerAdd("POST", "/api/hallway/kiosk/links/revoke", (e) => {
-  const body = new DynamicModel({ linkId: "" });
-  e.bindBody(body);
-  const link = e.app.findFirstRecordByFilter("kiosk_links", "id = {:id} && teacher = {:teacher}", { id: body.linkId, teacher: e.auth.id });
-  link.set("active", false);
-  e.app.save(link);
+  if (!/^[0-9]{6}$/.test(body.pin)) throw new BadRequestError("Enter exactly six numbers.");
+  e.auth.set("kioskPin", body.pin);
+  e.app.save(e.auth);
   return e.noContent(204);
 }, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
 
-// What the door device is allowed to read: the roster, and how many students
-// may be out at once. No history, no other classroom.
-routerAdd("POST", "/api/hallway/kiosk/session", (e) => {
-  const body = new DynamicModel({ token: "" });
+routerAdd("POST", "/api/hallway/kiosk/pin/verify", (e) => {
+  const body = new DynamicModel({ pin: "" });
   e.bindBody(body);
-  if (!/^[a-zA-Z0-9]{40}$/.test(body.token)) throw new BadRequestError("This kiosk link is not valid");
-  let link;
-  try {
-    link = e.app.findFirstRecordByFilter("kiosk_links", "tokenHash = {:hash} && active = true", { hash: $security.sha256(body.token) });
-  } catch (_) { throw new BadRequestError("This kiosk link is not valid"); }
-
-  const teacherId = link.getString("teacher");
-  const teacher = e.app.findRecordById("teachers", teacherId);
-  const roster = e.app.findRecordsByFilter("students", "teacher = {:teacher}", "name", 500, 0, { teacher: teacherId });
-  return e.json(200, {
-    label: link.getString("label"),
-    limit: teacher.getInt("passLimit") || 2,
-    students: roster.map((student) => ({ id: student.getString("studentId"), name: student.getString("name") })),
-  });
-}, $apis.bodyLimit(1024));
+  const savedPin = e.auth.getRaw("kioskPin");
+  if (!savedPin || !/^[0-9]{6}$/.test(body.pin) || !savedPin.validate(body.pin)) {
+    throw new BadRequestError("That PIN is incorrect.");
+  }
+  return e.noContent(204);
+}, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
 
 // The only way a kiosk writes anything. Whether a pass is allowed is decided
 // here, from the log, because the kiosk itself may not read it.
 routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
-  const body = new DynamicModel({ token: "", studentId: "", kind: "", reason: "", minutes: 0 });
+  const body = new DynamicModel({ studentId: "", kind: "", reason: "", minutes: 0 });
   e.bindBody(body);
-  if (!/^[a-zA-Z0-9]{40}$/.test(body.token)) throw new BadRequestError("This kiosk link is not valid");
   if (body.kind !== "out" && body.kind !== "in") throw new BadRequestError("Unknown kiosk action");
 
   let response;
   e.app.runInTransaction((tx) => {
-    let link;
-    try {
-      link = tx.findFirstRecordByFilter("kiosk_links", "tokenHash = {:hash} && active = true", { hash: $security.sha256(body.token) });
-    } catch (_) { throw new BadRequestError("This kiosk link is not valid"); }
-    const teacherId = link.getString("teacher");
+    const teacherId = e.auth.id;
 
     let student;
     try {
@@ -113,4 +82,4 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     };
   });
   return e.json(200, response);
-}, $apis.bodyLimit(1024));
+}, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));

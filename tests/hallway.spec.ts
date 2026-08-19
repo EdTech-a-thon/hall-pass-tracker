@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const fakeToken = `${btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))}.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 600 }))}.signature`;
-const kioskToken = 'a'.repeat(40);
 const teacherId = 'teacher1234567';
 
 /** PocketBase writes timestamps with a space rather than a "T". */
@@ -49,16 +48,8 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
   const limit = options.limit ?? 2;
   const log = options.log ?? sampleLog();
 
-  await page.route('**/api/hallway/kiosk/session', async (route) => {
-    await route.fulfill({ json: { label: 'Room 214 door', limit, students: roster } });
-  });
-
   await page.route('**/api/hallway/kiosk/events', async (route) => {
-    const body = route.request().postDataJSON() as { token: string; studentId: string; kind: 'out' | 'in'; reason: string; minutes: number };
-    if (body.token !== kioskToken) {
-      await route.fulfill({ status: 400, json: { message: 'This kiosk link is not valid' } });
-      return;
-    }
+    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; reason: string; minutes: number };
     const student = roster.find((item) => item.id === body.studentId);
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
@@ -85,8 +76,8 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
 
 async function openKiosk(page: Page, options: { limit?: number; log?: Event[] } = {}) {
   await stubKioskBackend(page, options);
-  await page.addInitScript((token) => localStorage.setItem('hallpass.kiosk.link', token), kioskToken);
-  await page.goto('/');
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
   await expect(page.getByLabel('Student ID')).toBeVisible();
 }
 
@@ -104,8 +95,13 @@ async function stubTeacherBackend(page: Page, log = sampleLog()) {
     }
     await route.fulfill({ json: list(log) });
   });
-  await page.route('**/api/collections/kiosk_links/records*', async (route) => await route.fulfill({ json: list([]) }));
   await page.route('**/api/collections/teachers/records/*', async (route) => await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3 } }));
+  await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: true } }));
+  await page.route('**/api/hallway/kiosk/pin/verify', async (route) => {
+    const { pin } = route.request().postDataJSON() as { pin: string };
+    await route.fulfill(pin === '123456' ? { json: {} } : { status: 400, json: { message: 'That PIN is incorrect.' } });
+  });
+  await page.route('**/api/hallway/kiosk/pin', async (route) => await route.fulfill({ json: {} }));
 }
 
 async function openTeacher(page: Page) {
@@ -117,32 +113,33 @@ async function openTeacher(page: Page) {
   await expect(page.getByRole('heading', { name: /Good morning/ })).toBeVisible();
 }
 
-test('an unlinked device opens on teacher sign-in and no kiosk code is ever typed', async ({ page }) => {
+test('a classroom device opens on teacher sign-in', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
   await expect(page.getByLabel('Email address')).toBeVisible();
-  await expect(page.getByText(/One-time link code/)).toHaveCount(0);
-  await expect(page.getByText(/create a kiosk link under Security/i)).toBeVisible();
+  await expect(page.getByText(/Sign in here, then choose Enter kiosk mode/i)).toBeVisible();
   await expect(page.getByText('Test environment · no production student data')).toBeVisible();
 });
 
-test('a kiosk link sets the device up and then disappears from the address bar', async ({ page }) => {
-  await stubKioskBackend(page);
-  await page.goto(`/?kiosk=${kioskToken}`);
+test('the first kiosk session asks the teacher to create a six-digit PIN', async ({ page }) => {
+  await openTeacher(page);
+  await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: false } }));
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Create your kiosk PIN' })).toBeVisible();
+  await page.getByLabel('Six-digit PIN').fill('123456');
+  await page.getByLabel('Confirm PIN').fill('123456');
+  await page.getByRole('button', { name: 'Save PIN and enter kiosk mode' }).click();
   await expect(page.getByLabel('Student ID')).toBeVisible();
-  await expect(page.getByText('ROOM 214 DOOR')).toBeVisible();
-  expect(page.url()).not.toContain(kioskToken);
-  expect(await page.evaluate(() => localStorage.getItem('hallpass.kiosk.link'))).toBe(kioskToken);
 });
 
 test('the kiosk never asks the database for the pass log', async ({ page }) => {
   // A kiosk reaches PocketBase only through its two custom routes. Any direct
   // collection request from this screen would mean it can read the database.
+  await openKiosk(page);
   const reads: string[] = [];
   page.on('request', (request) => {
     if (request.url().includes('/api/collections/')) reads.push(`${request.method()} ${request.url()}`);
   });
-  await openKiosk(page);
   await page.getByLabel('Student ID').fill('5620');
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByRole('button', { name: 'Request hall pass' }).click();
@@ -266,16 +263,14 @@ test('teacher workspace exposes limits, analytics, and third-party check-in mark
   await expect(page.getByRole('heading', { name: 'Hallway analytics exported' })).toBeVisible();
 });
 
-test('teacher creates a kiosk link and it is shown exactly once', async ({ page }) => {
+test('teacher can set a new kiosk PIN from Profile', async ({ page }) => {
   await openTeacher(page);
-  await page.route('**/api/hallway/kiosk/links', async (route) => {
-    await route.fulfill({ json: { id: 'link0000000001', label: 'Classroom door', token: kioskToken } });
-  });
-  await page.getByRole('button', { name: 'Security' }).click();
-  await page.getByRole('button', { name: 'Create a kiosk link' }).click();
-  const field = page.getByLabel('Kiosk link');
-  await expect(field).toHaveValue(new RegExp(`\\?kiosk=${kioskToken}$`));
-  await expect(page.getByText(/shown once/)).toBeVisible();
+  await page.getByRole('button', { name: 'Profile' }).click();
+  await page.getByRole('button', { name: 'Set a new PIN' }).click();
+  await page.getByLabel('Six-digit PIN').fill('654321');
+  await page.getByLabel('Confirm PIN').fill('654321');
+  await page.getByRole('button', { name: 'Save new PIN' }).click();
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
 });
 
 test('teacher authentication is held in memory and is lost on refresh', async ({ page }) => {
@@ -295,11 +290,13 @@ test('local storage cannot be used to forge a teacher session', async ({ page })
   await expect(page.getByRole('heading', { name: /Good morning/ })).toHaveCount(0);
 });
 
-test('a revoked kiosk link stops the device before any student data is shown', async ({ page }) => {
-  await page.route('**/api/hallway/kiosk/session', async (route) => route.fulfill({ status: 400, json: { message: 'This kiosk link is not valid' } }));
-  await page.addInitScript(() => localStorage.setItem('hallpass.kiosk.link', 'b'.repeat(40)));
-  await page.goto('/');
-  await expect(page.getByText(/no longer active/)).toBeVisible();
-  await expect(page.getByLabel('Student ID')).toHaveCount(0);
-  expect(await page.evaluate(() => localStorage.getItem('hallpass.kiosk.link'))).toBeNull();
+test('the kiosk PIN is required to return to the teacher workspace', async ({ page }) => {
+  await openKiosk(page);
+  await page.getByRole('main').getByRole('button', { name: 'Exit kiosk mode' }).click();
+  await page.getByLabel('Six-digit PIN').fill('000000');
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit kiosk mode' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('incorrect');
+  await page.getByLabel('Six-digit PIN').fill('123456');
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit kiosk mode' }).click();
+  await expect(page.getByRole('heading', { name: /Good morning/ })).toBeVisible();
 });

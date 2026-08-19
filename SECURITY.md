@@ -1,10 +1,9 @@
 # Hallway Security Model
 
-This prototype treats a student-operated kiosk as hostile. Browser code is never an authorization boundary.
+This prototype uses a teacher-authenticated browser in a supervised classroom kiosk. Browser code and the kiosk PIN are interface controls, not complete authorization boundaries.
 
 ## Required deployment controls
 
-- Host teacher and kiosk interfaces on different origins and browser profiles.
 - Run the kiosk in a managed, unprivileged operating-system kiosk account. Restrict navigation, extensions, downloads, removable media, firmware boot, and browser password storage.
 - Put PocketBase behind HTTPS, restrict CORS, enable HSTS, encrypt PocketBase settings, and restrict superuser access by IP and MFA.
 - Never put a superuser token, teacher token, or teacher password in Vite environment variables or kiosk storage.
@@ -18,26 +17,17 @@ Teachers use PocketBase email/password authentication. Public registration creat
 
 This deployment cannot send email, so email verification, password-reset email, and PocketBase email-OTP MFA are unavailable. PocketBase does not natively support authenticator-app TOTP, and this project does not roll its own. Production authenticator-app MFA requires an audited external identity provider or a separately reviewed PocketBase extension.
 
-Teacher tokens use an in-memory `BaseAuthStore`; refreshing destroys the session.
+Teacher tokens use an in-memory `BaseAuthStore`; refreshing destroys the session and returns the device to teacher sign-in.
 
 ## The kiosk boundary
 
-A kiosk is a link, not an account. There is nothing to sign in to on the device by the door, so there is no password, one-time code, or session for a student to shoulder-surf or replay against a teacher.
+A teacher signs into their normal account on the device, then enters kiosk mode. The first session requires creating a six-digit exit PIN. PocketBase stores only a salted password hash in a hidden field. The same PIN is reused until the teacher replaces it from Profile.
 
-A teacher creates a kiosk link on a trusted device. The raw 40-character token is returned exactly once and never stored: PocketBase holds only its SHA-256 hash, so a database disclosure does not yield a working link. The token names the classroom, which is why one link can never reach another teacher's class.
+The interface in kiosk mode does not request pass history. Student exits and returns go through the authenticated `POST /api/hallway/kiosk/events` route. `pass_events` has no update or delete rule, so the log remains append-only: a mistaken check-in is corrected by adding an entry, never by rewriting one.
 
-A kiosk holding a valid token may do exactly two things, both through custom routes:
+The server counts who is out and either records the exit or answers `denied`, telling the kiosk only a count. Students choose between requesting a pass and signing back in rather than seeing the current pass state.
 
-- **Read the roster** (`POST /api/hallway/kiosk/session`) — student IDs and names for that one classroom, so the screen can greet a student by name. Not the log, not other classes, not the teacher record.
-- **Append to the pass log** (`POST /api/hallway/kiosk/events`) — one exit or return at a time.
-
-Everything else is closed by collection rules, not by browser code. `pass_events` has no update or delete rule at all, so the log is append-only for every principal including the teacher: a mistaken check-in is corrected by adding an entry, never by rewriting one. The kiosk is not authenticated to PocketBase, so its list and view rules exclude it too. The route-level tests in `tests/backend.spec.ts` assert each of these refusals against a real server.
-
-Because the kiosk cannot read the log, it cannot decide whether a pass is allowed. The server counts who is out and either records the exit or answers `denied`, and it tells the kiosk only a count — never who is out. It also cannot know whether a student is currently out, which is why the student chooses between requesting a pass and signing back in rather than the screen choosing for them.
-
-Revoking a link sets `active = false`, which stops both routes on the next request. A revoked device falls back to the teacher sign-in page and clears its stored token.
-
-**A kiosk link is a bearer credential.** Anyone holding it can sign that class's students out and read that class's roster. Send it directly to the classroom device and revoke it if the device leaves the room.
+**The PIN locks the Hallway interface; it does not remove the teacher session from the browser.** A technically capable person with browser developer tools could access that session. Production use therefore requires the managed operating-system kiosk controls listed above. Exiting through the interface verifies the PIN on the server; refreshing signs the account out entirely.
 
 ## What is not protected
 

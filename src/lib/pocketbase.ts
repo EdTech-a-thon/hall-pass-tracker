@@ -11,12 +11,3 @@ const backendUrl = import.meta.env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8093
  */
 export const pb = new PocketBase(backendUrl, new BaseAuthStore());
 pb.autoCancellation(false);
-
-/**
- * The kiosk has no account of its own. It holds only the token from its link,
- * which the server routes accept in place of a sign-in.
- */
-export const kioskTokenKey = 'hallpass.kiosk.link';
-
-/** The query parameter a kiosk link arrives with, e.g. https://…/?kiosk=<token> */
-export const kioskTokenParam = 'kiosk';

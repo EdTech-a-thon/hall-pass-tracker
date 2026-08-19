@@ -3,13 +3,13 @@
   import LivePanel from './LivePanel.svelte';
   import AnalyticsPanel from './AnalyticsPanel.svelte';
   import SecurityPanel from './SecurityPanel.svelte';
-  import { app, signOutTeacher } from '../lib/store.svelte';
+  import { app, beginKioskMode, signOutTeacher } from '../lib/store.svelte';
   import type { TeacherTab } from '../lib/types';
 
   const tabs: { id: TeacherTab; label: string }[] = [
     { id: 'live', label: 'Live class' },
     { id: 'analytics', label: 'Analytics' },
-    { id: 'security', label: 'Security' },
+    { id: 'security', label: 'Profile' },
   ];
 </script>
 
@@ -20,6 +20,7 @@
         {tab.label}
       </button>
     {/each}
+    <button class="kiosk-nav-action" onclick={() => void beginKioskMode()}>Enter kiosk mode</button>
   </nav>
 
   <main class="teacher-main">

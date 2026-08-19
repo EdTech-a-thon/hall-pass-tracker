@@ -63,8 +63,8 @@
           <button class="link-button" onclick={() => (app.view = 'teacher-register')}>Create a classroom account</button>
         </div>
         <div class="switch-login">
-          <span>Setting up the device by the door?</span>
-          <span>Sign in here, then create a kiosk link under Security and open it on that device.</span>
+          <span>Using this device by the door?</span>
+          <span>Sign in here, then choose Enter kiosk mode.</span>
         </div>
       {/if}
     </section>

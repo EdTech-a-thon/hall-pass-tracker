@@ -1,8 +1,8 @@
 import { ClientResponseError } from 'pocketbase';
-import { kioskTokenKey, kioskTokenParam, pb } from './pocketbase';
+import { pb } from './pocketbase';
 import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
-import type { AppState, KioskLink, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
+import type { AppState, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
  * Everything the screens read. It is a single reactive object so that any
@@ -14,9 +14,8 @@ export const app = $state({
   teacherTab: 'live' as TeacherTab,
   /** Shown in the kiosk header, e.g. "Room 214 door". */
   kioskLabel: '',
-  /** Set when a saved kiosk link has been revoked, so the device says why. */
+  /** A startup problem that should be explained on the sign-in screen. */
   startupError: '',
-  kioskLinks: [] as KioskLink[],
   notice: null as Notice | null,
   modal: null as Modal | null,
   /** True while a form is talking to the server, so buttons can disable themselves. */
@@ -25,8 +24,6 @@ export const app = $state({
   pendingMfa: null as { id: string; email: string; password: string; otpId?: string } | null,
 });
 
-/** Kept out of the reactive object: the kiosk token never belongs in the UI. */
-let kioskToken = '';
 let noticeTimer = 0;
 let refreshTimer = 0;
 
@@ -73,7 +70,6 @@ function watchClassroom() {
 async function finishTeacherLogin() {
   if (pb.authStore.record?.collectionName !== 'teachers') throw new Error('Wrong principal type');
   await loadClassroom();
-  await loadKioskLinks();
   app.pendingMfa = null;
   app.view = 'teacher';
   watchClassroom();
@@ -156,51 +152,53 @@ export function signOutTeacher() {
   clearInterval(refreshTimer);
   pb.authStore.clear();
   app.classroom = { limit: defaultLimit, students: [], passes: [] };
-  app.kioskLinks = [];
   app.view = 'teacher-login';
 }
 
 // ---------------------------------------------------------------------------
-// Kiosk links
+// Kiosk mode
 // ---------------------------------------------------------------------------
 
-export async function loadKioskLinks() {
-  const filter = pb.filter('teacher = {:teacher}', { teacher: teacherId() });
-  const links = await pb.collection('kiosk_links').getFullList({ filter, sort: '-at' });
-  app.kioskLinks = links.map((record) => ({
-    id: record.id,
-    label: record.label as string,
-    active: record.active as boolean,
-    at: record.at as string,
-  }));
+export async function beginKioskMode() {
+  const status = await pb.send<{ hasPin: boolean }>('/api/hallway/kiosk/pin/status', {});
+  if (!status.hasPin) {
+    app.modal = { kind: 'kiosk-pin', purpose: 'setup' };
+    return;
+  }
+  enterKiosk();
 }
 
-/**
- * Creates a link for a classroom device. The token comes back exactly once, so
- * the teacher sends the link now or makes a new one later.
- */
-export async function createKioskLink(label: string) {
+export function enterKiosk() {
+  clearInterval(refreshTimer);
+  app.kioskLabel = `${teacherName()}'s classroom`;
+  app.modal = null;
+  app.view = 'kiosk';
+}
+
+export function requestKioskExit() {
+  app.modal = { kind: 'kiosk-pin', purpose: 'exit' };
+}
+
+export async function saveKioskPin(pin: string) {
   try {
-    const link = await pb.send<{ id: string; label: string; token: string }>('/api/hallway/kiosk/links', {
-      method: 'POST',
-      body: { label },
-    });
-    const url = `${window.location.origin}${window.location.pathname}?${kioskTokenParam}=${link.token}`;
-    app.modal = { kind: 'kiosk-link', url, label: link.label };
-    await loadKioskLinks();
-  } catch {
-    window.alert('A kiosk link could not be created. Try again.');
+    await pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin } });
+    return '';
+  } catch (caught) {
+    return serverMessage(caught, 'The PIN could not be saved. Please try again.');
   }
 }
 
-export async function revokeKioskLink(linkId: string) {
-  await pb.send('/api/hallway/kiosk/links/revoke', { method: 'POST', body: { linkId } });
-  await loadKioskLinks();
+export async function verifyKioskPin(pin: string) {
+  try {
+    await pb.send('/api/hallway/kiosk/pin/verify', { method: 'POST', body: { pin } });
+    app.modal = null;
+    app.view = 'teacher';
+    watchClassroom();
+    return '';
+  } catch (caught) {
+    return serverMessage(caught, 'That PIN is incorrect.');
+  }
 }
-
-// ---------------------------------------------------------------------------
-// Kiosk
-// ---------------------------------------------------------------------------
 
 function showNotice(notice: Notice) {
   clearTimeout(noticeTimer);
@@ -232,7 +230,7 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', reason = '',
   try {
     const result = await pb.send<{ status: string; name: string; reason: string; minutes: number; outAt: string; out: number; limit: number }>(
       '/api/hallway/kiosk/events',
-      { method: 'POST', body: { token: kioskToken, studentId: student.id, kind, reason, minutes } },
+      { method: 'POST', body: { studentId: student.id, kind, reason, minutes } },
     );
     if (result.status === 'denied') {
       showNotice({
@@ -266,46 +264,7 @@ export function signBackIn(student: Student) {
   return sendKioskEvent(student, 'in');
 }
 
-/**
- * Takes this device back out of kiosk mode. Revoking the link in the teacher
- * workspace is the way to stop a device you no longer hold.
- */
-export function forgetKiosk() {
-  if (!window.confirm('Stop using this device as a kiosk? You will need the link again to set it back up.')) return;
-  localStorage.removeItem(kioskTokenKey);
-  kioskToken = '';
-  app.classroom = { limit: defaultLimit, students: [], passes: [] };
-  app.view = 'teacher-login';
-}
-
-/**
- * Starts the kiosk from its link. The token arrives in the URL the first time
- * and is kept on the device afterwards, so the door screen survives a reboot.
- */
 export async function bootstrap() {
-  const url = new URL(window.location.href);
-  const fromLink = url.searchParams.get(kioskTokenParam);
-  const token = fromLink || localStorage.getItem(kioskTokenKey) || '';
-  if (!token) return;
-
-  if (fromLink) {
-    // Keep the token out of the address bar, browser history, and screenshots.
-    url.searchParams.delete(kioskTokenParam);
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-  }
-
-  try {
-    const session = await pb.send<{ label: string; limit: number; students: Student[] }>('/api/hallway/kiosk/session', {
-      method: 'POST',
-      body: { token },
-    });
-    kioskToken = token;
-    localStorage.setItem(kioskTokenKey, token);
-    app.kioskLabel = session.label;
-    app.classroom = { limit: session.limit, students: session.students, passes: [] };
-    app.view = 'kiosk';
-  } catch {
-    localStorage.removeItem(kioskTokenKey);
-    app.startupError = 'This kiosk link is no longer active. Ask your teacher for a new one.';
-  }
+  // Teacher sessions intentionally remain memory-only, so every fresh browser
+  // session begins at sign-in rather than silently reopening a kiosk.
 }

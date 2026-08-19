@@ -23,33 +23,15 @@ realSignupTest('a new teacher can create a classroom account through the real br
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toHaveCount(0);
 });
 
-realSignupTest('a real kiosk link signs a student out and the teacher sees it', async ({ page, browser }) => {
+realSignupTest('a teacher can enter kiosk mode and exit with the PIN', async ({ page }) => {
   await registerTeacher(page);
-
-  await page.getByRole('button', { name: 'Security' }).click();
-  await page.getByLabel('Name this device').fill('Room 214 door');
-  await page.getByRole('button', { name: 'Create a kiosk link' }).click();
-  const kioskUrl = await page.getByLabel('Kiosk link').inputValue();
-  await page.getByRole('button', { name: 'Close' }).click();
-
-  // A separate browser context is the device by the door: it has never signed in.
-  const doorDevice = await browser.newContext();
-  const door = await doorDevice.newPage();
-  await door.goto(kioskUrl);
-  await expect(door.getByText('ROOM 214 DOOR')).toBeVisible();
-  await door.getByLabel('Student ID').fill('5620');
-  await door.getByRole('button', { name: /Continue/ }).click();
-  await expect(door.getByRole('heading', { name: 'Avery Brooks' })).toBeVisible();
-  await door.getByText('Water', { exact: true }).click();
-  await door.getByRole('button', { name: 'Request hall pass' }).click();
-  await expect(door.getByRole('status')).toHaveClass(/approved/);
-
-  // The teacher workspace refreshes the log on its own.
-  await page.getByRole('button', { name: 'Live class' }).click();
-  await expect(page.getByRole('heading', { name: 'Avery Brooks' })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText('Water · out 1 min')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Analytics' }).click();
-  await expect(page.getByText('Still out')).toBeVisible();
-  await doorDevice.close();
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await page.getByLabel('Six-digit PIN').fill('123456');
+  await page.getByLabel('Confirm PIN').fill('123456');
+  await page.getByRole('button', { name: 'Save PIN and enter kiosk mode' }).click();
+  await expect(page.getByLabel('Student ID')).toBeVisible();
+  await page.getByRole('main').getByRole('button', { name: 'Exit kiosk mode' }).click();
+  await page.getByLabel('Six-digit PIN').fill('123456');
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit kiosk mode' }).click();
+  await expect(page.getByRole('heading', { name: /Good morning/ })).toBeVisible();
 });

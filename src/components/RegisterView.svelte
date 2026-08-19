@@ -40,7 +40,7 @@
         <span class="lock-icon">▣</span>
         <div>
           <strong>You decide what the door device sees</strong><br />
-          <span>A kiosk link lets a classroom device sign students out and in, and nothing more.</span>
+          <span>After signing in, you can lock this device in kiosk mode with a six-digit PIN.</span>
         </div>
       </div>
     </section>

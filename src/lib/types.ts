@@ -43,11 +43,8 @@ export type Notice = {
   detail?: string;
 };
 
-/** A kiosk link as the teacher sees it listed. The token is never stored. */
-export type KioskLink = { id: string; label: string; active: boolean; at: string };
-
 /** Whatever dialog is open on top of the current view, if any. */
 export type Modal =
   | { kind: 'request'; student: Student }
-  | { kind: 'kiosk-link'; url: string; label: string }
+  | { kind: 'kiosk-pin'; purpose: 'setup' | 'exit' | 'change' }
   | { kind: 'export' };

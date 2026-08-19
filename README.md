@@ -13,20 +13,17 @@ JavaScript SDK — there is no separate backend of our own in between.
 
 ## Setting up the screen by the door
 
-The teacher signs in, opens **Security**, and creates a **kiosk link**. Sending
-that link to the classroom device and opening it once is the whole setup — no
-code to type, nothing to sign in to.
+The teacher signs into their normal account on the classroom device and chooses
+**Enter kiosk mode**. The first time, Hallway asks them to create a six-digit
+PIN. That PIN is remembered for later sessions and is required to return to the
+teacher workspace. A teacher can replace it at any time from **Profile**.
 
-That link is deliberately weak. It lets the door device read the class roster,
-so it can greet students by name, and add exits and returns to the log. It
-cannot read the log, change or delete anything already in it, see another
-teacher's class, or reach the teacher's account. Because the device can't see
-who is out, the server decides whether a pass is allowed and answers with a
-count — never a name.
+The kiosk interface only uses the class roster and adds exits and returns to the
+log. It does not load pass history. The server decides whether a pass is allowed
+and answers with a count — never another student's name.
 
-Anything that has to happen in one safe step on the server — creating a kiosk
-link, revoking one, and every request a kiosk makes — is a custom PocketBase
-route in `pb_hooks/`, not a rule the browser is trusted to follow.
+PIN setup and verification, plus every pass request from kiosk mode, use custom
+PocketBase routes in `pb_hooks/`. The server stores only a salted PIN hash.
 
 ```
 pb_migrations/   every change to the database's shape, one file per change
@@ -68,8 +65,8 @@ The browser tests run against a stubbed backend. The tests in
 `PB_E2E_URL` is set — for a local instance that is
 `PB_E2E_URL=http://127.0.0.1:8093 bun run test`. `REAL_SIGNUP_E2E=1` adds
 `tests/signup-real.spec.ts`, which drives the whole flow in a real browser:
-registering, creating a kiosk link, opening it on a second device, and watching
-the pass appear on the teacher's screen. Both create throwaway teacher accounts,
+registering, creating a kiosk PIN, entering kiosk mode, and exiting securely.
+Both create throwaway teacher accounts,
 so point them at a database you do not mind filling up.
 
 PocketBase rate-limits sign-ins, so run the real-backend tests one at a time:
