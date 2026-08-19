@@ -33,14 +33,14 @@
       <p class="eyebrow">NEW CLASSROOM</p>
       <h1>Create your private workspace.</h1>
       <p>
-        Each account represents one teacher and one classroom. Its student information is encrypted
-        separately from every other workspace.
+        Each account represents one teacher and one classroom. Your roster and your hall pass log
+        are visible to you alone, and never to another workspace.
       </p>
       <div class="privacy-note">
         <span class="lock-icon">▣</span>
         <div>
-          <strong>Your password protects the encryption key</strong><br />
-          <span>We cannot recover classroom data without your password or recovery key.</span>
+          <strong>You decide what the door device sees</strong><br />
+          <span>A kiosk link lets a classroom device sign students out and in, and nothing more.</span>
         </div>
       </div>
     </section>
@@ -68,8 +68,8 @@
           <input name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
         </label>
         <div class="warning-box">
-          <strong>Important:</strong> If you lose both this password and your recovery key, your classroom
-          data cannot be recovered.
+          <strong>Important:</strong> This prototype cannot send email, so there is no password reset.
+          Keep this password somewhere safe.
         </div>
         <p class="form-error" role="alert">{error}</p>
         <button class="button primary full" type="submit" disabled={app.submitting}>Create private workspace</button>

@@ -1,17 +1,18 @@
 <script lang="ts">
   import { duration } from '../lib/passes';
-  import { app, markReturned, out, setLimit } from '../lib/store.svelte';
+  import { app, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
+  const finished = $derived(app.classroom.passes.filter((pass) => pass.inAt));
   const averageTrip = $derived(
-    Math.round(app.classroom.passes.reduce((sum, pass) => sum + duration(pass), 0) / app.classroom.passes.length),
+    finished.length ? Math.round(finished.reduce((sum, pass) => sum + duration(pass), 0) / finished.length) : 0,
   );
 </script>
 
 <section class="workspace-head">
   <div>
-    <p class="eyebrow">TUESDAY · PERIOD 3</p>
-    <h1>Good morning, Ms. Rivera.</h1>
-    <p>Here is what is happening in Room 214.</p>
+    <p class="eyebrow">TODAY</p>
+    <h1>Good morning, {teacherName()}.</h1>
+    <p>Here is what is happening in your classroom.</p>
   </div>
   <button class="button outline" onclick={() => (app.modal = { kind: 'export' })}>Export to Google Sheets</button>
 </section>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, requestPass } from '../lib/store.svelte';
+  import { app, requestPass, signBackIn } from '../lib/store.svelte';
   import type { Student } from '../lib/types';
 
   let { student }: { student: Student } = $props();
@@ -42,5 +42,10 @@
       </label>
       <button class="button primary full" type="submit">Request hall pass</button>
     </form>
+    <!-- The kiosk cannot look up whether this student is already out, so coming
+         back is a choice they make rather than something the screen knows. -->
+    <button class="button outline full return-button" onclick={() => signBackIn(student)}>
+      I am back in class
+    </button>
   </div>
 </div>

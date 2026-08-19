@@ -1,20 +1,32 @@
 # Hallway Pass Tracker
 
-A classroom hallway pass prototype. A kiosk device signs students out and back
-in, and the teacher sees who is out from their own workspace. Student records
-are encrypted in the teacher's browser before anything is stored.
+A classroom hallway pass prototype. A screen by the classroom door signs
+students out and back in, and the teacher sees who is out from their own
+workspace.
 
 ## How the pieces fit together
 
 The website is a Svelte app built with Vite. Its database is **PocketBase**, a
-single small server that holds teacher accounts, kiosk devices, and each
-classroom's encrypted vault. The browser talks to PocketBase directly through
-the PocketBase JavaScript SDK — there is no separate backend of our own in
-between.
+single small server that holds teacher accounts, class rosters, and the hall
+pass log. The browser talks to PocketBase directly through the PocketBase
+JavaScript SDK — there is no separate backend of our own in between.
+
+## Setting up the screen by the door
+
+The teacher signs in, opens **Security**, and creates a **kiosk link**. Sending
+that link to the classroom device and opening it once is the whole setup — no
+code to type, nothing to sign in to.
+
+That link is deliberately weak. It lets the door device read the class roster,
+so it can greet students by name, and add exits and returns to the log. It
+cannot read the log, change or delete anything already in it, see another
+teacher's class, or reach the teacher's account. Because the device can't see
+who is out, the server decides whether a pass is allowed and answers with a
+count — never a name.
 
 Anything that has to happen in one safe step on the server — creating a kiosk
-link code, redeeming it, revoking a device, saving the vault — is a custom
-PocketBase route in `pb_hooks/`, not a rule the browser is trusted to follow.
+link, revoking one, and every request a kiosk makes — is a custom PocketBase
+route in `pb_hooks/`, not a rule the browser is trusted to follow.
 
 ```
 pb_migrations/   every change to the database's shape, one file per change
@@ -54,7 +66,14 @@ bun run test
 The browser tests run against a stubbed backend. The tests in
 `tests/backend.spec.ts` exercise a real PocketBase and only run when
 `PB_E2E_URL` is set — for a local instance that is
-`PB_E2E_URL=http://127.0.0.1:8093 bun run test`. They create throwaway teacher
-accounts, so point them at a database you do not mind filling up.
+`PB_E2E_URL=http://127.0.0.1:8093 bun run test`. `REAL_SIGNUP_E2E=1` adds
+`tests/signup-real.spec.ts`, which drives the whole flow in a real browser:
+registering, creating a kiosk link, opening it on a second device, and watching
+the pass appear on the teacher's screen. Both create throwaway teacher accounts,
+so point them at a database you do not mind filling up.
+
+PocketBase rate-limits sign-ins, so run the real-backend tests one at a time:
+`--workers=1`. If something else on the machine already holds port 8000, set
+`PORT` to move the test server, e.g. `PORT=8011 bun run test`.
 
 Security decisions and deployment requirements live in [SECURITY.md](SECURITY.md).

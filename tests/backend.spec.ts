@@ -45,47 +45,89 @@ backendTest('real PocketBase registration is public but records remain private',
   await expect(client().collection('teachers').getFullList()).resolves.toEqual([]);
 });
 
-backendTest('encrypted classroom vaults are isolated by authenticated owner', async () => {
-  const first = await registerTeacher('Vault One');
-  const second = await registerTeacher('Vault Two');
-  const payloadOne = JSON.stringify({ version: 1, cipher: 'A'.repeat(64) });
-  const payloadTwo = JSON.stringify({ version: 1, cipher: 'B'.repeat(64) });
-  await first.pb.send('/api/hallway/vault', { method: 'PUT', body: { payload: payloadOne, version: 1 } });
-  await second.pb.send('/api/hallway/vault', { method: 'PUT', body: { payload: payloadTwo, version: 1 } });
-  await expect(first.pb.send('/api/hallway/vault')).resolves.toMatchObject({ payload: payloadOne });
-  await expect(second.pb.send('/api/hallway/vault')).resolves.toMatchObject({ payload: payloadTwo });
-});
+async function classroom(label: string) {
+  const teacher = await registerTeacher(label);
+  const id = teacher.pb.authStore.record!.id;
+  await teacher.pb.collection('teachers').update(id, { passLimit: 1 });
+  await teacher.pb.collection('students').create({ teacher: id, studentId: '5620', name: 'Avery Brooks' });
+  const link = await teacher.pb.send<{ id: string; token: string }>('/api/hallway/kiosk/links', { method: 'POST', body: { label: 'Door' } });
+  return { ...teacher, id, link };
+}
 
-backendTest('kiosk link code is single use and creates a restricted refreshable device', async () => {
-  const teacher = await registerTeacher('Pairing Teacher');
-  const link = await teacher.pb.send<{ code: string }>('/api/hallway/devices/link-code', { method: 'POST' });
-  expect(link.code).toMatch(/^\d{8}$/);
+backendTest('a kiosk link reads its own roster and nothing else', async () => {
+  const room = await classroom('Roster Teacher');
+  const other = await classroom('Other Teacher');
   const kiosk = client();
-  const paired = await kiosk.send<{ token: string; record: { id: string; collectionName: string } }>('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: link.code } });
-  expect(paired.record.collectionName).toBe('kiosk_devices');
-  kiosk.authStore.save(paired.token, paired.record as never);
-  await expect(patiently(() => kiosk.collection('kiosk_devices').authRefresh())).resolves.toMatchObject({ record: { id: paired.record.id } });
-  await expect(client().send('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: link.code } })).rejects.toBeInstanceOf(ClientResponseError);
-  await expect(kiosk.send('/api/hallway/devices/link-code', { method: 'POST' })).rejects.toMatchObject({ status: 403 });
+  const session = await kiosk.send<{ label: string; limit: number; students: { id: string; name: string }[] }>(
+    '/api/hallway/kiosk/session', { method: 'POST', body: { token: room.link.token } });
+  expect(session.students).toEqual([{ id: '5620', name: 'Avery Brooks' }]);
+  expect(session.limit).toBe(1);
+  // The token names the classroom, so one link can never reach another teacher's class.
+  const strangerSession = await kiosk.send<{ students: unknown[] }>('/api/hallway/kiosk/session', { method: 'POST', body: { token: other.link.token } });
+  expect(strangerSession.students).toHaveLength(1);
+  await expect(kiosk.send('/api/hallway/kiosk/session', { method: 'POST', body: { token: 'z'.repeat(40) } })).rejects.toMatchObject({ status: 400 });
 });
 
-backendTest('only the owning teacher can revoke a kiosk and copied tokens stop refreshing', async () => {
-  const owner = await registerTeacher('Device Owner');
-  const stranger = await registerTeacher('Other Teacher');
-  const link = await owner.pb.send<{ code: string }>('/api/hallway/devices/link-code', { method: 'POST' });
-  const paired = await client().send<{ token: string; record: { id: string } }>('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: link.code } });
-  await expect(stranger.pb.send('/api/hallway/devices/revoke', { method: 'POST', body: { deviceId: paired.record.id } })).rejects.toBeInstanceOf(ClientResponseError);
-  await owner.pb.send('/api/hallway/devices/revoke', { method: 'POST', body: { deviceId: paired.record.id } });
-  const copied = client();
-  copied.authStore.save(paired.token, paired.record as never);
-  await expect(copied.collection('kiosk_devices').authRefresh()).rejects.toMatchObject({ status: 401 });
+backendTest('a kiosk can append to the pass log but never read, edit, or delete it', async () => {
+  const room = await classroom('Log Teacher');
+  const kiosk = client();
+  const approved = await kiosk.send<{ status: string; name: string }>('/api/hallway/kiosk/events', {
+    method: 'POST', body: { token: room.link.token, studentId: '5620', kind: 'out', reason: 'Water', minutes: 5 },
+  });
+  expect(approved).toMatchObject({ status: 'approved', name: 'Avery Brooks' });
+
+  const entries = await room.pb.collection('pass_events').getFullList();
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ studentId: '5620', kind: 'out', source: 'kiosk' });
+
+  // Everything the kiosk is not allowed to do, attempted with the link in hand.
+  await expect(kiosk.collection('pass_events').getFullList()).resolves.toEqual([]);
+  await expect(kiosk.collection('students').getFullList()).resolves.toEqual([]);
+  await expect(kiosk.collection('pass_events').update(entries[0].id, { kind: 'in' })).rejects.toMatchObject({ status: 403 });
+  await expect(kiosk.collection('pass_events').delete(entries[0].id)).rejects.toMatchObject({ status: 403 });
+  await expect(kiosk.collection('pass_events').create({ teacher: room.id, studentId: '5620', studentName: 'Avery Brooks', kind: 'in', source: 'kiosk' })).rejects.toMatchObject({ status: 400 });
+  await expect(kiosk.send('/api/hallway/kiosk/links', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 401 });
+});
+
+backendTest('the server, not the kiosk, decides when the hallway is full', async () => {
+  const room = await classroom('Limit Teacher');
+  await room.pb.collection('students').create({ teacher: room.id, studentId: '4419', name: 'Noah Williams' });
+  const kiosk = client();
+  const send = (studentId: string, kind: string) =>
+    kiosk.send<{ status: string; out: number; limit: number }>('/api/hallway/kiosk/events', {
+      method: 'POST', body: { token: room.link.token, studentId, kind, reason: 'Water', minutes: 5 },
+    });
+
+  await expect(send('5620', 'out')).resolves.toMatchObject({ status: 'approved', out: 1, limit: 1 });
+  // The limit lives on the teacher record; a kiosk cannot talk its way past it.
+  await expect(send('4419', 'out')).resolves.toMatchObject({ status: 'denied', out: 1, limit: 1 });
+  await expect(send('5620', 'out')).rejects.toMatchObject({ status: 400 });
+  await expect(send('5620', 'in')).resolves.toMatchObject({ status: 'returned', out: 0 });
+  await expect(send('4419', 'out')).resolves.toMatchObject({ status: 'approved', out: 1 });
+  await expect(send('0000', 'out')).rejects.toMatchObject({ status: 400 });
+  expect(await room.pb.collection('pass_events').getFullList()).toHaveLength(3);
+});
+
+backendTest('only the owning teacher can revoke a kiosk link, and revoking stops it at once', async () => {
+  const room = await classroom('Revoke Teacher');
+  const stranger = await registerTeacher('Nosy Teacher');
+  await expect(stranger.pb.send('/api/hallway/kiosk/links/revoke', { method: 'POST', body: { linkId: room.link.id } })).rejects.toBeInstanceOf(ClientResponseError);
+  await room.pb.send('/api/hallway/kiosk/links/revoke', { method: 'POST', body: { linkId: room.link.id } });
+  await expect(client().send('/api/hallway/kiosk/session', { method: 'POST', body: { token: room.link.token } })).rejects.toMatchObject({ status: 400 });
+  await expect(client().send('/api/hallway/kiosk/events', { method: 'POST', body: { token: room.link.token, studentId: '5620', kind: 'out' } })).rejects.toMatchObject({ status: 400 });
+});
+
+backendTest('the raw kiosk token is never stored or handed back', async () => {
+  const room = await classroom('Token Teacher');
+  const stored = await room.pb.collection('kiosk_links').getFullList();
+  expect(stored).toHaveLength(1);
+  expect(JSON.stringify(stored[0])).not.toContain(room.link.token);
 });
 
 backendTest('custom routes enforce authentication and body validation', async () => {
   const guest = client();
-  await expect(guest.send('/api/hallway/devices/link-code', { method: 'POST' })).rejects.toMatchObject({ status: 401 });
-  await expect(guest.send('/api/hallway/vault', { method: 'PUT', body: { payload: 'plain student data', version: 1 } })).rejects.toMatchObject({ status: 401 });
-  await expect(guest.send('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: '1234' } })).rejects.toMatchObject({ status: 400 });
-  const teacher = await registerTeacher('Validation Teacher');
-  await expect(teacher.pb.send('/api/hallway/vault', { method: 'PUT', body: { payload: 'too short', version: 1 } })).rejects.toMatchObject({ status: 400 });
+  await expect(guest.send('/api/hallway/kiosk/links', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 401 });
+  await expect(guest.send('/api/hallway/kiosk/links/revoke', { method: 'POST', body: { linkId: 'anything' } })).rejects.toMatchObject({ status: 401 });
+  await expect(guest.send('/api/hallway/kiosk/session', { method: 'POST', body: { token: 'short' } })).rejects.toMatchObject({ status: 400 });
+  await expect(guest.send('/api/hallway/kiosk/events', { method: 'POST', body: { token: 'a'.repeat(40), studentId: '5620', kind: 'sideways' } })).rejects.toMatchObject({ status: 400 });
 });

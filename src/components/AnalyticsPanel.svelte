@@ -60,7 +60,7 @@
       <p class="eyebrow">RECENT ACTIVITY</p>
       <h2>Pass history</h2>
     </div>
-    <span class="privacy-pill">Decrypted on this device</span>
+    <span class="privacy-pill">Teacher view only · kiosks cannot read this</span>
   </div>
   <div class="table-wrap">
     <table>

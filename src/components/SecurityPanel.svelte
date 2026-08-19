@@ -1,48 +1,81 @@
 <script lang="ts">
-  import { app, requestLinkCode } from '../lib/store.svelte';
+  import { time } from '../lib/passes';
+  import { app, createKioskLink, revokeKioskLink } from '../lib/store.svelte';
+
+  let label = $state('Classroom door');
+
+  function create(event: SubmitEvent) {
+    event.preventDefault();
+    void createKioskLink(label.trim() || 'Classroom door');
+  }
+
+  function revoke(id: string, name: string) {
+    if (!window.confirm(`Revoke "${name}"? That device will stop working immediately.`)) return;
+    void revokeKioskLink(id);
+  }
 </script>
 
 <section class="workspace-head">
   <div>
     <p class="eyebrow">ACCOUNT & DEVICES</p>
     <h1>Security</h1>
-    <p>Teacher and kiosk access are isolated from one another.</p>
+    <p>The device by the door can do far less than you can.</p>
   </div>
 </section>
 
 <section class="security-grid">
   <article class="panel">
     <span class="stat-icon green">✓</span>
-    <h2>Encryption is active</h2>
+    <h2>What a kiosk link allows</h2>
     <p>
-      Student records are encrypted in this browser with libsodium secretbox and an Argon2id
-      password-derived key. PocketBase receives ciphertext only.
+      A kiosk link lets the device by the door read your class list — so it can greet
+      students by name — and add exits and returns to the hall pass log. That is all.
+      It cannot read the log, change or delete an entry, see another teacher's class,
+      or reach your account.
     </p>
-    <button class="button outline" onclick={() => (app.modal = { kind: 'recovery' })}>
-      Send recovery key to Google Drive
-    </button>
     <p class="danger-copy">
-      <strong>If you lose both your password and recovery key, your student records cannot be recovered.</strong>
+      <strong>Anyone holding the link can sign your students out.</strong> Send it only to
+      the classroom device, and revoke it if that device leaves the room.
     </p>
   </article>
 
   <article class="panel">
-    <p class="eyebrow">ACTIVE DEVICES</p>
-    <h2>Signed-in sessions</h2>
+    <p class="eyebrow">KIOSK LINKS</p>
+    <h2>Classroom devices</h2>
+    {#each app.kioskLinks as link (link.id)}
+      <div class="device">
+        <div>
+          <strong>{link.label}</strong>
+          <span>{link.active ? `Active · created ${time(link.at)}` : 'Revoked'}</span>
+        </div>
+        {#if link.active}
+          <button class="button small" onclick={() => revoke(link.id, link.label)}>Revoke</button>
+        {/if}
+      </div>
+    {:else}
+      <div class="device">
+        <div>
+          <strong>No kiosk links yet</strong>
+          <span>Create one, then open it on the device by the door.</span>
+        </div>
+      </div>
+    {/each}
+
+    <form onsubmit={create}>
+      <label>
+        Name this device
+        <input bind:value={label} maxlength="80" placeholder="Classroom door" required />
+      </label>
+      <button class="button outline full pair-button" type="submit">Create a kiosk link</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <span class="stat-icon blue">▣</span>
+    <h2>Your own session</h2>
     <div class="device">
       <div><strong>This teacher workspace</strong><span>Held in memory · ends on refresh</span></div>
       <span class="current">Current</span>
     </div>
-    <div class="device">
-      <div>
-        <strong>{app.kioskDeviceId ? 'Linked kiosk' : 'No linked kiosk'}</strong>
-        <span>
-          {app.kioskDeviceId
-            ? 'Separate restricted device identity · refreshable'
-            : 'Create a one-time code to link a classroom device.'}
-        </span>
-      </div>
-    </div>
-    <button class="button outline full pair-button" onclick={requestLinkCode}>Link a new kiosk</button>
   </article>
 </section>

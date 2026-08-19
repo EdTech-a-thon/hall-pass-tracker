@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { out } from '../lib/store.svelte';
   import type { Notice } from '../lib/types';
 
   let { notice }: { notice: Notice } = $props();
@@ -20,13 +19,5 @@
       {notice.message}
     {/if}
   </div>
-  {#if notice.kind === 'denied'}
-    <div class="notice-out">
-      <strong>Currently out</strong>
-      {#each out() as pass (pass.id)}
-        <span>{pass.studentName}</span>
-      {/each}
-    </div>
-  {/if}
   <div class="notice-countdown">Returning to kiosk…</div>
 </div>

@@ -1,47 +1,35 @@
 <script lang="ts">
   import Shell from './Shell.svelte';
   import MfaForm from './MfaForm.svelte';
-  import { app, pairKiosk, signInTeacher } from '../lib/store.svelte';
+  import { app, signInTeacher } from '../lib/store.svelte';
 
-  let { mode }: { mode: 'kiosk' | 'teacher' } = $props();
-
-  const teacher = $derived(mode === 'teacher');
   let error = $state('');
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (app.submitting) return;
-    const form = event.target as HTMLFormElement;
-    const data = new FormData(form);
+    const data = new FormData(event.target as HTMLFormElement);
     app.submitting = true;
     error = '';
     try {
-      if (mode === 'kiosk') {
-        error = await pairKiosk(String(data.get('pairingCode')).trim());
-      } else {
-        error = await signInTeacher(String(data.get('email')).trim().toLowerCase(), String(data.get('password')));
-      }
+      error = await signInTeacher(String(data.get('email')).trim().toLowerCase(), String(data.get('password')));
     } finally {
       app.submitting = false;
     }
   }
 </script>
 
-<Shell {mode}>
+<Shell mode="teacher">
   <main class="login-wrap">
     <section class="login-copy">
-      <p class="eyebrow">{teacher ? 'PRIVATE TEACHER ACCESS' : 'CLASSROOM DEVICE'}</p>
-      <h1>{teacher ? 'Your class, at a glance.' : 'Ready for the hallway?'}</h1>
-      <p>
-        {teacher
-          ? 'Review passes, spot patterns, and keep student information protected.'
-          : 'A teacher must unlock this kiosk before students can request a pass.'}
-      </p>
+      <p class="eyebrow">PRIVATE TEACHER ACCESS</p>
+      <h1>Your class, at a glance.</h1>
+      <p>Review passes, spot patterns, and keep student information protected.</p>
       <div class="privacy-note">
         <span class="lock-icon">▣</span>
         <div>
-          <strong>Encrypted by design</strong><br />
-          <span>Student information is encrypted before it leaves this device.</span>
+          <strong>Kiosks cannot read your class</strong><br />
+          <span>The device by the door signs students out and in. It can never read the log.</span>
         </div>
       </div>
     </section>
@@ -50,47 +38,33 @@
       {#if app.pendingMfa}
         <MfaForm />
       {:else}
-        <div class="login-icon">{teacher ? 'T' : 'K'}</div>
-        <p class="eyebrow">{teacher ? 'TEACHER SIGN IN' : 'UNLOCK KIOSK'}</p>
+        <div class="login-icon">T</div>
+        <p class="eyebrow">TEACHER SIGN IN</p>
         <h2 id="login-title">Welcome back</h2>
-        <p class="muted">
-          {teacher
-            ? 'Use your verified school account. Teacher sessions end on refresh.'
-            : 'Enter the one-time link code shown in the teacher workspace. Never enter a teacher password on a kiosk.'}
-        </p>
+        <p class="muted">Use your verified school account. Teacher sessions end on refresh.</p>
+        {#if app.startupError}
+          <p class="form-error">{app.startupError}</p>
+        {/if}
         <form onsubmit={submit}>
-          {#if teacher}
-            <label>
-              Email address
-              <input name="email" type="email" autocomplete="username" maxlength="254" required />
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required />
-            </label>
-          {:else}
-            <label>
-              One-time link code
-              <input name="pairingCode" inputmode="numeric" pattern={'[0-9]{8}'} minlength="8" maxlength="8" autocomplete="off" placeholder="00000000" required />
-            </label>
-          {/if}
+          <label>
+            Email address
+            <input name="email" type="email" autocomplete="username" maxlength="254" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required />
+          </label>
           <p class="form-error" role="alert">{error}</p>
-          <button class="button primary full" type="submit" disabled={app.submitting}>
-            {teacher ? 'Open teacher workspace' : 'Unlock this kiosk'}
-          </button>
+          <button class="button primary full" type="submit" disabled={app.submitting}>Open teacher workspace</button>
         </form>
 
-        {#if teacher}
-          <div class="switch-login">
-            New to Hallway?
-            <button class="link-button" onclick={() => (app.view = 'teacher-register')}>Create a classroom account</button>
-          </div>
-        {/if}
         <div class="switch-login">
-          {teacher ? 'Setting up a classroom device?' : 'Need reports and settings?'}
-          <button class="link-button" onclick={() => (app.view = teacher ? 'kiosk-login' : 'teacher-login')}>
-            {teacher ? 'Open kiosk linking' : 'Teacher sign in'}
-          </button>
+          New to Hallway?
+          <button class="link-button" onclick={() => (app.view = 'teacher-register')}>Create a classroom account</button>
+        </div>
+        <div class="switch-login">
+          <span>Setting up the device by the door?</span>
+          <span>Sign in here, then create a kiosk link under Security and open it on that device.</span>
         </div>
       {/if}
     </section>
