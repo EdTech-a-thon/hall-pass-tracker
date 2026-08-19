@@ -8,6 +8,22 @@ function client() {
   return new PocketBase(backendUrl, new BaseAuthStore());
 }
 
+/**
+ * PocketBase rate-limits sign-ins to two every three seconds, which a test run
+ * hits easily. Wait out a "too many requests" answer instead of failing on it.
+ */
+async function patiently<T>(attempt: () => Promise<T>): Promise<T> {
+  for (let remaining = 5; ; remaining -= 1) {
+    try {
+      return await attempt();
+    } catch (caught) {
+      const rateLimited = caught instanceof ClientResponseError && caught.status === 429;
+      if (!rateLimited || remaining === 0) throw caught;
+      await new Promise((resume) => setTimeout(resume, 3100));
+    }
+  }
+}
+
 function account(label: string) {
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { email: `${label.replaceAll(' ', '').toLowerCase()}-${unique}@example.com`, password: `Secure-${unique}-Password!`, displayName: label };
@@ -16,8 +32,8 @@ function account(label: string) {
 async function registerTeacher(label: string) {
   const pb = client();
   const credentials = account(label);
-  await pb.collection('teachers').create({ ...credentials, passwordConfirm: credentials.password });
-  await pb.collection('teachers').authWithPassword(credentials.email, credentials.password);
+  await patiently(() => pb.collection('teachers').create({ ...credentials, passwordConfirm: credentials.password }));
+  await patiently(() => pb.collection('teachers').authWithPassword(credentials.email, credentials.password));
   return { pb, credentials };
 }
 
@@ -48,7 +64,7 @@ backendTest('kiosk link code is single use and creates a restricted refreshable 
   const paired = await kiosk.send<{ token: string; record: { id: string; collectionName: string } }>('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: link.code } });
   expect(paired.record.collectionName).toBe('kiosk_devices');
   kiosk.authStore.save(paired.token, paired.record as never);
-  await expect(kiosk.collection('kiosk_devices').authRefresh()).resolves.toMatchObject({ record: { id: paired.record.id } });
+  await expect(patiently(() => kiosk.collection('kiosk_devices').authRefresh())).resolves.toMatchObject({ record: { id: paired.record.id } });
   await expect(client().send('/api/hallway/devices/pair', { method: 'POST', body: { pairingCode: link.code } })).rejects.toBeInstanceOf(ClientResponseError);
   await expect(kiosk.send('/api/hallway/devices/link-code', { method: 'POST' })).rejects.toMatchObject({ status: 403 });
 });

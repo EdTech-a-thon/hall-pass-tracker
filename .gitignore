@@ -13,8 +13,11 @@ dist
 
 # Finder (MacOS) folder config
 .DS_Store
-pb_data/
+
+# PocketBase is downloaded per machine; its records and backups are local and private.
 pocketbase
+pb_data/
+pb_backups/
 playwright-report/
 test-results/
 tsconfig.tsbuildinfo
