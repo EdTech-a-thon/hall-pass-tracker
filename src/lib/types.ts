@@ -28,11 +28,14 @@ export type Pass = {
   signedInBy?: string;
 };
 
+/** A group of students a teacher sees together during one period. */
+export type Class = { id: string; name: string; position: number; archived: boolean };
+
 export type ActiveClass = { limit: number; students: Student[]; passes: Pass[] };
 
 export type View = 'kiosk' | 'teacher-login' | 'teacher-register' | 'teacher';
 
-export type TeacherTab = 'live' | 'analytics' | 'security';
+export type TeacherTab = 'live' | 'classes' | 'analytics' | 'security';
 
 /** A full-screen message shown on the kiosk after a student action. */
 export type Notice = {

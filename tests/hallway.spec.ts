@@ -8,21 +8,30 @@ function minutesAgo(minutes: number) {
   return new Date(Date.now() - minutes * 60_000).toISOString().replace('T', ' ');
 }
 
-const roster = [
-  { id: '1042', name: 'Maya Chen' },
-  { id: '2381', name: 'Jordan Ellis' },
-  { id: '3077', name: 'Sofia Ramirez' },
-  { id: '4419', name: 'Noah Williams' },
-  { id: '5620', name: 'Avery Brooks' },
+const periodOne = 'cls000000000001';
+const periodTwo = 'cls000000000002';
+
+const sampleClasses = [
+  { id: periodOne, teacher: teacherId, name: 'Period 1', position: 0, archived: false },
+  { id: periodTwo, teacher: teacherId, name: 'Period 2', position: 1, archived: false },
 ];
 
-type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; at: string };
+const roster = [
+  { id: '1042', name: 'Maya Chen', class: periodOne },
+  { id: '2381', name: 'Jordan Ellis', class: periodOne },
+  { id: '3077', name: 'Sofia Ramirez', class: periodOne },
+  { id: '4419', name: 'Noah Williams', class: periodOne },
+  { id: '5620', name: 'Avery Brooks', class: periodOne },
+  { id: '7788', name: 'Riley Okafor', class: periodTwo },
+];
+
+type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
 
 /** The same class the old demo data described, written as a log of exits and returns. */
 function sampleLog(): Event[] {
   const entry = (id: string, studentId: string, kind: 'out' | 'in', at: number, extra: Partial<Event> = {}): Event => ({
     id, studentId, studentName: roster.find((student) => student.id === studentId)!.name,
-    kind, destination: '', minutes: 0, source: 'kiosk', signedInBy: '', at: minutesAgo(at), ...extra,
+    kind, destination: '', minutes: 0, source: 'kiosk', signedInBy: '', class: periodOne, at: minutesAgo(at), ...extra,
   });
   return [
     entry('e3', '3077', 'out', 70, { destination: 'Counselor', minutes: 15 }),
@@ -44,13 +53,14 @@ function list(items: unknown[]) {
  * real route does, so these tests exercise a kiosk that genuinely cannot read
  * the log it writes to.
  */
-async function stubKioskBackend(page: Page, options: { limit?: number; log?: Event[] } = {}) {
+async function stubKioskBackend(page: Page, options: { limit?: number; log?: Event[]; activeClass?: string } = {}) {
   const limit = options.limit ?? 2;
   const log = options.log ?? sampleLog();
+  const activeClass = options.activeClass ?? periodOne;
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
     const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string; minutes: number };
-    const student = roster.find((item) => item.id === body.studentId);
+    const student = roster.find((item) => item.id === body.studentId && item.class === activeClass);
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
       return;
@@ -81,12 +91,40 @@ async function openKiosk(page: Page, options: { limit?: number; log?: Event[] } 
   await expect(page.getByLabel('Student ID')).toBeVisible();
 }
 
-async function stubTeacherBackend(page: Page, log = sampleLog()) {
+async function stubTeacherBackend(page: Page, log = sampleLog(), options: { classes?: typeof sampleClasses; activeClass?: string } = {}) {
+  const classes = options.classes ? [...options.classes] : [...sampleClasses];
+  let activeClass = options.activeClass ?? periodOne;
+
+  await page.route('**/api/collections/classes/records*', async (route) => {
+    if (route.request().method() === 'POST') {
+      const created = { id: `cls00000000000${classes.length + 1}`, teacher: teacherId, archived: false, ...(route.request().postDataJSON() as object) };
+      classes.push(created as (typeof sampleClasses)[number]);
+      await route.fulfill({ json: created });
+      return;
+    }
+    await route.fulfill({ json: list(classes.filter((item) => !item.archived)) });
+  });
+
+  // A separate route because Playwright's "*" does not cross a "/", so the
+  // listing pattern above never sees a request aimed at one record.
+  await page.route('**/api/collections/classes/records/*', async (route) => {
+    const id = route.request().url().split('/').pop()!.split('?')[0];
+    const target = classes.find((item) => item.id === id);
+    if (!target) {
+      await route.fulfill({ status: 404, json: { message: 'No such class.' } });
+      return;
+    }
+    Object.assign(target, route.request().postDataJSON() as object);
+    await route.fulfill({ json: target });
+  });
+
   await page.route('**/api/collections/teachers/auth-with-password', async (route) => {
-    await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2 } } });
+    await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2, activeClass } } });
   });
   await page.route('**/api/collections/students/records*', async (route) => {
-    await route.fulfill({ json: list(roster.map((student) => ({ id: `rec${student.id}`, studentId: student.id, name: student.name, teacher: teacherId }))) });
+    const wanted = decodeURIComponent(route.request().url()).includes(periodTwo) ? periodTwo : activeClass;
+    const mine = roster.filter((student) => student.class === wanted);
+    await route.fulfill({ json: list(mine.map((student) => ({ id: `rec${student.id}`, studentId: student.id, name: student.name, teacher: teacherId, class: student.class }))) });
   });
   await page.route('**/api/collections/pass_events/records*', async (route) => {
     if (route.request().method() === 'POST') {
@@ -95,7 +133,13 @@ async function stubTeacherBackend(page: Page, log = sampleLog()) {
     }
     await route.fulfill({ json: list(log) });
   });
-  await page.route('**/api/collections/teachers/records/*', async (route) => await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3 } }));
+  await page.route('**/api/collections/teachers/records/*', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      const patch = route.request().postDataJSON() as { activeClass?: string };
+      if (patch.activeClass) activeClass = patch.activeClass;
+    }
+    await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3, activeClass } });
+  });
   await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: true } }));
   await page.route('**/api/hallway/kiosk/pin/verify', async (route) => {
     const { pin } = route.request().postDataJSON() as { pin: string };
@@ -299,4 +343,42 @@ test('the kiosk PIN is required to return to the teacher workspace', async ({ pa
   await page.getByLabel('Six-digit PIN').fill('123456');
   await page.getByRole('dialog').getByRole('button', { name: 'Exit kiosk mode' }).click();
   await expect(page.getByRole('heading', { name: /Good morning/ })).toBeVisible();
+});
+
+test('a teacher can create, rename and archive a Class', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Classes' }).click();
+  await expect(page.getByRole('heading', { name: 'Period 1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Period 2' })).toBeVisible();
+
+  await page.getByLabel('Name of the new class').fill('Period 5');
+  await page.getByRole('button', { name: 'Add class' }).click();
+  await expect(page.getByRole('heading', { name: 'Period 5' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Rename Period 5' }).click();
+  await page.getByLabel('Class name').fill('AP Bio B');
+  await page.getByRole('button', { name: 'Save class name' }).click();
+  await expect(page.getByRole('heading', { name: 'AP Bio B' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Archive AP Bio B' }).click();
+  await expect(page.getByRole('heading', { name: 'AP Bio B' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Period 1' })).toBeVisible();
+});
+
+test('exactly one Class is marked as the one the door screen is showing', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Classes' }).click();
+  await expect(page.getByText('Showing on the door screen')).toHaveCount(1);
+});
+
+test('the kiosk offers only students in the Active Class', async ({ page }) => {
+  await openKiosk(page);
+  // Riley Okafor is on the Period 2 roster; the door screen is showing Period 1.
+  await page.getByLabel('Student ID').fill('7788');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.getByRole('alert')).toContainText('could not find');
+  // A Period 1 student is recognised at the same screen.
+  await page.getByLabel('Student ID').fill('5620');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.getByRole('heading', { name: 'Avery Brooks' })).toBeVisible();
 });

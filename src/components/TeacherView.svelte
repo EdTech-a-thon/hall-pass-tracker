@@ -1,6 +1,7 @@
 <script lang="ts">
   import Shell from './Shell.svelte';
   import LivePanel from './LivePanel.svelte';
+  import ClassesPanel from './ClassesPanel.svelte';
   import AnalyticsPanel from './AnalyticsPanel.svelte';
   import SecurityPanel from './SecurityPanel.svelte';
   import { app, beginKioskMode, signOutTeacher } from '../lib/store.svelte';
@@ -8,6 +9,7 @@
 
   const tabs: { id: TeacherTab; label: string }[] = [
     { id: 'live', label: 'Live class' },
+    { id: 'classes', label: 'Classes' },
     { id: 'analytics', label: 'Analytics' },
     { id: 'security', label: 'Profile' },
   ];
@@ -26,6 +28,8 @@
   <main class="teacher-main">
     {#if app.teacherTab === 'live'}
       <LivePanel />
+    {:else if app.teacherTab === 'classes'}
+      <ClassesPanel />
     {:else if app.teacherTab === 'analytics'}
       <AnalyticsPanel />
     {:else}

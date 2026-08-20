@@ -2,7 +2,7 @@ import { ClientResponseError } from 'pocketbase';
 import { pb } from './pocketbase';
 import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
-import type { ActiveClass, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
+import type { ActiveClass, Class, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
  * Everything the screens read. It is a single reactive object so that any
@@ -10,6 +10,10 @@ import type { ActiveClass, Modal, Notice, PassEvent, Student, TeacherTab, View }
  */
 export const app = $state({
   activeClass: { limit: defaultLimit, students: [], passes: [] } as ActiveClass,
+  /** Every Class this teacher still runs, in the order their day goes. */
+  classes: [] as Class[],
+  /** The Class the door screen is showing. Lives on the account, not the browser. */
+  activeClassId: '',
   view: 'teacher-login' as View,
   teacherTab: 'live' as TeacherTab,
   /** Shown in the kiosk header, e.g. "Room 214 door". */
@@ -45,18 +49,82 @@ export function teacherName() {
 // Teacher workspace
 // ---------------------------------------------------------------------------
 
-/** Reads the roster and the pass log, which only the signed-in teacher may do. */
+/** Every Class the teacher still runs. Archived ones keep their history but drop out here. */
+export async function loadClasses() {
+  const teacher = teacherId();
+  const records = await pb.collection('classes').getFullList({
+    filter: pb.filter('teacher = {:teacher} && archived = false', { teacher }),
+    sort: 'position',
+  });
+  app.classes = records.map((record) => ({
+    id: record.id,
+    name: record.name as string,
+    position: Number(record.position) || 0,
+    archived: Boolean(record.archived),
+  }));
+  // The account is the authority. Falling back to the first Class only covers a
+  // teacher whose Active Class was archived out from under them.
+  if (!app.activeClassId) {
+    app.activeClassId = String(pb.authStore.record?.activeClass || '');
+  }
+  if (!app.classes.some((room) => room.id === app.activeClassId)) {
+    app.activeClassId = app.classes[0]?.id ?? '';
+  }
+}
+
+/** Reads the Active Class's roster and pass log, which only the signed-in teacher may do. */
 export async function loadActiveClass() {
   const teacher = teacherId();
+  await loadClasses();
+  const limit = Number(pb.authStore.record?.passLimit) || defaultLimit;
+  const room = app.activeClassId;
+  if (!room) {
+    app.activeClass = { limit, students: [], passes: [] };
+    return;
+  }
   const [roster, events] = await Promise.all([
-    pb.collection('students').getFullList({ filter: pb.filter('teacher = {:teacher}', { teacher }), sort: 'name' }),
-    pb.collection('pass_events').getFullList({ filter: pb.filter('teacher = {:teacher}', { teacher }), sort: 'at' }),
+    pb.collection('students').getFullList({ filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room }), sort: 'name' }),
+    pb.collection('pass_events').getFullList({ filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room }), sort: 'at' }),
   ]);
   app.activeClass = {
-    limit: Number(pb.authStore.record?.passLimit) || defaultLimit,
+    limit,
     students: roster.map((record) => ({ id: record.studentId as string, name: record.name as string })),
     passes: foldEvents(events as unknown as PassEvent[]),
   };
+}
+
+export async function createClass(name: string) {
+  const teacher = teacherId();
+  const created = await pb.collection('classes').create({ teacher, name, position: app.classes.length, archived: false });
+  // The very first Class a teacher makes is the one the door screen shows;
+  // after that, moving it is a deliberate act rather than a side effect.
+  if (!app.activeClassId) {
+    app.activeClassId = created.id;
+    await pb.collection('teachers').update(teacher, { activeClass: created.id });
+  }
+  await loadActiveClass();
+}
+
+export async function renameClass(id: string, name: string) {
+  await pb.collection('classes').update(id, { name });
+  await loadClasses();
+}
+
+/** Archived, never deleted: the Class stops appearing but keeps its Students and history. */
+export async function archiveClass(id: string) {
+  await pb.collection('classes').update(id, { archived: true });
+  if (app.activeClassId === id) app.activeClassId = '';
+  await loadActiveClass();
+}
+
+export async function moveClass(id: string, direction: -1 | 1) {
+  const order = [...app.classes];
+  const from = order.findIndex((room) => room.id === id);
+  const to = from + direction;
+  if (from < 0 || to < 0 || to >= order.length) return;
+  [order[from], order[to]] = [order[to], order[from]];
+  await Promise.all(order.map((room, index) => pb.collection('classes').update(room.id, { position: index })));
+  await loadClasses();
 }
 
 /** The teacher's screen is a live view of a log the kiosk keeps appending to. */
@@ -109,10 +177,13 @@ export async function registerTeacher(fields: { displayName: string; email: stri
   try {
     await pb.collection('teachers').create(fields);
     await pb.collection('teachers').authWithPassword(fields.email, fields.password);
-    await pb.collection('teachers').update(teacherId(), { passLimit: defaultLimit });
-    // A brand-new account starts with a sample roster so the kiosk has names to greet.
+    // A brand-new account starts with one Class holding a sample roster, so the
+    // kiosk has names to greet before the teacher has imported anything.
+    const room = await pb.collection('classes').create({ teacher: teacherId(), name: 'My class', position: 0, archived: false });
+    await pb.collection('teachers').update(teacherId(), { passLimit: defaultLimit, activeClass: room.id });
+    app.activeClassId = room.id;
     for (const student of defaultStudents) {
-      await pb.collection('students').create({ teacher: teacherId(), studentId: student.id, name: student.name });
+      await pb.collection('students').create({ teacher: teacherId(), class: room.id, studentId: student.id, name: student.name });
     }
     await finishTeacherLogin();
     return '';
@@ -152,6 +223,8 @@ export function signOutTeacher() {
   clearInterval(refreshTimer);
   pb.authStore.clear();
   app.activeClass = { limit: defaultLimit, students: [], passes: [] };
+  app.classes = [];
+  app.activeClassId = '';
   app.view = 'teacher-login';
 }
 

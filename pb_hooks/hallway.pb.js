@@ -27,7 +27,8 @@ routerAdd("POST", "/api/hallway/kiosk/pin/verify", (e) => {
 }, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
 
 // The only way a kiosk writes anything. Whether a pass is allowed is decided
-// here, from the log, because the kiosk itself may not read it.
+// here, from the log, and always within the Active Class: one period's records
+// must never block the students standing in the room.
 routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
   const body = new DynamicModel({ studentId: "", kind: "", destination: "", minutes: 0 });
   e.bindBody(body);
@@ -36,23 +37,26 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
   let response;
   e.app.runInTransaction((tx) => {
     const teacherId = e.auth.id;
+    const teacher = tx.findRecordById("teachers", teacherId);
+    const activeClass = teacher.getString("activeClass");
+    if (!activeClass) throw new BadRequestError("No class has been set up yet. Please ask your teacher.");
 
     let student;
     try {
-      student = tx.findFirstRecordByFilter("students", "teacher = {:teacher} && studentId = {:studentId}", { teacher: teacherId, studentId: body.studentId });
+      student = tx.findFirstRecordByFilter("students", "teacher = {:teacher} && class = {:class} && studentId = {:studentId}", { teacher: teacherId, class: activeClass, studentId: body.studentId });
     } catch (_) { throw new BadRequestError("We could not find that student ID. Please try again."); }
 
     // Each student's most recent entry says whether they are out right now. Only
     // the recent past is read: nobody is still in the hallway after a month, and
     // it keeps this scan from growing with the whole school year.
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && at > {:since}", "at", 5000, 0, { teacher: teacherId, since: since });
+    const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && class = {:class} && at > {:since}", "at", 5000, 0, { teacher: teacherId, class: activeClass, since: since });
     const latest = {};
     for (let index = 0; index < log.length; index++) latest[log[index].getString("studentId")] = log[index].getString("kind");
     let outNow = 0;
     for (const id in latest) if (latest[id] === "out") outNow++;
     const alreadyOut = latest[body.studentId] === "out";
-    const limit = tx.findRecordById("teachers", teacherId).getInt("passLimit") || 2;
+    const limit = teacher.getInt("passLimit") || 2;
 
     if (body.kind === "out" && alreadyOut) throw new BadRequestError("You are already signed out. Tap \"I am back\" instead.");
     if (body.kind === "in" && !alreadyOut) throw new BadRequestError("You are not signed out right now.");
@@ -63,6 +67,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
 
     const entry = new Record(tx.findCollectionByNameOrId("pass_events"));
     entry.set("teacher", teacherId);
+    entry.set("class", activeClass);
     entry.set("studentId", body.studentId);
     entry.set("studentName", student.getString("name"));
     entry.set("kind", body.kind);
