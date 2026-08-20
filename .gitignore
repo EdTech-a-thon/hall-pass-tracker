@@ -21,3 +21,4 @@ pb_backups/
 playwright-report/
 test-results/
 tsconfig.tsbuildinfo
+.scratch/
