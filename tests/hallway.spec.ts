@@ -41,7 +41,7 @@ function shown(student: { firstName: string; lastPrefix: string }) {
   return student.lastPrefix ? `${student.firstName} ${student.lastPrefix}.` : student.firstName;
 }
 
-type Event = { id: string; student: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
+type Event = { id: string; student: string; studentName: string; kind: 'out' | 'in' | 'fix'; corrects?: string; newStudent?: string; newAt?: string; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
 
 /** The same class the old demo data described, written as a log of exits and returns. */
 function sampleLog(): Event[] {
@@ -224,6 +224,21 @@ async function stubTeacherBackend(
     await route.fulfill(pin === '123456' ? { json: {} } : { status: 400, json: { message: 'That PIN is incorrect.' } });
   });
   await page.route('**/api/hallway/kiosk/pin', async (route) => await route.fulfill({ json: {} }));
+
+  await page.route('**/api/hallway/passes/correct', async (route) => {
+    const fix = route.request().postDataJSON() as { event: string; student: string; at: string };
+    const target = log.find((event) => event.id === fix.event)!;
+    const student = roster.find((item) => item.id === fix.student);
+    // A correction is a new entry. Nothing in the log is edited or removed.
+    log.push({
+      id: `fix${log.length}`, student: target.student, studentName: student ? shown(student) : target.studentName,
+      kind: 'fix', destination: '', minutes: 0, source: 'teacher', signedInBy: 'Ms. Rivera',
+      class: target.class, at: minutesAgo(0), corrects: fix.event,
+      ...(fix.student ? { newStudent: fix.student } : {}),
+      ...(fix.at ? { newAt: fix.at } : {}),
+    });
+    await route.fulfill({ json: { id: `fix${log.length}` } });
+  });
 
   await page.route('**/api/hallway/class/switch', async (route) => {
     const wanted = (route.request().postDataJSON() as { class: string }).class;
@@ -680,4 +695,46 @@ test('changing class at the door needs the teacher PIN', async ({ page }) => {
   await page.getByRole('button', { name: 'Show Period 2' }).click();
   await page.getByRole('button', { name: 'Change class anyway' }).click();
   await expect(tile(page, 'Riley O.')).toBeVisible();
+});
+
+test('a trip can be given to the student it really belonged to, without erasing anything', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  // Sofia's counsellor trip was really Jordan's.
+  await page.getByRole('button', { name: 'Correct Sofia R.' }).click();
+  await page.getByLabel('This trip really belonged to').selectOption({ label: 'Jordan E.' });
+  await page.getByRole('button', { name: 'Save correction' }).click();
+
+  const row = page.locator('tr', { hasText: 'Counselor' });
+  await expect(row).toContainText('Jordan E.');
+  await expect(row).toContainText('Corrected');
+});
+
+test('every correction is reviewable over a date range', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  await page.getByRole('button', { name: 'Correct Sofia R.' }).click();
+  await page.getByLabel('This trip really belonged to').selectOption({ label: 'Jordan E.' });
+  await page.getByRole('button', { name: 'Save correction' }).click();
+
+  await page.getByRole('button', { name: 'Show corrections' }).click();
+  const review = page.locator('section', { hasText: 'WHAT HAS BEEN CHANGED' });
+  await expect(review).toContainText('Jordan E.');
+  await expect(review).toContainText('reassigned');
+  await expect(review).toContainText('Ms. Rivera');
+});
+
+test('a trip ended by a class change is excluded rather than given a made-up duration', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByLabel('Class', { exact: true }).selectOption(periodTwo);
+  await page.getByRole('button', { name: 'Show this class on the door' }).click();
+  await page.getByRole('button', { name: 'Show Period 2' }).click();
+  await page.getByRole('button', { name: 'Change class anyway' }).click();
+
+  await page.getByLabel('Class', { exact: true }).selectOption(periodOne);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  const row = page.locator('tr', { hasText: 'Main office' });
+  await expect(row).toContainText('Ended by class change');
+  await expect(row).toContainText('return time unknown');
+  await expect(row).not.toContainText('Overdue');
 });

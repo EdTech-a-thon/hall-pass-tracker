@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { duration, isOverdue } from '../lib/passes';
+  import { duration, hasRealDuration, isOverdue } from '../lib/passes';
   import { app, browseClass, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
-  const finished = $derived(app.activeClass.passes.filter((pass) => pass.inAt));
+  // Trips ended by a class change or an undo never had a real return time, so
+  // including them would quietly move the average toward a number nobody
+  // observed.
+  const finished = $derived(app.activeClass.passes.filter((pass) => pass.inAt && hasRealDuration(pass)));
   const overdueNow = $derived(out().filter(isOverdue).length);
   const averageTrip = $derived(
     finished.length ? Math.round(finished.reduce((sum, pass) => sum + duration(pass), 0) / finished.length) : 0,

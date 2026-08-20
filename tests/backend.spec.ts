@@ -114,3 +114,51 @@ backendTest('kiosk routes require a teacher account and validate the PIN', async
   const room = await classroom('Validation Teacher');
   await expect(room.pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin: '12345' } })).rejects.toMatchObject({ status: 400 });
 });
+
+backendTest('a correction is a new entry, and cannot reach another teacher\'s log', async () => {
+  const mine = await classroom('Correcting Teacher');
+  const theirs = await classroom('Other Teacher');
+  await mine.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: mine.avery, kind: 'out', destination: 'Water' },
+  });
+  const [entry] = await mine.pb.collection('pass_events').getFullList();
+
+  const noah = await mine.pb.collection('students').create({
+    teacher: mine.id, class: mine.room, firstName: 'Noah', lastPrefix: 'W', status: 'current',
+  });
+  await mine.pb.send('/api/hallway/passes/correct', {
+    method: 'POST', body: { event: entry.id, student: noah.id, at: '' },
+  });
+
+  // Two entries now: the original, untouched, and the correction laid over it.
+  const after = await mine.pb.collection('pass_events').getFullList({ sort: 'at' });
+  expect(after).toHaveLength(2);
+  expect(after[0]).toMatchObject({ id: entry.id, student: mine.avery, kind: 'out' });
+  expect(after[1]).toMatchObject({ kind: 'fix', corrects: entry.id, newStudent: noah.id, studentName: 'Noah W.' });
+
+  // Another teacher cannot correct an entry that is not theirs.
+  await expect(theirs.pb.send('/api/hallway/passes/correct', {
+    method: 'POST', body: { event: entry.id, student: theirs.avery, at: '' },
+  })).rejects.toMatchObject({ status: 400 });
+});
+
+backendTest('switching class closes open trips and moves the door together', async () => {
+  const room = await classroom('Switching Teacher');
+  const next = await room.pb.collection('classes').create({ teacher: room.id, name: 'Period 2', position: 1, archived: false });
+  await room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Water' },
+  });
+
+  const result = await room.pb.send<{ class: string; closed: string[] }>('/api/hallway/class/switch', {
+    method: 'POST', body: { class: next.id },
+  });
+  expect(result).toMatchObject({ class: next.id, closed: ['Avery B.'] });
+
+  // The Active Class moved and the open trip was closed, in one go.
+  const teacher = await room.pb.collection('teachers').getOne(room.id);
+  expect(teacher.activeClass).toBe(next.id);
+  const entries = await room.pb.collection('pass_events').getFullList({ sort: 'at' });
+  expect(entries).toHaveLength(2);
+  // Marked as ended by the switch, not as a student walking back in.
+  expect(entries[1]).toMatchObject({ kind: 'in', source: 'switch', class: room.room });
+});

@@ -4,7 +4,7 @@ import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
 import { displayName, planImport } from './roster';
 import type { ImportPlan } from './roster';
-import type { ActiveClass, Class, Destination, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
+import type { ActiveClass, Class, Destination, Modal, Notice, Pass, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
  * Everything the screens read. It is a single reactive object so that any
@@ -384,6 +384,40 @@ export async function markReturned(passId: string) {
     signedInBy: teacherName(),
   });
   await loadActiveClass();
+}
+
+/**
+ * Records a Correction. Nothing is overwritten -- this asks the server to add an
+ * entry that amends an earlier one, so the original reading survives.
+ */
+async function amend(eventId: string, changes: { student?: string; at?: string }) {
+  await pb.send('/api/hallway/passes/correct', {
+    method: 'POST',
+    body: { event: eventId, student: changes.student || '', at: changes.at || '' },
+  });
+}
+
+export async function correctPass(pass: Pass, changes: { student?: string; outAt?: string; inAt?: string }) {
+  // A reassignment has to move both ends of the trip. Correcting only the exit
+  // would leave the return paired with the student it was taken from, and the
+  // fold would show two broken halves instead of one moved trip.
+  if (changes.student) {
+    await amend(pass.id, { student: changes.student });
+    if (pass.inId) await amend(pass.inId, { student: changes.student });
+  }
+  if (changes.outAt) await amend(pass.id, { at: changes.outAt });
+  if (changes.inAt && pass.inId) await amend(pass.inId, { at: changes.inAt });
+  await loadActiveClass();
+}
+
+/** Every Correction made in a window, so a teacher can review what was changed. */
+export async function correctionsBetween(from: string, to: string) {
+  const teacher = teacherId();
+  const events = await pb.collection('pass_events').getFullList({
+    filter: pb.filter("teacher = {:teacher} && kind = 'fix' && at >= {:from} && at <= {:to}", { teacher, from, to: `${to} 23:59:59` }),
+    sort: '-at',
+  });
+  return events as unknown as PassEvent[];
 }
 
 export async function setLimit(limit: number) {

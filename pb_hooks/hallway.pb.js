@@ -169,3 +169,49 @@ routerAdd("POST", "/api/hallway/class/switch", (e) => {
   });
   return e.json(200, response);
 }, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
+
+// Records a Correction. Nothing is updated and nothing is deleted: this writes
+// a new entry that amends an earlier one, which is what keeps the log worth
+// trusting. See docs/adr/0004.
+routerAdd("POST", "/api/hallway/passes/correct", (e) => {
+  const body = new DynamicModel({ event: "", student: "", at: "" });
+  e.bindBody(body);
+
+  let response;
+  e.app.runInTransaction((tx) => {
+    const teacherId = e.auth.id;
+
+    let target;
+    try {
+      target = tx.findFirstRecordByFilter("pass_events", "id = {:id} && teacher = {:teacher}", { id: body.event, teacher: teacherId });
+    } catch (_) { throw new BadRequestError("That entry is not yours to correct."); }
+
+    let name = target.getString("studentName");
+    if (body.student) {
+      // Reassignment stays inside the Class: a trip cannot move to a student
+      // who was never in the room.
+      let student;
+      try {
+        student = tx.findFirstRecordByFilter("students", "id = {:id} && teacher = {:teacher} && class = {:class}", { id: body.student, teacher: teacherId, class: target.getString("class") });
+      } catch (_) { throw new BadRequestError("That student is not in this class."); }
+      const prefix = student.getString("lastPrefix");
+      name = prefix ? student.getString("firstName") + " " + prefix + "." : student.getString("firstName");
+    }
+
+    const fix = new Record(tx.findCollectionByNameOrId("pass_events"));
+    fix.set("teacher", teacherId);
+    fix.set("class", target.getString("class"));
+    fix.set("student", target.getString("student"));
+    fix.set("studentName", name);
+    fix.set("kind", "fix");
+    fix.set("source", "teacher");
+    fix.set("signedInBy", e.auth.getString("displayName"));
+    fix.set("corrects", target.id);
+    if (body.student) fix.set("newStudent", body.student);
+    if (body.at) fix.set("newAt", body.at);
+    tx.save(fix);
+
+    response = { id: fix.id };
+  });
+  return e.json(200, response);
+}, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
