@@ -1,6 +1,6 @@
 <script lang="ts">
   import Shell from './Shell.svelte';
-  import { app, chooseStudent, passFor, requestKioskExit } from '../lib/store.svelte';
+  import { app, chooseStudent, passFor, requestKioskExit, requestKioskSwitch } from '../lib/store.svelte';
 
   const students = $derived(app.activeClass.students);
 </script>
@@ -27,6 +27,9 @@
       {/each}
     </section>
 
-    <button class="corner-link" onclick={requestKioskExit}>Exit kiosk mode</button>
+    <div class="kiosk-actions">
+      <button class="corner-link" onclick={requestKioskSwitch}>Switch class</button>
+      <button class="corner-link" onclick={requestKioskExit}>Exit kiosk mode</button>
+    </div>
   </main>
 </Shell>

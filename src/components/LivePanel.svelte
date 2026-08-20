@@ -1,6 +1,6 @@
 <script lang="ts">
   import { duration, isOverdue } from '../lib/passes';
-  import { app, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
+  import { app, browseClass, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
   const finished = $derived(app.activeClass.passes.filter((pass) => pass.inAt));
   const overdueNow = $derived(out().filter(isOverdue).length);
@@ -15,7 +15,25 @@
     <h1>Good morning, {teacherName()}.</h1>
     <p>Here is what is happening in your classroom.</p>
   </div>
-  <button class="button outline" onclick={() => (app.modal = { kind: 'export' })}>Export to Google Sheets</button>
+  <div class="head-actions">
+    <label class="limit-control">
+      Class
+      <select aria-label="Class" value={app.viewingClassId} onchange={(event) => browseClass(event.currentTarget.value)}>
+        {#each app.classes as room (room.id)}
+          <option value={room.id}>{room.name}</option>
+        {/each}
+      </select>
+    </label>
+    <!-- Browsing above does not move the door screen. This does, deliberately. -->
+    <button
+      class="button outline"
+      disabled={app.viewingClassId === app.activeClassId}
+      onclick={() => (app.modal = { kind: 'class-switch' })}
+    >
+      {app.viewingClassId === app.activeClassId ? 'Showing on the door screen' : 'Show this class on the door'}
+    </button>
+    <button class="button outline" onclick={() => (app.modal = { kind: 'export' })}>Export to Google Sheets</button>
+  </div>
 </section>
 
 <section class="stat-grid">
@@ -44,7 +62,7 @@
     </div>
     <label class="limit-control">
       Maximum out at once
-      <select value={app.activeClass.limit} onchange={(event) => setLimit(Number(event.currentTarget.value))}>
+      <select aria-label="Maximum out at once" value={app.activeClass.limit} onchange={(event) => setLimit(Number(event.currentTarget.value))}>
         {#each [1, 2, 3, 4, 5] as number (number)}
           <option value={number}>{number}</option>
         {/each}

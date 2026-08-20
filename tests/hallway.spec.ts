@@ -71,11 +71,15 @@ function list(items: unknown[]) {
  */
 async function stubKioskBackend(
   page: Page,
-  options: { limit?: number; log?: Event[]; activeClass?: string; destinations?: () => { label: string; minutes: number }[] } = {},
+  options: {
+    limit?: number; log?: Event[]; activeClass?: string;
+    activeClassOf?: () => string;
+    destinations?: () => { label: string; minutes: number }[];
+  } = {},
 ) {
   const limit = options.limit ?? 2;
   const log = options.log ?? sampleLog();
-  const activeClass = options.activeClass ?? periodOne;
+  const activeClassOf = options.activeClassOf ?? (() => options.activeClass ?? periodOne);
   const currentDestinations = options.destinations ?? (() => sampleDestinations);
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
@@ -83,7 +87,7 @@ async function stubKioskBackend(
     // The expected minutes are the teacher's setting, looked up here exactly as
     // the real route does, rather than anything the browser gets to claim.
     const minutes = currentDestinations().find((item) => item.label === body.destination)?.minutes ?? 0;
-    const student = roster.find((item) => item.id === body.student && item.class === activeClass);
+    const student = roster.find((item) => item.id === body.student && item.class === activeClassOf());
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
       return;
@@ -98,7 +102,7 @@ async function stubKioskBackend(
     const at = minutesAgo(0);
     // An undo is a new entry saying the trip was cancelled, never a deletion.
     const source = body.kind === 'in' && body.cancel ? 'cancelled' : 'kiosk';
-    log.push({ id: `new${log.length}`, student: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source, signedInBy: '', at, class: activeClass });
+    log.push({ id: `new${log.length}`, student: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source, signedInBy: '', at, class: activeClassOf() });
     await route.fulfill({
       json: {
         status: body.kind === 'out' ? 'approved' : body.cancel ? 'cancelled' : 'returned',
@@ -176,7 +180,7 @@ async function stubTeacherBackend(
       return;
     }
     const url = decodeURIComponent(route.request().url());
-    const wanted = url.includes(periodTwo) ? periodTwo : activeClass;
+    const wanted = url.includes(periodTwo) ? periodTwo : periodOne;
     await route.fulfill({ json: list(students.filter((student) => student.class === wanted)) });
   });
 
@@ -197,10 +201,14 @@ async function stubTeacherBackend(
   });
   await page.route('**/api/collections/pass_events/records*', async (route) => {
     if (route.request().method() === 'POST') {
-      await route.fulfill({ json: { id: 'created', ...(route.request().postDataJSON() as object), at: minutesAgo(0) } });
+      const created = { id: `t${log.length}`, ...(route.request().postDataJSON() as object), at: minutesAgo(0) } as Event;
+      log.push(created);
+      await route.fulfill({ json: created });
       return;
     }
-    await route.fulfill({ json: list(log) });
+    const url = decodeURIComponent(route.request().url());
+    const wanted = url.includes(periodTwo) ? periodTwo : periodOne;
+    await route.fulfill({ json: list(log.filter((event) => event.class === wanted)) });
   });
   await page.route('**/api/collections/teachers/records/*', async (route) => {
     if (route.request().method() === 'PATCH') {
@@ -217,7 +225,29 @@ async function stubTeacherBackend(
   });
   await page.route('**/api/hallway/kiosk/pin', async (route) => await route.fulfill({ json: {} }));
 
-  await stubKioskBackend(page, { ...options, log, activeClass, destinations: () => destinations });
+  await page.route('**/api/hallway/class/switch', async (route) => {
+    const wanted = (route.request().postDataJSON() as { class: string }).class;
+    const latest: Record<string, string> = {};
+    const names: Record<string, string> = {};
+    for (const event of log) {
+      if (event.class !== activeClass) continue;
+      latest[event.student] = event.kind;
+      names[event.student] = event.studentName;
+    }
+    const closed: string[] = [];
+    for (const student of Object.keys(latest)) {
+      if (latest[student] !== 'out') continue;
+      closed.push(names[student]);
+      log.push({
+        id: `switch${log.length}`, student, studentName: names[student], kind: 'in',
+        destination: '', minutes: 0, source: 'switch', signedInBy: '', class: activeClass, at: minutesAgo(0),
+      });
+    }
+    activeClass = wanted;
+    await route.fulfill({ json: { class: wanted, closed } });
+  });
+
+  await stubKioskBackend(page, { ...options, log, activeClassOf: () => activeClass, destinations: () => destinations });
 }
 
 async function openTeacher(page: Page, options: { limit?: number; log?: Event[] } = {}) {
@@ -597,4 +627,57 @@ test('a mis-tap can be undone at the door, by adding to the log rather than eras
   // Avery is back in class rather than stranded holding a pass they cannot
   // sign back in from.
   await expect(tile(page, 'Avery B.')).toContainText('In class');
+});
+
+test('browsing a class in the dashboard leaves the door screen where it was', async ({ page }) => {
+  await openTeacher(page);
+  await expect(page.getByRole('button', { name: 'Showing on the door screen' })).toBeVisible();
+  await page.getByLabel('Class', { exact: true }).selectOption(periodTwo);
+  await expect(page.getByRole('button', { name: 'Show this class on the door' })).toBeEnabled();
+  // Looking at Period 2's records must not change what Period 2's predecessors see.
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await expect(tile(page, 'Avery B.')).toBeVisible();
+  await expect(tile(page, 'Riley O.')).toHaveCount(0);
+});
+
+test('moving the door screen warns and names the students still out', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByLabel('Class', { exact: true }).selectOption(periodTwo);
+  await page.getByRole('button', { name: 'Show this class on the door' }).click();
+  await page.getByRole('button', { name: 'Show Period 2' }).click();
+  // Noah is in the hallway on a Period 1 pass. He is named, not counted.
+  const warning = page.getByRole('alert');
+  await expect(warning).toContainText('Noah W.');
+  await expect(warning).toContainText('will not be recorded');
+
+  await page.getByRole('button', { name: 'Change class anyway' }).click();
+  await expect(page.getByRole('button', { name: 'Showing on the door screen' })).toBeVisible();
+});
+
+test('a class switch closes open passes without inventing a return time', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByLabel('Class', { exact: true }).selectOption(periodTwo);
+  await page.getByRole('button', { name: 'Show this class on the door' }).click();
+  await page.getByRole('button', { name: 'Show Period 2' }).click();
+  await page.getByRole('button', { name: 'Change class anyway' }).click();
+
+  // Back on Period 1: Noah is no longer out, and his trip is marked as ended by
+  // the class change rather than by him walking back in.
+  await page.getByLabel('Class', { exact: true }).selectOption(periodOne);
+  await expect(page.locator('.student-cards')).toContainText('Everyone is back in class');
+});
+
+test('changing class at the door needs the teacher PIN', async ({ page }) => {
+  await openKiosk(page);
+  await page.getByRole('button', { name: 'Switch class' }).click();
+  await expect(page.getByRole('heading', { name: 'Enter your PIN to change class' })).toBeVisible();
+  await page.getByLabel('Six-digit PIN').fill('000000');
+  await page.getByRole('button', { name: 'Choose a class' }).click();
+  await expect(page.getByRole('alert')).toContainText('incorrect');
+
+  await page.getByLabel('Six-digit PIN').fill('123456');
+  await page.getByRole('button', { name: 'Choose a class' }).click();
+  await page.getByRole('button', { name: 'Show Period 2' }).click();
+  await page.getByRole('button', { name: 'Change class anyway' }).click();
+  await expect(tile(page, 'Riley O.')).toBeVisible();
 });

@@ -70,5 +70,6 @@ export type Notice = {
 /** Whatever dialog is open on top of the current view, if any. */
 export type Modal =
   | { kind: 'request'; student: Student }
-  | { kind: 'kiosk-pin'; purpose: 'setup' | 'exit' | 'change' }
+  | { kind: 'kiosk-pin'; purpose: 'setup' | 'exit' | 'change' | 'switch' }
+  | { kind: 'class-switch' }
   | { kind: 'export' };

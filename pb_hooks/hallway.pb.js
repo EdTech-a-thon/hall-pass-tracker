@@ -119,3 +119,53 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
   });
   return e.json(200, response);
 }, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));
+
+// Moving the door screen to another Class. Closing the outgoing Class's open
+// passes and moving the Active Class happen in one transaction, so a failure
+// can never leave the door showing one Class while another's trips hang open.
+routerAdd("POST", "/api/hallway/class/switch", (e) => {
+  const body = new DynamicModel({ class: "" });
+  e.bindBody(body);
+
+  let response;
+  e.app.runInTransaction((tx) => {
+    const teacherId = e.auth.id;
+    const teacher = tx.findRecordById("teachers", teacherId);
+
+    let target;
+    try {
+      target = tx.findFirstRecordByFilter("classes", "id = {:id} && teacher = {:teacher} && archived = false", { id: body.class, teacher: teacherId });
+    } catch (_) { throw new BadRequestError("That class is not available."); }
+
+    const leaving = teacher.getString("activeClass");
+    const closed = [];
+    if (leaving && leaving !== target.id) {
+      const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && class = {:class} && at > {:since}", "at", 5000, 0, { teacher: teacherId, class: leaving, since: since });
+      const latest = {};
+      const names = {};
+      for (let index = 0; index < log.length; index++) {
+        latest[log[index].getString("student")] = log[index].getString("kind");
+        names[log[index].getString("student")] = log[index].getString("studentName");
+      }
+      const collection = tx.findCollectionByNameOrId("pass_events");
+      for (const student in latest) {
+        if (latest[student] !== "out") continue;
+        const entry = new Record(collection);
+        entry.set("teacher", teacherId);
+        entry.set("class", leaving);
+        entry.set("student", student);
+        entry.set("studentName", names[student]);
+        entry.set("kind", "in");
+        entry.set("source", "switch");
+        tx.save(entry);
+        closed.push(names[student]);
+      }
+    }
+
+    teacher.set("activeClass", target.id);
+    tx.save(teacher);
+    response = { class: target.id, closed: closed };
+  });
+  return e.json(200, response);
+}, $apis.requireAuth("teachers"), $apis.bodyLimit(1024));

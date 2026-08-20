@@ -22,6 +22,12 @@ export const app = $state({
   roster: [] as Student[],
   /** The Class whose roster is open for editing, which is not the Active Class. */
   editingClassId: '',
+  /**
+   * The Class the dashboard is looking at. Browsing here deliberately does not
+   * move the door screen: opening Period 4's history must not change what the
+   * Period 2 students in front of you are seeing.
+   */
+  viewingClassId: '',
   /** The student whose pass could still be undone at the door, for a few seconds. */
   cancellable: null as Student | null,
   view: 'teacher-login' as View,
@@ -93,6 +99,51 @@ export async function loadClasses() {
   if (!app.classes.some((room) => room.id === app.activeClassId)) {
     app.activeClassId = app.classes[0]?.id ?? '';
   }
+  if (!app.classes.some((room) => room.id === app.viewingClassId)) {
+    app.viewingClassId = app.activeClassId;
+  }
+}
+
+/** The door screen always shows the Active Class; the dashboard shows whatever the teacher is browsing. */
+function shownClassId() {
+  return app.view === 'kiosk' ? app.activeClassId : app.viewingClassId || app.activeClassId;
+}
+
+export function browseClass(id: string) {
+  app.viewingClassId = id;
+  return loadActiveClass();
+}
+
+/**
+ * Students still in the hallway in a given Class. Asked for directly rather than
+ * read from what is loaded, because the teacher may be browsing a different
+ * Class entirely when they decide to move the door screen.
+ */
+export async function stillOutIn(classId: string) {
+  if (!classId) return [];
+  const teacher = teacherId();
+  const events = await pb.collection('pass_events').getFullList({
+    filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room: classId }),
+    sort: 'at',
+  });
+  const passes = foldEvents(events as unknown as PassEvent[]);
+  return passes.filter((pass) => !pass.inAt).map((pass) => pass.studentName);
+}
+
+/**
+ * Moves the door screen. The server closes the outgoing Class's open trips and
+ * moves the Active Class together, so the two can never disagree.
+ */
+export async function switchActiveClass(classId: string) {
+  const result = await pb.send<{ class: string; closed: string[] }>('/api/hallway/class/switch', {
+    method: 'POST',
+    body: { class: classId },
+  });
+  app.activeClassId = result.class;
+  if (app.view === 'kiosk') app.viewingClassId = result.class;
+  app.kioskLabel = app.classes.find((room) => room.id === result.class)?.name || app.kioskLabel;
+  await loadActiveClass();
+  return result.closed;
 }
 
 /** Reads the Active Class's roster and pass log, which only the signed-in teacher may do. */
@@ -100,7 +151,7 @@ export async function loadActiveClass() {
   const teacher = teacherId();
   await loadClasses();
   const limit = Number(pb.authStore.record?.passLimit) || defaultLimit;
-  const room = app.activeClassId;
+  const room = shownClassId();
   if (!room) {
     app.activeClass = { limit, students: [], passes: [] };
     return;
@@ -346,6 +397,7 @@ export function signOutTeacher() {
   app.activeClass = { limit: defaultLimit, students: [], passes: [] };
   app.classes = [];
   app.activeClassId = '';
+  app.viewingClassId = '';
   app.view = 'teacher-login';
 }
 
@@ -374,6 +426,10 @@ export function requestKioskExit() {
   app.modal = { kind: 'kiosk-pin', purpose: 'exit' };
 }
 
+export function requestKioskSwitch() {
+  app.modal = { kind: 'kiosk-pin', purpose: 'switch' };
+}
+
 export async function saveKioskPin(pin: string) {
   try {
     await pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin } });
@@ -383,11 +439,16 @@ export async function saveKioskPin(pin: string) {
   }
 }
 
-export async function verifyKioskPin(pin: string) {
+export async function verifyKioskPin(pin: string, purpose: 'exit' | 'switch' = 'exit') {
   try {
     await pb.send('/api/hallway/kiosk/pin/verify', { method: 'POST', body: { pin } });
+    if (purpose === 'switch') {
+      app.modal = { kind: 'class-switch' };
+      return '';
+    }
     app.modal = null;
     app.view = 'teacher';
+    app.viewingClassId = app.activeClassId;
     watchActiveClass();
     return '';
   } catch (caught) {
