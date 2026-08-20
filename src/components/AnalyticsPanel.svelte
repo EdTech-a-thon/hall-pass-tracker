@@ -2,7 +2,7 @@
   import { duration, time } from '../lib/passes';
   import { app } from '../lib/store.svelte';
 
-  const rows = $derived([...app.classroom.passes].reverse());
+  const rows = $derived([...app.activeClass.passes].reverse());
 
   /** Static sample week, since the prototype has no multi-day history yet. */
   const week = [
@@ -45,7 +45,7 @@
     </div>
   </article>
 
-  <article class="panel reasons">
+  <article class="panel destinations">
     <p class="eyebrow">TOP DESTINATIONS</p>
     <h2>Where students go</h2>
     {#each destinations as destination (destination.label)}
@@ -71,7 +71,7 @@
         {#each rows as pass (pass.id)}
           <tr>
             <td><strong>{pass.studentName}</strong></td>
-            <td>{pass.reason}</td>
+            <td>{pass.destination}</td>
             <td>{time(pass.outAt)}</td>
             <td>{duration(pass)} min</td>
             <td>

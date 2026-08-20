@@ -42,7 +42,7 @@ backendTest('real PocketBase registration is public but records remain private',
 backendTest('an authenticated kiosk action appends to the teacher pass log', async () => {
   const room = await classroom('Log Teacher');
   const approved = await room.pb.send<{ status: string; name: string }>('/api/hallway/kiosk/events', {
-    method: 'POST', body: { studentId: '5620', kind: 'out', reason: 'Water', minutes: 5 },
+    method: 'POST', body: { studentId: '5620', kind: 'out', destination: 'Water', minutes: 5 },
   });
   expect(approved).toMatchObject({ status: 'approved', name: 'Avery Brooks' });
   const entries = await room.pb.collection('pass_events').getFullList();
@@ -54,7 +54,7 @@ backendTest('the server decides when the hallway is full', async () => {
   const room = await classroom('Limit Teacher');
   await room.pb.collection('students').create({ teacher: room.id, studentId: '4419', name: 'Noah Williams' });
   const send = (studentId: string, kind: string) => room.pb.send<{ status: string; out: number; limit: number }>('/api/hallway/kiosk/events', {
-    method: 'POST', body: { studentId, kind, reason: 'Water', minutes: 5 },
+    method: 'POST', body: { studentId, kind, destination: 'Water', minutes: 5 },
   });
   await expect(send('5620', 'out')).resolves.toMatchObject({ status: 'approved', out: 1, limit: 1 });
   await expect(send('4419', 'out')).resolves.toMatchObject({ status: 'denied', out: 1, limit: 1 });

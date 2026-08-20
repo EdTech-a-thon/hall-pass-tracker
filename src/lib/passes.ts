@@ -1,6 +1,6 @@
-import type { AppState, Pass, PassEvent } from './types';
+import type { ActiveClass, Pass, PassEvent } from './types';
 
-export function activePasses(state: AppState) {
+export function activePasses(state: ActiveClass) {
   return state.passes.filter((pass) => !pass.inAt);
 }
 
@@ -18,7 +18,7 @@ export function foldEvents(events: PassEvent[]): Pass[] {
         id: event.id,
         studentId: event.studentId,
         studentName: event.studentName,
-        reason: event.reason,
+        destination: event.destination,
         minutes: event.minutes,
         outAt: event.at,
       };

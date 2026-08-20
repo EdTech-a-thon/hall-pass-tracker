@@ -2,7 +2,7 @@
   import { duration } from '../lib/passes';
   import { app, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
-  const finished = $derived(app.classroom.passes.filter((pass) => pass.inAt));
+  const finished = $derived(app.activeClass.passes.filter((pass) => pass.inAt));
   const averageTrip = $derived(
     finished.length ? Math.round(finished.reduce((sum, pass) => sum + duration(pass), 0) / finished.length) : 0,
   );
@@ -21,12 +21,12 @@
   <article>
     <span class="stat-icon green">↗</span>
     <p>Students out now</p>
-    <strong>{out().length}<small> of {app.classroom.limit} allowed</small></strong>
+    <strong>{out().length}<small> of {app.activeClass.limit} allowed</small></strong>
   </article>
   <article>
     <span class="stat-icon amber">◷</span>
     <p>Passes today</p>
-    <strong>{app.classroom.passes.length}<small> total trips</small></strong>
+    <strong>{app.activeClass.passes.length}<small> total trips</small></strong>
   </article>
   <article>
     <span class="stat-icon blue">≈</span>
@@ -43,7 +43,7 @@
     </div>
     <label class="limit-control">
       Maximum out at once
-      <select value={app.classroom.limit} onchange={(event) => setLimit(Number(event.currentTarget.value))}>
+      <select value={app.activeClass.limit} onchange={(event) => setLimit(Number(event.currentTarget.value))}>
         {#each [1, 2, 3, 4, 5] as number (number)}
           <option value={number}>{number}</option>
         {/each}
@@ -56,7 +56,7 @@
         <div class="avatar">{pass.studentName.charAt(0)}</div>
         <div>
           <h3>{pass.studentName}</h3>
-          <p>{pass.reason} · out {duration(pass)} min</p>
+          <p>{pass.destination} · out {duration(pass)} min</p>
         </div>
         <button class="button small" onclick={() => markReturned(pass.id)}>Mark returned</button>
       </article>

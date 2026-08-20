@@ -16,22 +16,22 @@ const roster = [
   { id: '5620', name: 'Avery Brooks' },
 ];
 
-type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; reason: string; minutes: number; source: string; signedInBy: string; at: string };
+type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; at: string };
 
 /** The same class the old demo data described, written as a log of exits and returns. */
 function sampleLog(): Event[] {
   const entry = (id: string, studentId: string, kind: 'out' | 'in', at: number, extra: Partial<Event> = {}): Event => ({
     id, studentId, studentName: roster.find((student) => student.id === studentId)!.name,
-    kind, reason: '', minutes: 0, source: 'kiosk', signedInBy: '', at: minutesAgo(at), ...extra,
+    kind, destination: '', minutes: 0, source: 'kiosk', signedInBy: '', at: minutesAgo(at), ...extra,
   });
   return [
-    entry('e3', '3077', 'out', 70, { reason: 'Counselor', minutes: 15 }),
+    entry('e3', '3077', 'out', 70, { destination: 'Counselor', minutes: 15 }),
     entry('e4', '3077', 'in', 52, { source: 'teacher', signedInBy: 'Ms. Rivera' }),
-    entry('e5', '1042', 'out', 25, { reason: 'Water', minutes: 5 }),
+    entry('e5', '1042', 'out', 25, { destination: 'Water', minutes: 5 }),
     entry('e6', '1042', 'in', 21, {}),
-    entry('e1', '2381', 'out', 18, { reason: 'Restroom', minutes: 8 }),
+    entry('e1', '2381', 'out', 18, { destination: 'Restroom', minutes: 8 }),
     entry('e2', '2381', 'in', 10, {}),
-    entry('e7', '4419', 'out', 6, { reason: 'Main office', minutes: 10 }),
+    entry('e7', '4419', 'out', 6, { destination: 'Main office', minutes: 10 }),
   ];
 }
 
@@ -49,7 +49,7 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
   const log = options.log ?? sampleLog();
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
-    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; reason: string; minutes: number };
+    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string; minutes: number };
     const student = roster.find((item) => item.id === body.studentId);
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
@@ -63,11 +63,11 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
       return;
     }
     const at = minutesAgo(0);
-    log.push({ id: `new${log.length}`, studentId: student.id, studentName: student.name, kind: body.kind, reason: body.reason, minutes: body.minutes, source: 'kiosk', signedInBy: '', at });
+    log.push({ id: `new${log.length}`, studentId: student.id, studentName: student.name, kind: body.kind, destination: body.destination, minutes: body.minutes, source: 'kiosk', signedInBy: '', at });
     await route.fulfill({
       json: {
         status: body.kind === 'out' ? 'approved' : 'returned',
-        name: student.name, reason: body.reason, minutes: body.minutes, outAt: at,
+        name: student.name, destination: body.destination, minutes: body.minutes, outAt: at,
         out: body.kind === 'out' ? outNow + 1 : outNow - 1, limit,
       },
     });
@@ -213,7 +213,7 @@ test('unknown student IDs fail without rendering attacker-controlled HTML', asyn
   await expect(page.locator('script[src="//evil.invalid"]')).toHaveCount(0);
 });
 
-test('student selects a reason and receives a distance-readable approval', async ({ page }) => {
+test('student selects a destination and receives a distance-readable approval', async ({ page }) => {
   await openKiosk(page);
   await page.getByLabel('Student ID').fill('5620');
   await page.getByRole('button', { name: /Continue/ }).click();

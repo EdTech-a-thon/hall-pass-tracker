@@ -9,7 +9,7 @@ export type PassEvent = {
   studentId: string;
   studentName: string;
   kind: 'out' | 'in';
-  reason: string;
+  destination: string;
   minutes: number;
   source: 'kiosk' | 'teacher';
   signedInBy: string;
@@ -21,14 +21,14 @@ export type Pass = {
   id: string;
   studentId: string;
   studentName: string;
-  reason: string;
+  destination: string;
   minutes: number;
   outAt: string;
   inAt?: string;
   signedInBy?: string;
 };
 
-export type AppState = { limit: number; students: Student[]; passes: Pass[] };
+export type ActiveClass = { limit: number; students: Student[]; passes: Pass[] };
 
 export type View = 'kiosk' | 'teacher-login' | 'teacher-register' | 'teacher';
 

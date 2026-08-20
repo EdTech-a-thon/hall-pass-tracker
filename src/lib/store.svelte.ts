@@ -2,14 +2,14 @@ import { ClientResponseError } from 'pocketbase';
 import { pb } from './pocketbase';
 import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
-import type { AppState, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
+import type { ActiveClass, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
  * Everything the screens read. It is a single reactive object so that any
  * component can import it and stay in sync automatically.
  */
 export const app = $state({
-  classroom: { limit: defaultLimit, students: [], passes: [] } as AppState,
+  activeClass: { limit: defaultLimit, students: [], passes: [] } as ActiveClass,
   view: 'teacher-login' as View,
   teacherTab: 'live' as TeacherTab,
   /** Shown in the kiosk header, e.g. "Room 214 door". */
@@ -28,7 +28,7 @@ let noticeTimer = 0;
 let refreshTimer = 0;
 
 export function out() {
-  return activePasses(app.classroom);
+  return activePasses(app.activeClass);
 }
 
 function teacherId() {
@@ -46,13 +46,13 @@ export function teacherName() {
 // ---------------------------------------------------------------------------
 
 /** Reads the roster and the pass log, which only the signed-in teacher may do. */
-export async function loadClassroom() {
+export async function loadActiveClass() {
   const teacher = teacherId();
   const [roster, events] = await Promise.all([
     pb.collection('students').getFullList({ filter: pb.filter('teacher = {:teacher}', { teacher }), sort: 'name' }),
     pb.collection('pass_events').getFullList({ filter: pb.filter('teacher = {:teacher}', { teacher }), sort: 'at' }),
   ]);
-  app.classroom = {
+  app.activeClass = {
     limit: Number(pb.authStore.record?.passLimit) || defaultLimit,
     students: roster.map((record) => ({ id: record.studentId as string, name: record.name as string })),
     passes: foldEvents(events as unknown as PassEvent[]),
@@ -60,19 +60,19 @@ export async function loadClassroom() {
 }
 
 /** The teacher's screen is a live view of a log the kiosk keeps appending to. */
-function watchClassroom() {
+function watchActiveClass() {
   clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => {
-    if (app.view === 'teacher') void loadClassroom().catch(() => {});
+    if (app.view === 'teacher') void loadActiveClass().catch(() => {});
   }, 10_000);
 }
 
 async function finishTeacherLogin() {
   if (pb.authStore.record?.collectionName !== 'teachers') throw new Error('Wrong principal type');
-  await loadClassroom();
+  await loadActiveClass();
   app.pendingMfa = null;
   app.view = 'teacher';
-  watchClassroom();
+  watchActiveClass();
 }
 
 /** Signs a teacher in. Returns an error message to show, or an empty string on success. */
@@ -110,7 +110,7 @@ export async function registerTeacher(fields: { displayName: string; email: stri
     await pb.collection('teachers').create(fields);
     await pb.collection('teachers').authWithPassword(fields.email, fields.password);
     await pb.collection('teachers').update(teacherId(), { passLimit: defaultLimit });
-    // A brand-new classroom starts with a sample roster so the kiosk has names to greet.
+    // A brand-new account starts with a sample roster so the kiosk has names to greet.
     for (const student of defaultStudents) {
       await pb.collection('students').create({ teacher: teacherId(), studentId: student.id, name: student.name });
     }
@@ -130,7 +130,7 @@ export async function registerTeacher(fields: { displayName: string; email: stri
 
 /** Marks a student as returned from the teacher workspace: another line in the log. */
 export async function markReturned(passId: string) {
-  const pass = app.classroom.passes.find((item) => item.id === passId);
+  const pass = app.activeClass.passes.find((item) => item.id === passId);
   if (!pass) return;
   await pb.collection('pass_events').create({
     teacher: teacherId(),
@@ -140,18 +140,18 @@ export async function markReturned(passId: string) {
     source: 'teacher',
     signedInBy: teacherName(),
   });
-  await loadClassroom();
+  await loadActiveClass();
 }
 
 export async function setLimit(limit: number) {
-  app.classroom.limit = limit;
+  app.activeClass.limit = limit;
   await pb.collection('teachers').update(teacherId(), { passLimit: limit });
 }
 
 export function signOutTeacher() {
   clearInterval(refreshTimer);
   pb.authStore.clear();
-  app.classroom = { limit: defaultLimit, students: [], passes: [] };
+  app.activeClass = { limit: defaultLimit, students: [], passes: [] };
   app.view = 'teacher-login';
 }
 
@@ -193,7 +193,7 @@ export async function verifyKioskPin(pin: string) {
     await pb.send('/api/hallway/kiosk/pin/verify', { method: 'POST', body: { pin } });
     app.modal = null;
     app.view = 'teacher';
-    watchClassroom();
+    watchActiveClass();
     return '';
   } catch (caught) {
     return serverMessage(caught, 'That PIN is incorrect.');
@@ -210,7 +210,7 @@ function showNotice(notice: Notice) {
 
 /** Looks the student up in the roster the kiosk is allowed to read. */
 export function submitStudentId(id: string) {
-  const student = app.classroom.students.find((item) => item.id === id);
+  const student = app.activeClass.students.find((item) => item.id === id);
   if (!student) return 'We could not find that student ID. Please try again.';
   app.modal = { kind: 'request', student };
   return '';
@@ -225,12 +225,12 @@ function serverMessage(caught: unknown, fallback: string) {
  * Sends one line to the hall pass log. Whether the pass is allowed is decided by
  * the server, because a kiosk may not read the log it writes to.
  */
-async function sendKioskEvent(student: Student, kind: 'out' | 'in', reason = '', minutes = 0) {
+async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination = '', minutes = 0) {
   app.modal = null;
   try {
-    const result = await pb.send<{ status: string; name: string; reason: string; minutes: number; outAt: string; out: number; limit: number }>(
+    const result = await pb.send<{ status: string; name: string; destination: string; minutes: number; outAt: string; out: number; limit: number }>(
       '/api/hallway/kiosk/events',
-      { method: 'POST', body: { studentId: student.id, kind, reason, minutes } },
+      { method: 'POST', body: { studentId: student.id, kind, destination, minutes } },
     );
     if (result.status === 'denied') {
       showNotice({
@@ -248,7 +248,7 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', reason = '',
     showNotice({
       kind: 'approved',
       title: result.name,
-      message: result.reason,
+      message: result.destination,
       detail: `Return in ${result.minutes} minutes · by ${dueTimeFrom(result.outAt, result.minutes)}`,
     });
   } catch (caught) {
@@ -256,8 +256,8 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', reason = '',
   }
 }
 
-export function requestPass(student: Student, reason: string, minutes: number) {
-  return sendKioskEvent(student, 'out', reason, minutes);
+export function requestPass(student: Student, destination: string, minutes: number) {
+  return sendKioskEvent(student, 'out', destination, minutes);
 }
 
 export function signBackIn(student: Student) {

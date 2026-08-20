@@ -4,13 +4,13 @@
 
   let { student }: { student: Student } = $props();
 
-  const reasons = ['Restroom', 'Water', 'Main office', 'Counselor'];
-  let reason = $state(reasons[0]);
+  const destinations = ['Restroom', 'Water', 'Main office', 'Counselor'];
+  let destination = $state(destinations[0]);
   let minutes = $state(8);
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
-    void requestPass(student, reason, minutes);
+    void requestPass(student, destination, minutes);
   }
 </script>
 
@@ -23,9 +23,9 @@
       <fieldset>
         <legend>Where are you going?</legend>
         <div class="choice-grid">
-          {#each reasons as option (option)}
+          {#each destinations as option (option)}
             <label class="choice">
-              <input type="radio" name="reason" value={option} bind:group={reason} />
+              <input type="radio" name="destination" value={option} bind:group={destination} />
               <span>{option}</span>
             </label>
           {/each}

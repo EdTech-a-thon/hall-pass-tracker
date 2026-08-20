@@ -29,7 +29,7 @@ routerAdd("POST", "/api/hallway/kiosk/pin/verify", (e) => {
 // The only way a kiosk writes anything. Whether a pass is allowed is decided
 // here, from the log, because the kiosk itself may not read it.
 routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
-  const body = new DynamicModel({ studentId: "", kind: "", reason: "", minutes: 0 });
+  const body = new DynamicModel({ studentId: "", kind: "", destination: "", minutes: 0 });
   e.bindBody(body);
   if (body.kind !== "out" && body.kind !== "in") throw new BadRequestError("Unknown kiosk action");
 
@@ -66,7 +66,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     entry.set("studentId", body.studentId);
     entry.set("studentName", student.getString("name"));
     entry.set("kind", body.kind);
-    entry.set("reason", body.kind === "out" ? String(body.reason || "").substring(0, 40) : "");
+    entry.set("destination", body.kind === "out" ? String(body.destination || "").substring(0, 40) : "");
     entry.set("minutes", body.kind === "out" ? Math.min(120, Math.max(1, Math.round(body.minutes))) : 0);
     entry.set("source", "kiosk");
     tx.save(entry);
@@ -74,7 +74,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     response = {
       status: body.kind === "out" ? "approved" : "returned",
       name: student.getString("name"),
-      reason: entry.getString("reason"),
+      destination: entry.getString("destination"),
       minutes: entry.getInt("minutes"),
       outAt: entry.getString("at"),
       out: body.kind === "out" ? outNow + 1 : outNow - 1,
