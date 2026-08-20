@@ -23,9 +23,15 @@ Teacher tokens use an in-memory `BaseAuthStore`; refreshing destroys the session
 
 A teacher signs into their normal account on the device, then enters kiosk mode. The first session requires creating a six-digit exit PIN. PocketBase stores only a salted password hash in a hidden field. The same PIN is reused until the teacher replaces it from Profile.
 
-The interface in kiosk mode does not request pass history. Student exits and returns go through the authenticated `POST /api/hallway/kiosk/events` route. `pass_events` has no update or delete rule, so the log remains append-only: a mistaken check-in is corrected by adding an entry, never by rewriting one.
+Kiosk mode reads the Active Class's roster and its current pass state, so that it can greet students by name and show who is in the hallway. It reads nothing further, and it writes nothing directly: student exits and returns go through the authenticated `POST /api/hallway/kiosk/events` route. A test asserts that every collection request the door screen makes is a `GET` against its own roster, its own Class list, and its own Class's log.
 
-The server counts who is out and either records the exit or answers `denied`, telling the kiosk only a count. Students choose between requesting a pass and signing back in rather than seeing the current pass state.
+An earlier version of this document said the kiosk did not request pass history. That was true when the door screen was a limited link account with no power to read it. Since kiosk mode became the teacher's own session behind a PIN, the restriction was self-imposed rather than enforced, and it cost every student a step while buying no real protection. The reasoning is recorded in `docs/adr/0003-kiosk-mode-shows-who-is-out.md`.
+
+Kiosk mode still shows no timing of any kind -- no elapsed minutes, no countdown, no overdue marker. Whether a student is late is a judgement for the teacher's dashboard.
+
+`pass_events` has no update or delete rule, for anyone, so the log remains append-only. A mistaken check-in is corrected by adding an entry, never by rewriting one; the same is true of the few-second undo at the door, which writes a return marked `cancelled` rather than removing anything. `docs/adr/0004-corrections-are-new-entries-never-edits.md` records why teacher-facing edits must not change this.
+
+The server counts who is out within the Active Class and either records the exit or answers `denied`, telling the kiosk only a count, never another student's name. How long a trip should take is read from the teacher's own Destination list on the server, so a browser cannot claim a trip was meant to last an hour.
 
 **The PIN locks the Hallway interface; it does not remove the teacher session from the browser.** A technically capable person with browser developer tools could access that session. Production use therefore requires the managed operating-system kiosk controls listed above. Exiting through the interface verifies the PIN on the server; refreshing signs the account out entirely.
 

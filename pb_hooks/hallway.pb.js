@@ -30,7 +30,7 @@ routerAdd("POST", "/api/hallway/kiosk/pin/verify", (e) => {
 // here, from the log, and always within the Active Class: one period's records
 // must never block the students standing in the room.
 routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
-  const body = new DynamicModel({ studentId: "", kind: "", destination: "" });
+  const body = new DynamicModel({ studentId: "", kind: "", destination: "", cancel: false });
   e.bindBody(body);
   if (body.kind !== "out" && body.kind !== "in") throw new BadRequestError("Unknown kiosk action");
 
@@ -77,7 +77,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
       minutes = Math.min(120, Math.max(1, Math.round(match.minutes)));
     }
 
-    if (body.kind === "out" && alreadyOut) throw new BadRequestError("You are already signed out. Tap \"I am back\" instead.");
+    if (body.kind === "out" && alreadyOut) throw new BadRequestError("You are already signed out. Tap your name to sign back in.");
     if (body.kind === "in" && !alreadyOut) throw new BadRequestError("You are not signed out right now.");
     if (body.kind === "out" && outNow >= limit) {
       response = { status: "denied", name: shownName, out: outNow, limit: limit };
@@ -92,11 +92,12 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     entry.set("kind", body.kind);
     entry.set("destination", body.kind === "out" ? String(body.destination || "").substring(0, 40) : "");
     entry.set("minutes", minutes);
-    entry.set("source", "kiosk");
+    // An undo is still an entry. Nothing in this log is ever rewritten.
+    entry.set("source", body.kind === "in" && body.cancel ? "cancelled" : "kiosk");
     tx.save(entry);
 
     response = {
-      status: body.kind === "out" ? "approved" : "returned",
+      status: body.kind === "out" ? "approved" : (body.cancel ? "cancelled" : "returned"),
       name: shownName,
       destination: entry.getString("destination"),
       minutes: entry.getInt("minutes"),

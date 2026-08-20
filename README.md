@@ -18,9 +18,20 @@ The teacher signs into their normal account on the classroom device and chooses
 PIN. That PIN is remembered for later sessions and is required to return to the
 teacher workspace. A teacher can replace it at any time from **Profile**.
 
-The kiosk interface only uses the class roster and adds exits and returns to the
-log. It does not load pass history. The server decides whether a pass is allowed
-and answers with a count — never another student's name.
+Students do not type anything. The door screen lists the current class by name;
+a student taps their own name, taps where they are going, and sees a
+full-screen confirmation readable from across the room. A student who is
+already out has their name marked "Out" and taps it once to come back. A
+mis-tap can be undone for a few seconds.
+
+The screen shows no clock and no overdue marker against anyone — that is the
+teacher's dashboard's job. The server decides whether a pass is allowed and
+answers with a count, never another student's name.
+
+Each teacher has several classes, each with its own roster. Students are stored
+as a first name plus only as many letters of the last name as it takes to tell
+them apart; a full last name is never kept. Rosters are built by pasting a list
+or choosing a CSV.
 
 PIN setup and verification, plus every pass request from kiosk mode, use custom
 PocketBase routes in `pb_hooks/`. The server stores only a salted PIN hash.
@@ -66,6 +77,9 @@ The browser tests run against a stubbed backend. The tests in
 `PB_E2E_URL=http://127.0.0.1:8093 bun run test`. `REAL_SIGNUP_E2E=1` adds
 `tests/signup-real.spec.ts`, which drives the whole flow in a real browser:
 registering, creating a kiosk PIN, entering kiosk mode, and exiting securely.
+
+Design decisions that would be surprising without their reasoning live in
+[docs/adr](docs/adr), and the project's vocabulary is in [CONTEXT.md](CONTEXT.md).
 Both create throwaway teacher accounts,
 so point them at a database you do not mind filling up.
 

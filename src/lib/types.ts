@@ -64,6 +64,8 @@ export type Notice = {
   message: string;
   /** Second line, only used by the approval notice. */
   detail?: string;
+  /** Offers a few seconds to undo a pass given to the wrong student. */
+  undo?: boolean;
 };
 
 /** Whatever dialog is open on top of the current view, if any. */

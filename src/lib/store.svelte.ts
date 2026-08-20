@@ -22,6 +22,8 @@ export const app = $state({
   roster: [] as Student[],
   /** The Class whose roster is open for editing, which is not the Active Class. */
   editingClassId: '',
+  /** The student whose pass could still be undone at the door, for a few seconds. */
+  cancellable: null as Student | null,
   view: 'teacher-login' as View,
   teacherTab: 'live' as TeacherTab,
   /** Shown in the kiosk header, e.g. "Room 214 door". */
@@ -240,11 +242,15 @@ export async function moveClass(id: string, direction: -1 | 1) {
   await loadClasses();
 }
 
-/** The teacher's screen is a live view of a log the kiosk keeps appending to. */
+/**
+ * Both screens are live views of the same log. The door screen watches it too
+ * now, so a student who was signed back in from the teacher's desk stops being
+ * shown as out. See docs/adr/0003.
+ */
 function watchActiveClass() {
   clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => {
-    if (app.view === 'teacher') void loadActiveClass().catch(() => {});
+    if (app.view === 'teacher' || app.view === 'kiosk') void loadActiveClass().catch(() => {});
   }, 10_000);
 }
 
@@ -362,10 +368,11 @@ export async function beginKioskMode() {
 }
 
 export function enterKiosk() {
-  clearInterval(refreshTimer);
-  app.kioskLabel = `${teacherName()}'s classroom`;
+  app.kioskLabel = app.classes.find((room) => room.id === app.activeClassId)?.name || `${teacherName()}'s classroom`;
   app.modal = null;
   app.view = 'kiosk';
+  void loadActiveClass().catch(() => {});
+  watchActiveClass();
 }
 
 export function requestKioskExit() {
@@ -398,15 +405,32 @@ function showNotice(notice: Notice) {
   app.notice = notice;
   noticeTimer = window.setTimeout(() => {
     app.notice = null;
-  }, notice.kind === 'approved' ? 4500 : 5500);
+    app.cancellable = null;
+  }, notice.kind === 'approved' ? 6000 : 5500);
 }
 
-/** Looks the student up in the roster the kiosk is allowed to read. */
-export function submitStudentId(id: string) {
-  const student = app.activeClass.students.find((item) => item.id === id);
-  if (!student) return 'We could not find that student ID. Please try again.';
+/** Whether this student is in the hallway right now, so the door screen can say so. */
+export function passFor(student: Student) {
+  return out().find((pass) => pass.studentId === student.id);
+}
+
+/**
+ * One tap on a name. A student who is out is signed back in immediately; anyone
+ * else is asked where they are going, which is the second and final tap.
+ */
+export function chooseStudent(student: Student) {
+  if (passFor(student)) return signBackIn(student);
   app.modal = { kind: 'request', student };
-  return '';
+  return Promise.resolve();
+}
+
+/** Undoes a pass a student has just been given, by adding a line saying so. */
+export function cancelLastPass() {
+  const student = app.cancellable;
+  if (!student) return Promise.resolve();
+  app.cancellable = null;
+  app.notice = null;
+  return sendKioskEvent(student, 'in', '', true);
 }
 
 function serverMessage(caught: unknown, fallback: string) {
@@ -418,14 +442,14 @@ function serverMessage(caught: unknown, fallback: string) {
  * Sends one line to the hall pass log. Whether the pass is allowed is decided by
  * the server, because a kiosk may not read the log it writes to.
  */
-async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination = '') {
+async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination = '', cancel = false) {
   app.modal = null;
   try {
     // How long the trip should take is the teacher's setting, so the kiosk sends
     // only where the student is going and the server decides the rest.
     const result = await pb.send<{ status: string; name: string; destination: string; minutes: number; outAt: string; out: number; limit: number }>(
       '/api/hallway/kiosk/events',
-      { method: 'POST', body: { studentId: student.id, kind, destination } },
+      { method: 'POST', body: { studentId: student.id, kind, destination, cancel } },
     );
     if (result.status === 'denied') {
       showNotice({
@@ -436,15 +460,22 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination 
       });
       return;
     }
+    await loadActiveClass().catch(() => {});
+    if (result.status === 'cancelled') {
+      showNotice({ kind: 'returned', title: result.name, message: 'That pass has been cancelled.' });
+      return;
+    }
     if (result.status === 'returned') {
       showNotice({ kind: 'returned', title: result.name, message: 'You are signed back in.' });
       return;
     }
+    app.cancellable = student;
     showNotice({
       kind: 'approved',
       title: result.name,
       message: result.destination,
-      detail: `Return in ${result.minutes} minutes · by ${dueTimeFrom(result.outAt, result.minutes)}`,
+      detail: `Back by ${dueTimeFrom(result.outAt, result.minutes)}`,
+      undo: true,
     });
   } catch (caught) {
     showNotice({ kind: 'denied', title: student.name, message: serverMessage(caught, 'That could not be saved. Please ask your teacher.') });

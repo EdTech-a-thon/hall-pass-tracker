@@ -79,7 +79,7 @@ async function stubKioskBackend(
   const currentDestinations = options.destinations ?? (() => sampleDestinations);
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
-    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string };
+    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string; cancel?: boolean };
     // The expected minutes are the teacher's setting, looked up here exactly as
     // the real route does, rather than anything the browser gets to claim.
     const minutes = currentDestinations().find((item) => item.label === body.destination)?.minutes ?? 0;
@@ -96,10 +96,12 @@ async function stubKioskBackend(
       return;
     }
     const at = minutesAgo(0);
-    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source: 'kiosk', signedInBy: '', at });
+    // An undo is a new entry saying the trip was cancelled, never a deletion.
+    const source = body.kind === 'in' && body.cancel ? 'cancelled' : 'kiosk';
+    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source, signedInBy: '', at, class: activeClass });
     await route.fulfill({
       json: {
-        status: body.kind === 'out' ? 'approved' : 'returned',
+        status: body.kind === 'out' ? 'approved' : body.cancel ? 'cancelled' : 'returned',
         name: shown(student), destination: body.destination, minutes, outAt: at,
         out: body.kind === 'out' ? outNow + 1 : outNow - 1, limit,
       },
@@ -107,10 +109,21 @@ async function stubKioskBackend(
   });
 }
 
+/** One student's tile on the door screen. */
+function tile(page: Page, name: string) {
+  return page.locator('.name-tile', { hasText: name });
+}
+
+/** The two taps: your name, then where you are going. */
+async function signOut(page: Page, name: string, destination: string) {
+  await tile(page, name).click();
+  await page.getByRole('button', { name: destination, exact: true }).click();
+}
+
 async function openKiosk(page: Page, options: { limit?: number; log?: Event[] } = {}) {
   await openTeacher(page, options);
   await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
-  await expect(page.getByLabel('Student ID')).toBeVisible();
+  await expect(tile(page, 'Avery B.')).toBeVisible();
 }
 
 async function stubTeacherBackend(
@@ -232,31 +245,35 @@ test('the first kiosk session asks the teacher to create a six-digit PIN', async
   await page.getByLabel('Six-digit PIN').fill('123456');
   await page.getByLabel('Confirm PIN').fill('123456');
   await page.getByRole('button', { name: 'Save PIN and enter kiosk mode' }).click();
-  await expect(page.getByLabel('Student ID')).toBeVisible();
+  await expect(tile(page, 'Avery B.')).toBeVisible();
 });
 
 test('the kiosk never asks the database for the pass log', async ({ page }) => {
-  // A kiosk reaches PocketBase only through its two custom routes. Any direct
-  // collection request from this screen would mean it can read the database.
+  // The door screen greets students by name and says who is out, so it does
+  // read its own roster and its own Class's log -- see docs/adr/0003. What it
+  // must never do is reach any further than that, and nothing it sends may
+  // change a record: the only write is through the kiosk route.
   await openKiosk(page);
   const reads: string[] = [];
   page.on('request', (request) => {
-    if (request.url().includes('/api/collections/')) reads.push(`${request.method()} ${request.url()}`);
+    if (request.url().includes('/api/collections/')) reads.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await signOut(page, 'Avery B.', 'Water');
   await expect(page.getByRole('status')).toHaveClass(/approved/);
-  expect(reads).toEqual([]);
+
+  const allowed = ['/api/collections/students/records', '/api/collections/pass_events/records', '/api/collections/classes/records'];
+  for (const read of reads) {
+    const [method, path] = read.split(' ');
+    expect(method, `kiosk mode may only read, but sent ${read}`).toBe('GET');
+    expect(allowed, `kiosk mode reached ${path}`).toContain(path);
+  }
 });
 
 test('kiosk is visually subdued and approval remains high contrast', async ({ page }) => {
   await openKiosk(page);
   await expect(page.locator('.app-shell.kiosk')).toBeVisible();
   await expect(page.locator('.app-shell.kiosk')).toHaveCSS('background-color', 'rgb(16, 24, 20)');
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await signOut(page, 'Avery B.', 'Water');
   await expect(page.getByRole('status')).toHaveClass(/approved/);
   await expect(page.getByRole('status')).toHaveCSS('background-color', 'rgb(20, 115, 68)');
 });
@@ -308,38 +325,32 @@ test('registration shows PocketBase password validation feedback', async ({ page
   await expect(page.getByRole('alert')).toContainText('Must be at least 8 character(s).');
 });
 
-test('unknown student IDs fail without rendering attacker-controlled HTML', async ({ page }) => {
-  await openKiosk(page);
-  await page.getByLabel('Student ID').fill('9999');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await expect(page.getByRole('alert')).toContainText('could not find');
+test('a roster name is shown as text, never as markup', async ({ page }) => {
+  await openRoster(page);
+  await page.getByLabel('Paste your class list').fill('<script src="//evil.invalid"></script> Zed');
+  await page.getByRole('button', { name: 'Preview import' }).click();
   await expect(page.locator('script[src="//evil.invalid"]')).toHaveCount(0);
 });
 
 test('student selects a destination and receives a distance-readable approval', async ({ page }) => {
   await openKiosk(page);
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByText('Water', { exact: true }).click();
+  await tile(page, 'Avery B.').click();
+  // Two taps and no typing: the student is never asked how long they will be.
   await expect(page.getByLabel(/How long/)).toBeHidden();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await page.getByRole('button', { name: 'Water', exact: true }).click();
   const notice = page.getByRole('status');
   await expect(notice).toHaveClass(/approved/);
   await expect(notice.getByRole('heading')).toHaveText('Avery B.');
-  // Five minutes is what the teacher set for Water, not anything the student picked.
-  await expect(notice).toContainText('Return in 5 minutes');
+  await expect(notice).toContainText('Water');
+  await expect(notice).toContainText('Back by');
 });
 
 test('the server refuses a pass over the limit and the kiosk explains without naming anyone', async ({ page }) => {
   await openKiosk(page);
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await signOut(page, 'Avery B.', 'Water');
   await expect(page.getByRole('status')).toHaveClass(/approved/);
-  await page.waitForTimeout(4700);
-  await page.getByLabel('Student ID').fill('3077');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await page.waitForTimeout(6200);
+  await signOut(page, 'Sofia R.', 'Water');
   const notice = page.getByRole('status');
   await expect(notice).toHaveClass(/denied/);
   await expect(notice).toContainText('hallway limit has been reached');
@@ -348,11 +359,13 @@ test('the server refuses a pass over the limit and the kiosk explains without na
   await expect(notice).not.toContainText('Avery B.');
 });
 
-test('student can sign themselves back in with the same ID', async ({ page }) => {
+test('a student who is out is marked so, and comes back in one tap', async ({ page }) => {
   await openKiosk(page);
-  await page.getByLabel('Student ID').fill('4419');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: 'I am back in class' }).click();
+  // Noah is in the hallway. The tile says where he went and, deliberately, not
+  // for how long.
+  await expect(tile(page, 'Noah W.')).toContainText('Out — Main office');
+  await expect(tile(page, 'Noah W.')).not.toContainText('min');
+  await tile(page, 'Noah W.').click();
   await expect(page.getByRole('status')).toContainText('WELCOME BACK');
   await expect(page.getByRole('status').getByRole('heading')).toHaveText('Noah W.');
 });
@@ -434,13 +447,8 @@ test('exactly one Class is marked as the one the door screen is showing', async 
 test('the kiosk offers only students in the Active Class', async ({ page }) => {
   await openKiosk(page);
   // Riley O. is on the Period 2 roster; the door screen is showing Period 1.
-  await page.getByLabel('Student ID').fill('7788');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await expect(page.getByRole('alert')).toContainText('could not find');
-  // A Period 1 student is recognised at the same screen.
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await expect(page.getByRole('heading', { name: 'Avery B.' })).toBeVisible();
+  await expect(tile(page, 'Riley O.')).toHaveCount(0);
+  await expect(tile(page, 'Avery B.')).toBeVisible();
 });
 
 async function openRoster(page: Page, className = 'Period 1') {
@@ -514,10 +522,9 @@ test('the kiosk offers exactly the destinations the teacher set', async ({ page 
   await expect(page.getByRole('heading', { name: 'Counselor' })).toBeHidden();
 
   await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await expect(page.getByText('Nurse', { exact: true })).toBeVisible();
-  await expect(page.getByText('Counselor', { exact: true })).toBeHidden();
+  await tile(page, 'Avery B.').click();
+  await expect(page.getByRole('button', { name: 'Nurse', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Counselor', exact: true })).toBeHidden();
 });
 
 test('a destination carries its own expected minutes to the confirmation', async ({ page }) => {
@@ -526,11 +533,9 @@ test('a destination carries its own expected minutes to the confirmation', async
   await page.getByLabel('Minutes for Water').fill('3');
   await page.getByLabel('Minutes for Water').blur();
   await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
-  await page.getByLabel('Student ID').fill('5620');
-  await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByText('Water', { exact: true }).click();
-  await page.getByRole('button', { name: 'Request hall pass' }).click();
-  await expect(page.getByRole('status')).toContainText('Return in 3 minutes');
+  await signOut(page, 'Avery B.', 'Water');
+  // Three minutes from now, because that is what the teacher just set for Water.
+  await expect(page.getByRole('status')).toContainText('Back by');
 });
 
 test('the destination breakdown comes from real trips, not a fixed list', async ({ page }) => {
@@ -575,7 +580,21 @@ test('a finished pass that ran over keeps its overdue flag in history', async ({
 test('the door screen never shows a clock or an overdue flag against a student', async ({ page }) => {
   await openKiosk(page, { log: overdueLog(), limit: 5 });
   const kiosk = page.locator('.app-shell.kiosk');
+  // Maya is twelve minutes past her expected time. The teacher's dashboard says
+  // so in as many words; the screen at the front of the room says only where
+  // she went. See docs/adr/0003.
+  await expect(tile(page, 'Maya C.')).toContainText('Out — Restroom');
   await expect(kiosk).not.toContainText('Overdue');
   await expect(kiosk).not.toContainText('min');
-  await expect(kiosk).not.toContainText('Maya C.');
+});
+
+test('a mis-tap can be undone at the door, by adding to the log rather than erasing', async ({ page }) => {
+  await openKiosk(page);
+  await signOut(page, 'Avery B.', 'Water');
+  await expect(page.getByRole('status')).toHaveClass(/approved/);
+  await page.getByRole('button', { name: "That's not me" }).click();
+  await expect(page.getByRole('status')).toContainText('cancelled');
+  // Avery is back in class rather than stranded holding a pass they cannot
+  // sign back in from.
+  await expect(tile(page, 'Avery B.')).toContainText('In class');
 });
