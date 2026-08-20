@@ -18,6 +18,8 @@ export type Student = {
  */
 export type PassEvent = {
   id: string;
+  /** The Class this entry belongs to. */
+  class: string;
   /** The roster row this entry belongs to. */
   student: string;
   studentName: string;
@@ -38,6 +40,7 @@ export type PassEvent = {
 /** A completed round trip, worked out by pairing each exit with its return. */
 export type Pass = {
   id: string;
+  class: string;
   student: string;
   studentName: string;
   destination: string;

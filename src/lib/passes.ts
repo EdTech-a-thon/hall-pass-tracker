@@ -16,11 +16,26 @@ function applyCorrections(events: PassEvent[]) {
   const base = events.filter((event) => event.kind !== 'fix');
   if (!corrections.length) return { entries: base, corrected: new Set<string>() };
 
+  // A Correction may amend another Correction. Follow the chain back to the
+  // base entry so the newest one still wins, rather than being dropped for
+  // pointing at a row that is not in the folded set.
+  const fixIds = new Map(corrections.map((fix) => [fix.id, fix] as const));
+  const rootOf = (fix: PassEvent) => {
+    let target = fix.corrects!;
+    for (let hops = 0; hops < 20 && fixIds.has(target); hops += 1) {
+      target = fixIds.get(target)!.corrects!;
+      if (!target) return '';
+    }
+    return target;
+  };
+
   const byTarget = new Map<string, PassEvent[]>();
   for (const fix of corrections) {
-    const group = byTarget.get(fix.corrects!);
+    const target = rootOf(fix);
+    if (!target) continue;
+    const group = byTarget.get(target);
     if (group) group.push(fix);
-    else byTarget.set(fix.corrects!, [fix]);
+    else byTarget.set(target, [fix]);
   }
 
   const corrected = new Set<string>();
@@ -51,6 +66,7 @@ export function foldEvents(events: PassEvent[]): Pass[] {
     if (event.kind === 'out') {
       const pass: Pass = {
         id: event.id,
+        class: event.class,
         student: event.student,
         studentName: event.studentName,
         destination: event.destination,

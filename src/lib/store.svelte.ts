@@ -273,10 +273,24 @@ export async function renameClass(id: string, name: string) {
   await loadClasses();
 }
 
-/** Archived, never deleted: the Class stops appearing but keeps its Students and history. */
+/**
+ * Archived, never deleted: the Class stops appearing but keeps its Students and
+ * history. If it is the one on the door, the door has to be moved first -- and
+ * moved on the server, or the kiosk would keep resolving students against a
+ * class the teacher can no longer see and refuse every tap.
+ */
 export async function archiveClass(id: string) {
+  if (app.activeClassId === id) {
+    const next = app.classes.find((room) => room.id !== id);
+    if (next) {
+      await switchActiveClass(next.id);
+    } else {
+      app.activeClassId = '';
+      await pb.collection('teachers').update(teacherId(), { activeClass: '' });
+    }
+  }
   await pb.collection('classes').update(id, { archived: true });
-  if (app.activeClassId === id) app.activeClassId = '';
+  if (app.viewingClassId === id) app.viewingClassId = app.activeClassId;
   await loadActiveClass();
 }
 
@@ -341,8 +355,10 @@ export async function verifyMfa(code: string) {
 }
 
 export async function registerTeacher(fields: { displayName: string; email: string; password: string; passwordConfirm: string }) {
+  let created = false;
   try {
     await pb.collection('teachers').create(fields);
+    created = true;
     await pb.collection('teachers').authWithPassword(fields.email, fields.password);
     // A brand-new account starts with one Class holding a sample roster, so the
     // kiosk has names to greet before the teacher has imported anything.
@@ -363,6 +379,11 @@ export async function registerTeacher(fields: { displayName: string; email: stri
   } catch (caught) {
     pb.authStore.clear();
     const response = caught instanceof ClientResponseError ? (caught.response as { data?: Record<string, { message?: string }> }) : {};
+    // The account itself may already exist, in which case telling the teacher to
+    // "try again" sends them into an email-already-in-use loop with no way back.
+    if (created) {
+      return 'Your account was created, but setting up your first class did not finish. Sign in with the details you just chose.';
+    }
     return (
       response.data?.email?.message ||
       response.data?.password?.message ||
@@ -378,6 +399,7 @@ export async function markReturned(passId: string) {
   if (!pass) return;
   await pb.collection('pass_events').create({
     teacher: teacherId(),
+    class: pass.class,
     student: pass.student,
     studentName: pass.studentName,
     kind: 'in',
@@ -415,7 +437,14 @@ export async function correctPass(pass: Pass, changes: { student?: string; outAt
 export async function correctionsBetween(from: string, to: string) {
   const teacher = teacherId();
   const events = await pb.collection('pass_events').getFullList({
-    filter: pb.filter("teacher = {:teacher} && kind = 'fix' && at >= {:from} && at <= {:to}", { teacher, from, to: `${to} 23:59:59` }),
+    // Scoped to the Class being reviewed, so corrections from another period do
+    // not appear beside this one's history with nothing to distinguish them.
+    filter: pb.filter("teacher = {:teacher} && class = {:room} && kind = 'fix' && at >= {:from} && at <= {:to}", {
+      teacher,
+      room: app.viewingClassId || app.activeClassId,
+      from,
+      to: `${to} 23:59:59`,
+    }),
     sort: '-at',
   });
   return events as unknown as PassEvent[];
@@ -485,9 +514,9 @@ export function requestKioskSwitch() {
   app.modal = { kind: 'kiosk-pin', purpose: 'switch' };
 }
 
-export async function saveKioskPin(pin: string) {
+export async function saveKioskPin(pin: string, current = '') {
   try {
-    await pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin } });
+    await pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin, current } });
     return '';
   } catch (caught) {
     return serverMessage(caught, 'The PIN could not be saved. Please try again.');

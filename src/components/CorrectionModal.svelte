@@ -32,6 +32,14 @@
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (busy) return;
+    // A departure moved past its return would leave a trip nothing can close:
+    // the fold sorts by time, so the return would arrive first and be dropped,
+    // and the student would read as out forever.
+    if (pass.inAt && inAt && outAt && new Date(outAt) >= new Date(inAt)) {
+      error = 'A student cannot come back before they left. Check the two times.';
+      return;
+    }
+    error = '';
     busy = true;
     try {
       await correctPass(pass, {

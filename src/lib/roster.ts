@@ -109,15 +109,43 @@ export function planImport(text: string, existing: Student[]): ImportPlan {
   const parsed = parseRoster(text);
   const current = existing.filter((student) => student.status === 'current');
 
+  /**
+   * A stored prefix is only as much of the last name as we kept, so "Maya C."
+   * is a prefix of Carter and of Chen alike.
+   */
+  const couldBe = (student: Student, name: ParsedName) =>
+    student.firstName.toLowerCase() === name.firstName.toLowerCase() &&
+    (student.lastPrefix
+      ? name.lastName.toLowerCase().startsWith(student.lastPrefix.toLowerCase())
+      : !name.lastName);
+
+  // Guessing here is exactly how one student's history would be quietly folded
+  // into another's, so both directions of ambiguity are reported instead: one
+  // pasted name that fits two existing students, and one existing student that
+  // two pasted names would fit.
+  let ambiguity = '';
+  const whole = (name: ParsedName) => `${name.firstName} ${name.lastName}`.trim();
+  for (const name of parsed) {
+    const fits = current.filter((student) => couldBe(student, name));
+    if (fits.length > 1) {
+      ambiguity = `"${whole(name)}" could be more than one student already on this roster. Give one of them a nickname and import again.`;
+      break;
+    }
+  }
+  if (!ambiguity) {
+    for (const student of current) {
+      const rivals = parsed.filter((name) => couldBe(student, name));
+      if (rivals.length > 1) {
+        ambiguity = `"${student.name}" is already on this roster, and both "${whole(rivals[0])}" and "${whole(rivals[1])}" could be them. Give one of them a nickname and import again.`;
+        break;
+      }
+    }
+  }
+
   const claimed = new Set<string>();
   const pairs: { parsed: ParsedName; student?: Student }[] = [];
   for (const name of parsed) {
-    const hit = current.find(
-      (student) =>
-        !claimed.has(student.recordId) &&
-        student.firstName.toLowerCase() === name.firstName.toLowerCase() &&
-        name.lastName.toLowerCase().startsWith(student.lastPrefix.toLowerCase()),
-    );
+    const hit = current.find((student) => !claimed.has(student.recordId) && couldBe(student, name));
     if (hit) claimed.add(hit.recordId);
     pairs.push({ parsed: name, student: hit });
   }
@@ -141,5 +169,5 @@ export function planImport(text: string, existing: Student[]): ImportPlan {
     else added.push(entry);
   });
 
-  return { added, matched, missing, error };
+  return { added, matched, missing, error: error || ambiguity };
 }

@@ -8,15 +8,19 @@
    * when these students actually came back. So they are named, not counted.
    */
   let stranded = $state([] as string[]);
+  // Nothing is clickable until we know who is out. Otherwise a fast click races
+  // the lookup and skips the one warning that matters.
+  let loaded = $state(false);
 
   $effect(() => {
     void stillOutIn(app.activeClassId).then((names) => {
       stranded = names;
+      loaded = true;
     });
   });
 
   async function choose(id: string) {
-    if (busy) return;
+    if (busy || !loaded) return;
     if (id !== app.activeClassId && stranded.length && pending !== id) {
       pending = id;
       return;
@@ -53,7 +57,7 @@
               {#if room.id === app.activeClassId}<span class="current">Showing now</span>{/if}
             </div>
             {#if room.id !== app.activeClassId}
-              <button class="button small" onclick={() => choose(room.id)} disabled={busy}>Show {room.name}</button>
+              <button class="button small" onclick={() => choose(room.id)} disabled={busy || !loaded}>Show {room.name}</button>
             {/if}
           </article>
         {/each}

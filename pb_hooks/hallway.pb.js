@@ -8,9 +8,23 @@ routerAdd("GET", "/api/hallway/kiosk/pin/status", (e) => {
 }, $apis.requireAuth("teachers"));
 
 routerAdd("POST", "/api/hallway/kiosk/pin", (e) => {
-  const body = new DynamicModel({ pin: "" });
+  const body = new DynamicModel({ pin: "", current: "" });
   e.bindBody(body);
   if (!/^[0-9]{6}$/.test(body.pin)) throw new BadRequestError("Enter exactly six numbers.");
+
+  // Replacing a PIN requires proving the old one. The PIN is the only thing
+  // between kiosk mode and the teacher workspace, and the door browser holds a
+  // live teacher session -- so without this, the gate could be reset from the
+  // very screen it is meant to hold shut, rather than passed.
+  // An unset password field is still an object, so "has a PIN" is the presence
+  // of a stored hash -- the same check the status route makes.
+  if (e.auth.getString("kioskPin:hash") !== "") {
+    const savedPin = e.auth.getRaw("kioskPin");
+    if (!/^[0-9]{6}$/.test(body.current) || !savedPin.validate(body.current)) {
+      throw new BadRequestError("That is not your current PIN.");
+    }
+  }
+
   e.auth.set("kioskPin", body.pin);
   e.app.save(e.auth);
   return e.noContent(204);
@@ -53,16 +67,10 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     const prefix = student.getString("lastPrefix");
     const shownName = prefix ? student.getString("firstName") + " " + prefix + "." : student.getString("firstName");
 
-    // Each student's most recent entry says whether they are out right now. Only
-    // the recent past is read: nobody is still in the hallway after a month, and
-    // it keeps this scan from growing with the whole school year.
-    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && class = {:class} && at > {:since}", "at", 5000, 0, { teacher: teacherId, class: activeClass, since: since });
-    const latest = {};
-    for (let index = 0; index < log.length; index++) latest[log[index].getString("student")] = log[index].getString("kind");
+    const state = require(`${__hooks}/class_state.js`).readClassState(tx, teacherId, activeClass);
     let outNow = 0;
-    for (const id in latest) if (latest[id] === "out") outNow++;
-    const alreadyOut = latest[body.student] === "out";
+    for (const id in state.latest) if (state.latest[id] === "out") outNow++;
+    const alreadyOut = state.latest[body.student] === "out";
     const limit = teacher.getInt("passLimit") || 2;
 
     // How long a trip should take is the teacher's setting, never the browser's,
@@ -140,14 +148,9 @@ routerAdd("POST", "/api/hallway/class/switch", (e) => {
     const leaving = teacher.getString("activeClass");
     const closed = [];
     if (leaving && leaving !== target.id) {
-      const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-      const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && class = {:class} && at > {:since}", "at", 5000, 0, { teacher: teacherId, class: leaving, since: since });
-      const latest = {};
-      const names = {};
-      for (let index = 0; index < log.length; index++) {
-        latest[log[index].getString("student")] = log[index].getString("kind");
-        names[log[index].getString("student")] = log[index].getString("studentName");
-      }
+      const state = require(`${__hooks}/class_state.js`).readClassState(tx, teacherId, leaving);
+      const latest = state.latest;
+      const names = state.names;
       const collection = tx.findCollectionByNameOrId("pass_events");
       for (const student in latest) {
         if (latest[student] !== "out") continue;

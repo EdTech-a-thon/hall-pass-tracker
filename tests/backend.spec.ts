@@ -162,3 +162,52 @@ backendTest('switching class closes open trips and moves the door together', asy
   // Marked as ended by the switch, not as a student walking back in.
   expect(entries[1]).toMatchObject({ kind: 'in', source: 'switch', class: room.room });
 });
+
+backendTest('a corrected trip still counts as the student being out', async () => {
+  const room = await classroom('Corrected State Teacher');
+  await room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Water' },
+  });
+  const [entry] = await room.pb.collection('pass_events').getFullList();
+  // Correcting when she left writes another entry against her.
+  await room.pb.send('/api/hallway/passes/correct', {
+    method: 'POST', body: { event: entry.id, student: '', at: '2026-08-20 09:15:00.000Z' },
+  });
+
+  // If that Correction is read as her latest state, the server forgets she is
+  // out: it would refuse the return and undercount the hallway.
+  await expect(room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'in', destination: '' },
+  })).resolves.toMatchObject({ status: 'returned', out: 0 });
+});
+
+backendTest('a corrected open trip is still closed by a class switch', async () => {
+  const room = await classroom('Corrected Switch Teacher');
+  const next = await room.pb.collection('classes').create({ teacher: room.id, name: 'Period 2', position: 1, archived: false });
+  await room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Water' },
+  });
+  const [entry] = await room.pb.collection('pass_events').getFullList();
+  await room.pb.send('/api/hallway/passes/correct', {
+    method: 'POST', body: { event: entry.id, student: '', at: '2026-08-20 09:15:00.000Z' },
+  });
+
+  const result = await room.pb.send<{ closed: string[] }>('/api/hallway/class/switch', {
+    method: 'POST', body: { class: next.id },
+  });
+  // Otherwise her trip hangs open forever: the door has moved on, and nothing
+  // else can close it.
+  expect(result.closed).toEqual(['Avery B.']);
+});
+
+backendTest('replacing the kiosk PIN requires the current one', async () => {
+  const room = await classroom('PIN Change Teacher');
+  await room.pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin: '123456', current: '' } });
+  // The PIN is the only thing between the door screen and the workspace, and
+  // that browser holds a live teacher session.
+  await expect(room.pb.send('/api/hallway/kiosk/pin', {
+    method: 'POST', body: { pin: '999999', current: '000000' },
+  })).rejects.toMatchObject({ status: 400 });
+  await room.pb.send('/api/hallway/kiosk/pin', { method: 'POST', body: { pin: '999999', current: '123456' } });
+  await expect(room.pb.send('/api/hallway/kiosk/pin/verify', { method: 'POST', body: { pin: '999999' } })).resolves.toEqual({});
+});

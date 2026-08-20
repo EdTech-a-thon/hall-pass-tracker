@@ -4,6 +4,7 @@
   let { purpose }: { purpose: 'setup' | 'exit' | 'change' | 'switch' } = $props();
   let pin = $state('');
   let confirmPin = $state('');
+  let currentPin = $state('');
   let error = $state('');
   let saving = $state(false);
 
@@ -31,7 +32,9 @@
     }
     saving = true;
     const submittedPurpose = purpose;
-    const result = verifying ? await verifyKioskPin(pin, submittedPurpose as 'exit' | 'switch') : await saveKioskPin(pin);
+    const result = verifying
+      ? await verifyKioskPin(pin, submittedPurpose as 'exit' | 'switch')
+      : await saveKioskPin(pin, currentPin);
     saving = false;
     if (result) {
       error = result;
@@ -58,6 +61,12 @@
         Six-digit PIN
         <input bind:value={pin} name="pin" type="password" inputmode="numeric" pattern={'[0-9]{6}'} minlength="6" maxlength="6" autocomplete="off" required />
       </label>
+      {#if purpose === 'change'}
+        <label>
+          Your current PIN
+          <input bind:value={currentPin} name="currentPin" type="password" inputmode="numeric" pattern={'[0-9]{6}'} minlength="6" maxlength="6" autocomplete="off" required />
+        </label>
+      {/if}
       {#if !verifying}
         <label>
           Confirm PIN

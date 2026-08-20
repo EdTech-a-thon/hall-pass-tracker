@@ -92,8 +92,15 @@ async function stubKioskBackend(
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
       return;
     }
+    // Mirrors readClassState in the hook: corrections are laid over the entries
+    // they amend rather than read as anyone's current state.
+    const amended: Record<string, string> = {};
+    for (const event of log) if (event.kind === 'fix' && event.corrects && event.newStudent) amended[event.corrects] = event.newStudent;
     const latest: Record<string, string> = {};
-    for (const event of log) latest[event.student] = event.kind;
+    for (const event of log) {
+      if (event.kind === 'fix') continue;
+      latest[amended[event.id] ?? event.student] = event.kind;
+    }
     const outNow = Object.values(latest).filter((kind) => kind === 'out').length;
     if (body.kind === 'out' && outNow >= limit) {
       await route.fulfill({ json: { status: 'denied', name: shown(student), out: outNow, limit } });
@@ -133,8 +140,9 @@ async function openKiosk(page: Page, options: { limit?: number; log?: Event[] } 
 async function stubTeacherBackend(
   page: Page,
   log = sampleLog(),
-  options: { classes?: typeof sampleClasses; activeClass?: string; limit?: number } = {},
+  options: { classes?: typeof sampleClasses; activeClass?: string; limit?: number; hasPin?: boolean } = {},
 ) {
+  let hasPin = options.hasPin !== false;
   const classes = options.classes ? [...options.classes] : [...sampleClasses];
   let activeClass = options.activeClass ?? periodOne;
   let destinations = sampleDestinations.map((item) => ({ ...item }));
@@ -202,6 +210,10 @@ async function stubTeacherBackend(
   await page.route('**/api/collections/pass_events/records*', async (route) => {
     if (route.request().method() === 'POST') {
       const created = { id: `t${log.length}`, ...(route.request().postDataJSON() as object), at: minutesAgo(0) } as Event;
+      if (!created.class) {
+        await route.fulfill({ status: 400, json: { message: 'Failed to create record.', data: { class: { message: 'Cannot be blank.' } } } });
+        return;
+      }
       log.push(created);
       await route.fulfill({ json: created });
       return;
@@ -218,12 +230,22 @@ async function stubTeacherBackend(
     }
     await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3, activeClass, destinations } });
   });
-  await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: true } }));
+  await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin } }));
   await page.route('**/api/hallway/kiosk/pin/verify', async (route) => {
     const { pin } = route.request().postDataJSON() as { pin: string };
     await route.fulfill(pin === '123456' ? { json: {} } : { status: 400, json: { message: 'That PIN is incorrect.' } });
   });
-  await page.route('**/api/hallway/kiosk/pin', async (route) => await route.fulfill({ json: {} }));
+  await page.route('**/api/hallway/kiosk/pin', async (route) => {
+    const body = route.request().postDataJSON() as { pin: string; current?: string };
+    // Setting a first PIN needs nothing; replacing one must prove the old one,
+    // exactly as the route does.
+    if (hasPin && body.current !== '123456') {
+      await route.fulfill({ status: 400, json: { message: 'That is not your current PIN.' } });
+      return;
+    }
+    hasPin = true;
+    await route.fulfill({ json: {} });
+  });
 
   await page.route('**/api/hallway/passes/correct', async (route) => {
     const fix = route.request().postDataJSON() as { event: string; student: string; at: string };
@@ -244,10 +266,12 @@ async function stubTeacherBackend(
     const wanted = (route.request().postDataJSON() as { class: string }).class;
     const latest: Record<string, string> = {};
     const names: Record<string, string> = {};
+    const amended: Record<string, string> = {};
+    for (const event of log) if (event.kind === 'fix' && event.corrects && event.newStudent) amended[event.corrects] = event.newStudent;
     for (const event of log) {
-      if (event.class !== activeClass) continue;
-      latest[event.student] = event.kind;
-      names[event.student] = event.studentName;
+      if (event.class !== activeClass || event.kind === 'fix') continue;
+      latest[amended[event.id] ?? event.student] = event.kind;
+      names[amended[event.id] ?? event.student] = event.studentName;
     }
     const closed: string[] = [];
     for (const student of Object.keys(latest)) {
@@ -265,7 +289,7 @@ async function stubTeacherBackend(
   await stubKioskBackend(page, { ...options, log, activeClassOf: () => activeClass, destinations: () => destinations });
 }
 
-async function openTeacher(page: Page, options: { limit?: number; log?: Event[] } = {}) {
+async function openTeacher(page: Page, options: { limit?: number; log?: Event[]; hasPin?: boolean } = {}) {
   await stubTeacherBackend(page, options.log, options);
   await page.goto('/');
   await page.getByLabel('Email address').fill('teacher@school.edu');
@@ -283,8 +307,7 @@ test('a classroom device opens on teacher sign-in', async ({ page }) => {
 });
 
 test('the first kiosk session asks the teacher to create a six-digit PIN', async ({ page }) => {
-  await openTeacher(page);
-  await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: false } }));
+  await openTeacher(page, { hasPin: false });
   await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
   await expect(page.getByRole('heading', { name: 'Create your kiosk PIN' })).toBeVisible();
   await page.getByLabel('Six-digit PIN').fill('123456');
@@ -428,6 +451,7 @@ test('teacher can set a new kiosk PIN from Profile', async ({ page }) => {
   await openTeacher(page);
   await page.getByRole('button', { name: 'Profile' }).click();
   await page.getByRole('button', { name: 'Set a new PIN' }).click();
+  await page.getByLabel('Your current PIN').fill('123456');
   await page.getByLabel('Six-digit PIN').fill('654321');
   await page.getByLabel('Confirm PIN').fill('654321');
   await page.getByRole('button', { name: 'Save new PIN' }).click();
@@ -503,7 +527,9 @@ async function openRoster(page: Page, className = 'Period 1') {
 }
 
 test('pasted names are shortened, and two Mayas are told apart automatically', async ({ page }) => {
-  await openRoster(page);
+  // Period 2 has no Maya yet, so this exercises the prefix rule on its own
+  // rather than tangling with an existing "Maya C." who could be either.
+  await openRoster(page, 'Period 2');
   await page.getByLabel('Paste your class list').fill('Maya Chen\nMaya Chavez');
   await page.getByRole('button', { name: 'Preview import' }).click();
   // One letter is not enough to separate Chen from Chavez, so both grow to three.
@@ -786,4 +812,80 @@ test('the weekly chart says when there is not enough history rather than drawing
   await expect(page.locator('.bar-chart')).toHaveCount(0);
   // And no invented total.
   await expect(page.locator('.chart-card')).toContainText('0 total');
+});
+
+// --- regressions found by code review ---------------------------------------
+
+test('marking a student returned from the dashboard actually records it', async ({ page }) => {
+  await openTeacher(page);
+  await expect(page.locator('.student-cards')).toContainText('Noah W.');
+  await page.getByRole('button', { name: 'Mark returned' }).click();
+  // The entry has to carry the Class it belongs to, or the database refuses it
+  // and the student stays out forever with nothing shown to the teacher.
+  await expect(page.locator('.student-cards')).toContainText('Everyone is back in class');
+});
+
+test('a student whose trip was corrected can still sign back in at the door', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  // Noah is still out; correct when he left.
+  await page.getByRole('button', { name: 'Correct Noah W.' }).click();
+  await page.getByLabel('Left at').fill('2026-08-20T09:15');
+  await page.getByRole('button', { name: 'Save correction' }).click();
+
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  // A correction is an entry too. If it is read as Noah's latest state, the
+  // door screen forgets he is out and refuses to let him back in.
+  await expect(tile(page, 'Noah W.')).toContainText('Out —');
+  await tile(page, 'Noah W.').click();
+  await expect(page.getByRole('status')).toContainText('WELCOME BACK');
+});
+
+test('archiving the class on the door moves the door screen with it', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Classes' }).click();
+  await page.getByRole('button', { name: 'Archive Period 1' }).click();
+  await expect(page.getByRole('heading', { name: 'Period 1' })).toBeHidden();
+
+  // The kiosk resolves students against the Class the account says is active.
+  // If that is still the archived one, every tap fails.
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await expect(tile(page, 'Riley O.')).toBeVisible();
+  await tile(page, 'Riley O.').click();
+  await page.getByRole('button', { name: 'Water', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveClass(/approved/);
+});
+
+test('an import that could mean either of two students refuses to guess', async ({ page }) => {
+  await openRoster(page);
+  // The roster holds "Maya C.". Both of these start with C, so folding either
+  // into her record would silently give one student another's history.
+  await page.getByLabel('Paste your class list').fill('Maya Carter\nMaya Chen');
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByRole('alert')).toContainText('is already on this roster');
+  await expect(page.getByRole('alert')).toContainText('Maya Carter');
+  await expect(page.getByRole('alert')).toContainText('Maya Chen');
+  await expect(page.getByRole('button', { name: 'Save roster' })).toBeHidden();
+});
+
+test('changing the kiosk PIN requires the current one', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Profile' }).click();
+  await page.getByRole('button', { name: 'Set a new PIN' }).click();
+  await page.getByLabel('Your current PIN').fill('000000');
+  await page.getByLabel('Six-digit PIN').fill('654321');
+  await page.getByLabel('Confirm PIN').fill('654321');
+  await page.getByRole('button', { name: 'Save new PIN' }).click();
+  await expect(page.getByRole('alert')).toContainText('not your current PIN');
+});
+
+test('a correction cannot move a departure past its own return', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  await page.getByRole('button', { name: 'Correct Sofia R.' }).click();
+  // Sofia came back an hour ago; claiming she left tomorrow would open a trip
+  // nothing can ever close.
+  await page.getByLabel('Left at').fill('2030-01-01T09:00');
+  await page.getByRole('button', { name: 'Save correction' }).click();
+  await expect(page.getByRole('alert')).toContainText('cannot come back before they left');
 });
