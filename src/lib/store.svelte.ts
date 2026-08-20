@@ -4,7 +4,7 @@ import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
 import { displayName, planImport } from './roster';
 import type { ImportPlan } from './roster';
-import type { ActiveClass, Class, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
+import type { ActiveClass, Class, Destination, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
  * Everything the screens read. It is a single reactive object so that any
@@ -16,6 +16,8 @@ export const app = $state({
   classes: [] as Class[],
   /** The Class the door screen is showing. Lives on the account, not the browser. */
   activeClassId: '',
+  /** Where students may go. One account-wide list, each with its expected minutes. */
+  destinations: [] as Destination[],
   /** The roster the teacher is editing, including Former Students. */
   roster: [] as Student[],
   /** The Class whose roster is open for editing, which is not the Active Class. */
@@ -56,8 +58,21 @@ export function teacherName() {
 // ---------------------------------------------------------------------------
 
 /** Every Class the teacher still runs. Archived ones keep their history but drop out here. */
+function readDestinations() {
+  const raw = pb.authStore.record?.destinations;
+  app.destinations = Array.isArray(raw)
+    ? raw.map((item) => ({ label: String(item.label || ''), minutes: Number(item.minutes) || 1 })).filter((item) => item.label)
+    : [];
+}
+
+export async function saveDestinations(destinations: Destination[]) {
+  app.destinations = destinations;
+  await pb.collection('teachers').update(teacherId(), { destinations });
+}
+
 export async function loadClasses() {
   const teacher = teacherId();
+  readDestinations();
   const records = await pb.collection('classes').getFullList({
     filter: pb.filter('teacher = {:teacher} && archived = false', { teacher }),
     sort: 'position',
@@ -403,12 +418,14 @@ function serverMessage(caught: unknown, fallback: string) {
  * Sends one line to the hall pass log. Whether the pass is allowed is decided by
  * the server, because a kiosk may not read the log it writes to.
  */
-async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination = '', minutes = 0) {
+async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination = '') {
   app.modal = null;
   try {
+    // How long the trip should take is the teacher's setting, so the kiosk sends
+    // only where the student is going and the server decides the rest.
     const result = await pb.send<{ status: string; name: string; destination: string; minutes: number; outAt: string; out: number; limit: number }>(
       '/api/hallway/kiosk/events',
-      { method: 'POST', body: { studentId: student.id, kind, destination, minutes } },
+      { method: 'POST', body: { studentId: student.id, kind, destination } },
     );
     if (result.status === 'denied') {
       showNotice({
@@ -434,8 +451,8 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination 
   }
 }
 
-export function requestPass(student: Student, destination: string, minutes: number) {
-  return sendKioskEvent(student, 'out', destination, minutes);
+export function requestPass(student: Student, destination: string) {
+  return sendKioskEvent(student, 'out', destination);
 }
 
 export function signBackIn(student: Student) {

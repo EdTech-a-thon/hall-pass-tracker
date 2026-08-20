@@ -29,6 +29,14 @@ const roster = [
   { id: '7788', firstName: 'Riley', lastPrefix: 'O', class: periodTwo },
 ];
 
+/** The teacher's own Destination list, each with the minutes a trip should take. */
+const sampleDestinations = [
+  { label: 'Restroom', minutes: 8 },
+  { label: 'Water', minutes: 5 },
+  { label: 'Main office', minutes: 10 },
+  { label: 'Counselor', minutes: 20 },
+];
+
 function shown(student: { firstName: string; lastPrefix: string }) {
   return student.lastPrefix ? `${student.firstName} ${student.lastPrefix}.` : student.firstName;
 }
@@ -61,13 +69,20 @@ function list(items: unknown[]) {
  * real route does, so these tests exercise a kiosk that genuinely cannot read
  * the log it writes to.
  */
-async function stubKioskBackend(page: Page, options: { limit?: number; log?: Event[]; activeClass?: string } = {}) {
+async function stubKioskBackend(
+  page: Page,
+  options: { limit?: number; log?: Event[]; activeClass?: string; destinations?: () => { label: string; minutes: number }[] } = {},
+) {
   const limit = options.limit ?? 2;
   const log = options.log ?? sampleLog();
   const activeClass = options.activeClass ?? periodOne;
+  const currentDestinations = options.destinations ?? (() => sampleDestinations);
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
-    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string; minutes: number };
+    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string };
+    // The expected minutes are the teacher's setting, looked up here exactly as
+    // the real route does, rather than anything the browser gets to claim.
+    const minutes = currentDestinations().find((item) => item.label === body.destination)?.minutes ?? 0;
     const student = roster.find((item) => item.id === body.studentId && item.class === activeClass);
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
@@ -81,11 +96,11 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
       return;
     }
     const at = minutesAgo(0);
-    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes: body.minutes, source: 'kiosk', signedInBy: '', at });
+    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source: 'kiosk', signedInBy: '', at });
     await route.fulfill({
       json: {
         status: body.kind === 'out' ? 'approved' : 'returned',
-        name: shown(student), destination: body.destination, minutes: body.minutes, outAt: at,
+        name: shown(student), destination: body.destination, minutes, outAt: at,
         out: body.kind === 'out' ? outNow + 1 : outNow - 1, limit,
       },
     });
@@ -93,15 +108,19 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
 }
 
 async function openKiosk(page: Page, options: { limit?: number; log?: Event[] } = {}) {
-  await stubKioskBackend(page, options);
-  await openTeacher(page);
+  await openTeacher(page, options);
   await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
   await expect(page.getByLabel('Student ID')).toBeVisible();
 }
 
-async function stubTeacherBackend(page: Page, log = sampleLog(), options: { classes?: typeof sampleClasses; activeClass?: string } = {}) {
+async function stubTeacherBackend(
+  page: Page,
+  log = sampleLog(),
+  options: { classes?: typeof sampleClasses; activeClass?: string; limit?: number } = {},
+) {
   const classes = options.classes ? [...options.classes] : [...sampleClasses];
   let activeClass = options.activeClass ?? periodOne;
+  let destinations = sampleDestinations.map((item) => ({ ...item }));
 
   await page.route('**/api/collections/classes/records*', async (route) => {
     if (route.request().method() === 'POST') {
@@ -127,7 +146,7 @@ async function stubTeacherBackend(page: Page, log = sampleLog(), options: { clas
   });
 
   await page.route('**/api/collections/teachers/auth-with-password', async (route) => {
-    await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2, activeClass } } });
+    await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2, activeClass, destinations: sampleDestinations } } });
   });
   const students = roster.map((student) => ({
     id: `rec${student.id}`, studentId: student.id, teacher: teacherId,
@@ -172,10 +191,11 @@ async function stubTeacherBackend(page: Page, log = sampleLog(), options: { clas
   });
   await page.route('**/api/collections/teachers/records/*', async (route) => {
     if (route.request().method() === 'PATCH') {
-      const patch = route.request().postDataJSON() as { activeClass?: string };
+      const patch = route.request().postDataJSON() as { activeClass?: string; destinations?: typeof destinations };
       if (patch.activeClass) activeClass = patch.activeClass;
+      if (patch.destinations) destinations = patch.destinations;
     }
-    await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3, activeClass } });
+    await route.fulfill({ json: { id: teacherId, collectionName: 'teachers', displayName: 'Ms. Rivera', passLimit: 3, activeClass, destinations } });
   });
   await page.route('**/api/hallway/kiosk/pin/status', async (route) => await route.fulfill({ json: { hasPin: true } }));
   await page.route('**/api/hallway/kiosk/pin/verify', async (route) => {
@@ -183,10 +203,12 @@ async function stubTeacherBackend(page: Page, log = sampleLog(), options: { clas
     await route.fulfill(pin === '123456' ? { json: {} } : { status: 400, json: { message: 'That PIN is incorrect.' } });
   });
   await page.route('**/api/hallway/kiosk/pin', async (route) => await route.fulfill({ json: {} }));
+
+  await stubKioskBackend(page, { ...options, log, activeClass, destinations: () => destinations });
 }
 
-async function openTeacher(page: Page) {
-  await stubTeacherBackend(page);
+async function openTeacher(page: Page, options: { limit?: number; log?: Event[] } = {}) {
+  await stubTeacherBackend(page, options.log, options);
   await page.goto('/');
   await page.getByLabel('Email address').fill('teacher@school.edu');
   await page.getByLabel('Password').fill('a-secure-teacher-password');
@@ -299,12 +321,13 @@ test('student selects a destination and receives a distance-readable approval', 
   await page.getByLabel('Student ID').fill('5620');
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByText('Water', { exact: true }).click();
-  await page.getByLabel(/How long/).selectOption('10');
+  await expect(page.getByLabel(/How long/)).toBeHidden();
   await page.getByRole('button', { name: 'Request hall pass' }).click();
   const notice = page.getByRole('status');
   await expect(notice).toHaveClass(/approved/);
   await expect(notice.getByRole('heading')).toHaveText('Avery B.');
-  await expect(notice).toContainText('Return in 10 minutes');
+  // Five minutes is what the teacher set for Water, not anything the student picked.
+  await expect(notice).toContainText('Return in 5 minutes');
 });
 
 test('the server refuses a pass over the limit and the kiosk explains without naming anyone', async ({ page }) => {
@@ -477,4 +500,46 @@ test('a student who leaves keeps their history instead of being deleted', async 
   await expect(page.getByText('NO LONGER IN THIS CLASS')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sofia R.' })).toBeVisible();
   await expect(page.getByText('History kept')).toBeVisible();
+});
+
+test('the kiosk offers exactly the destinations the teacher set', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Profile' }).click();
+  await page.getByLabel('Name of the new destination').fill('Nurse');
+  await page.getByLabel('Expected minutes', { exact: true }).fill('20');
+  await page.getByRole('button', { name: 'Add destination' }).click();
+  await expect(page.getByRole('heading', { name: 'Nurse' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Remove Counselor' }).click();
+  await expect(page.getByRole('heading', { name: 'Counselor' })).toBeHidden();
+
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await page.getByLabel('Student ID').fill('5620');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.getByText('Nurse', { exact: true })).toBeVisible();
+  await expect(page.getByText('Counselor', { exact: true })).toBeHidden();
+});
+
+test('a destination carries its own expected minutes to the confirmation', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Profile' }).click();
+  await page.getByLabel('Minutes for Water').fill('3');
+  await page.getByLabel('Minutes for Water').blur();
+  await page.getByRole('button', { name: 'Enter kiosk mode' }).first().click();
+  await page.getByLabel('Student ID').fill('5620');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByText('Water', { exact: true }).click();
+  await page.getByRole('button', { name: 'Request hall pass' }).click();
+  await expect(page.getByRole('status')).toContainText('Return in 3 minutes');
+});
+
+test('the destination breakdown comes from real trips, not a fixed list', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  const breakdown = page.locator('.destinations');
+  // The sample log has one trip each to Counselor, Water, Restroom and Main office.
+  await expect(breakdown).toContainText('Restroom');
+  await expect(breakdown).toContainText('25%');
+  // The old hardcoded shares are gone.
+  await expect(breakdown).not.toContainText('42%');
 });

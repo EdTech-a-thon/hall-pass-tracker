@@ -4,13 +4,11 @@
 
   let { student }: { student: Student } = $props();
 
-  const destinations = ['Restroom', 'Water', 'Main office', 'Counselor'];
-  let destination = $state(destinations[0]);
-  let minutes = $state(8);
+  let destination = $state(app.destinations[0]?.label ?? '');
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
-    void requestPass(student, destination, minutes);
+    void requestPass(student, destination);
   }
 </script>
 
@@ -23,23 +21,14 @@
       <fieldset>
         <legend>Where are you going?</legend>
         <div class="choice-grid">
-          {#each destinations as option (option)}
+          {#each app.destinations as option (option.label)}
             <label class="choice">
-              <input type="radio" name="destination" value={option} bind:group={destination} />
-              <span>{option}</span>
+              <input type="radio" name="destination" value={option.label} bind:group={destination} />
+              <span>{option.label}</span>
             </label>
           {/each}
         </div>
       </fieldset>
-      <label>
-        How long do you expect to be gone?
-        <select name="minutes" bind:value={minutes}>
-          <option value={5}>5 minutes</option>
-          <option value={8}>8 minutes</option>
-          <option value={10}>10 minutes</option>
-          <option value={15}>15 minutes</option>
-        </select>
-      </label>
       <button class="button primary full" type="submit">Request hall pass</button>
     </form>
     <!-- The kiosk cannot look up whether this student is already out, so coming

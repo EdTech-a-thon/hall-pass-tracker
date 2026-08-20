@@ -12,12 +12,22 @@
     { day: 'T', height: 64 },
     { day: 'F', height: 24 },
   ];
-  const destinations = [
-    { label: 'Restroom', dot: 'blue-dot', share: '42%' },
-    { label: 'Water', dot: 'green-dot', share: '29%' },
-    { label: 'Main office', dot: 'amber-dot', share: '17%' },
-    { label: 'Counselor', dot: 'gray-dot', share: '12%' },
-  ];
+  const dots = ['blue-dot', 'green-dot', 'amber-dot', 'gray-dot'];
+
+  /** Where this Class actually goes, rather than a fixed list that would soon
+      contradict whatever the teacher has configured. */
+  const destinations = $derived.by(() => {
+    const trips = app.activeClass.passes.filter((pass) => pass.destination);
+    const counts = new Map<string, number>();
+    for (const pass of trips) counts.set(pass.destination, (counts.get(pass.destination) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((first, second) => second[1] - first[1])
+      .map(([label, count], index) => ({
+        label,
+        dot: dots[index % dots.length],
+        share: `${Math.round((count / trips.length) * 100)}%`,
+      }));
+  });
 </script>
 
 <section class="workspace-head">
@@ -50,6 +60,8 @@
     <h2>Where students go</h2>
     {#each destinations as destination (destination.label)}
       <div><span><i class="dot {destination.dot}"></i>{destination.label}</span><strong>{destination.share}</strong></div>
+    {:else}
+      <div class="empty-state">No trips recorded yet.</div>
     {/each}
   </article>
 </section>

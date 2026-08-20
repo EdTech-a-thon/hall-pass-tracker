@@ -42,6 +42,12 @@ export type Pass = {
   signedInBy?: string;
 };
 
+/**
+ * A place a student may go. The teacher owns the list for their whole account,
+ * and the expected minutes are frozen onto a Pass when the student leaves.
+ */
+export type Destination = { label: string; minutes: number };
+
 /** A group of students a teacher sees together during one period. */
 export type Class = { id: string; name: string; position: number; archived: boolean };
 

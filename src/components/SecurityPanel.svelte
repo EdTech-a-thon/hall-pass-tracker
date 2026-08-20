@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app, beginKioskMode, teacherName } from '../lib/store.svelte';
+  import DestinationsPanel from './DestinationsPanel.svelte';
 </script>
 
 <section class="workspace-head">
@@ -9,6 +10,8 @@
     <p>Manage your teacher account and kiosk access.</p>
   </div>
 </section>
+
+<DestinationsPanel />
 
 <section class="security-grid">
   <article class="panel">
