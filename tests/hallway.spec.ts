@@ -543,3 +543,39 @@ test('the destination breakdown comes from real trips, not a fixed list', async 
   // The old hardcoded shares are gone.
   await expect(breakdown).not.toContainText('42%');
 });
+
+/** A log with one student well past their expected time, and one comfortably inside it. */
+function overdueLog(): Event[] {
+  const base = { destination: '', minutes: 0, source: 'kiosk', signedInBy: '', class: periodOne };
+  return [
+    { ...base, id: 'o1', studentId: '1042', studentName: 'Maya C.', kind: 'out', destination: 'Restroom', minutes: 8, at: minutesAgo(20) },
+    { ...base, id: 'o2', studentId: '2381', studentName: 'Jordan E.', kind: 'out', destination: 'Counselor', minutes: 20, at: minutesAgo(4) },
+  ];
+}
+
+test('a student past their expected time is flagged overdue on the dashboard', async ({ page }) => {
+  await openTeacher(page, { log: overdueLog(), limit: 5 });
+  const cards = page.locator('.student-cards');
+  await expect(cards).toContainText('Maya C.');
+  await expect(cards.locator('article', { hasText: 'Maya C.' })).toContainText('Overdue');
+  // Jordan is four minutes into a twenty minute trip; nothing is wrong yet.
+  await expect(cards.locator('article', { hasText: 'Jordan E.' })).not.toContainText('Overdue');
+});
+
+test('a finished pass that ran over keeps its overdue flag in history', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  // Sofia was out eighteen minutes on a trip the teacher expected to take fifteen.
+  const row = page.locator('tr', { hasText: 'Sofia R.' });
+  await expect(row).toContainText('Overdue');
+  // Jordan's eight minute restroom trip took eight minutes.
+  await expect(page.locator('tr', { hasText: 'Jordan E.' })).not.toContainText('Overdue');
+});
+
+test('the door screen never shows a clock or an overdue flag against a student', async ({ page }) => {
+  await openKiosk(page, { log: overdueLog(), limit: 5 });
+  const kiosk = page.locator('.app-shell.kiosk');
+  await expect(kiosk).not.toContainText('Overdue');
+  await expect(kiosk).not.toContainText('min');
+  await expect(kiosk).not.toContainText('Maya C.');
+});

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { duration } from '../lib/passes';
+  import { duration, isOverdue } from '../lib/passes';
   import { app, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
   const finished = $derived(app.activeClass.passes.filter((pass) => pass.inAt));
+  const overdueNow = $derived(out().filter(isOverdue).length);
   const averageTrip = $derived(
     finished.length ? Math.round(finished.reduce((sum, pass) => sum + duration(pass), 0) / finished.length) : 0,
   );
@@ -25,8 +26,8 @@
   </article>
   <article>
     <span class="stat-icon amber">◷</span>
-    <p>Passes today</p>
-    <strong>{app.activeClass.passes.length}<small> total trips</small></strong>
+    <p>Overdue right now</p>
+    <strong>{overdueNow}<small> past their time</small></strong>
   </article>
   <article>
     <span class="stat-icon blue">≈</span>
@@ -56,7 +57,12 @@
         <div class="avatar">{pass.studentName.charAt(0)}</div>
         <div>
           <h3>{pass.studentName}</h3>
-          <p>{pass.destination} · out {duration(pass)} min</p>
+          <p>
+            {pass.destination} · out {duration(pass)} min
+            {#if isOverdue(pass)}
+              <span class="overdue-flag">Overdue · expected {pass.minutes} min</span>
+            {/if}
+          </p>
         </div>
         <button class="button small" onclick={() => markReturned(pass.id)}>Mark returned</button>
       </article>

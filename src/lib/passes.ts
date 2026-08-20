@@ -54,6 +54,16 @@ export function duration(pass: Pass) {
   return Math.max(1, Math.round((end - toDate(pass.outAt).getTime()) / 60_000));
 }
 
+/**
+ * A Pass that has lasted longer than the minutes frozen onto it when the student
+ * left. There is no grace period: the teacher set the number, so the app does
+ * not quietly pad it. This is a judgement for the teacher's dashboard only --
+ * kiosk mode never shows it. See docs/adr/0003.
+ */
+export function isOverdue(pass: Pass) {
+  return pass.minutes > 0 && duration(pass) > pass.minutes;
+}
+
 export function dueTime(pass: Pass) {
   return dueTimeFrom(pass.outAt, pass.minutes);
 }

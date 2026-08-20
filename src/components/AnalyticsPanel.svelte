@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { duration, time } from '../lib/passes';
+  import { duration, isOverdue, time } from '../lib/passes';
   import { app } from '../lib/store.svelte';
 
   const rows = $derived([...app.activeClass.passes].reverse());
@@ -85,7 +85,10 @@
             <td><strong>{pass.studentName}</strong></td>
             <td>{pass.destination}</td>
             <td>{time(pass.outAt)}</td>
-            <td>{duration(pass)} min</td>
+            <td>
+              {duration(pass)} min
+              {#if isOverdue(pass)}<span class="overdue-flag">Overdue</span>{/if}
+            </td>
             <td>
               {#if !pass.inAt}
                 <span class="out-status">Still out</span>
