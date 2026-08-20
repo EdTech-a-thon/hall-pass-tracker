@@ -16,21 +16,29 @@ const sampleClasses = [
   { id: periodTwo, teacher: teacherId, name: 'Period 2', position: 1, archived: false },
 ];
 
+/**
+ * Rosters store a first name and a last-name prefix, never a full last name.
+ * "Maya C." is the whole of what Hallway knows about her. See docs/adr/0001.
+ */
 const roster = [
-  { id: '1042', name: 'Maya Chen', class: periodOne },
-  { id: '2381', name: 'Jordan Ellis', class: periodOne },
-  { id: '3077', name: 'Sofia Ramirez', class: periodOne },
-  { id: '4419', name: 'Noah Williams', class: periodOne },
-  { id: '5620', name: 'Avery Brooks', class: periodOne },
-  { id: '7788', name: 'Riley Okafor', class: periodTwo },
+  { id: '1042', firstName: 'Maya', lastPrefix: 'C', class: periodOne },
+  { id: '2381', firstName: 'Jordan', lastPrefix: 'E', class: periodOne },
+  { id: '3077', firstName: 'Sofia', lastPrefix: 'R', class: periodOne },
+  { id: '4419', firstName: 'Noah', lastPrefix: 'W', class: periodOne },
+  { id: '5620', firstName: 'Avery', lastPrefix: 'B', class: periodOne },
+  { id: '7788', firstName: 'Riley', lastPrefix: 'O', class: periodTwo },
 ];
+
+function shown(student: { firstName: string; lastPrefix: string }) {
+  return student.lastPrefix ? `${student.firstName} ${student.lastPrefix}.` : student.firstName;
+}
 
 type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
 
 /** The same class the old demo data described, written as a log of exits and returns. */
 function sampleLog(): Event[] {
   const entry = (id: string, studentId: string, kind: 'out' | 'in', at: number, extra: Partial<Event> = {}): Event => ({
-    id, studentId, studentName: roster.find((student) => student.id === studentId)!.name,
+    id, studentId, studentName: shown(roster.find((student) => student.id === studentId)!),
     kind, destination: '', minutes: 0, source: 'kiosk', signedInBy: '', class: periodOne, at: minutesAgo(at), ...extra,
   });
   return [
@@ -69,15 +77,15 @@ async function stubKioskBackend(page: Page, options: { limit?: number; log?: Eve
     for (const event of log) latest[event.studentId] = event.kind;
     const outNow = Object.values(latest).filter((kind) => kind === 'out').length;
     if (body.kind === 'out' && outNow >= limit) {
-      await route.fulfill({ json: { status: 'denied', name: student.name, out: outNow, limit } });
+      await route.fulfill({ json: { status: 'denied', name: shown(student), out: outNow, limit } });
       return;
     }
     const at = minutesAgo(0);
-    log.push({ id: `new${log.length}`, studentId: student.id, studentName: student.name, kind: body.kind, destination: body.destination, minutes: body.minutes, source: 'kiosk', signedInBy: '', at });
+    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes: body.minutes, source: 'kiosk', signedInBy: '', at });
     await route.fulfill({
       json: {
         status: body.kind === 'out' ? 'approved' : 'returned',
-        name: student.name, destination: body.destination, minutes: body.minutes, outAt: at,
+        name: shown(student), destination: body.destination, minutes: body.minutes, outAt: at,
         out: body.kind === 'out' ? outNow + 1 : outNow - 1, limit,
       },
     });
@@ -121,10 +129,39 @@ async function stubTeacherBackend(page: Page, log = sampleLog(), options: { clas
   await page.route('**/api/collections/teachers/auth-with-password', async (route) => {
     await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2, activeClass } } });
   });
+  const students = roster.map((student) => ({
+    id: `rec${student.id}`, studentId: student.id, teacher: teacherId,
+    class: student.class, firstName: student.firstName, lastPrefix: student.lastPrefix, status: 'current',
+  }));
+  let issued = 0;
+
   await page.route('**/api/collections/students/records*', async (route) => {
-    const wanted = decodeURIComponent(route.request().url()).includes(periodTwo) ? periodTwo : activeClass;
-    const mine = roster.filter((student) => student.class === wanted);
-    await route.fulfill({ json: list(mine.map((student) => ({ id: `rec${student.id}`, studentId: student.id, name: student.name, teacher: teacherId, class: student.class }))) });
+    if (route.request().method() === 'POST') {
+      issued += 1;
+      const created = { id: `recnew${issued}`, teacher: teacherId, status: 'current', ...(route.request().postDataJSON() as object) };
+      students.push(created as (typeof students)[number]);
+      await route.fulfill({ json: created });
+      return;
+    }
+    const url = decodeURIComponent(route.request().url());
+    const wanted = url.includes(periodTwo) ? periodTwo : activeClass;
+    await route.fulfill({ json: list(students.filter((student) => student.class === wanted)) });
+  });
+
+  await page.route('**/api/collections/students/records/*', async (route) => {
+    const id = route.request().url().split('/').pop()!.split('?')[0];
+    const index = students.findIndex((student) => student.id === id);
+    if (index < 0) {
+      await route.fulfill({ status: 404, json: { message: 'No such student.' } });
+      return;
+    }
+    if (route.request().method() === 'DELETE') {
+      students.splice(index, 1);
+      await route.fulfill({ status: 204, body: '' });
+      return;
+    }
+    Object.assign(students[index], route.request().postDataJSON() as object);
+    await route.fulfill({ json: students[index] });
   });
   await page.route('**/api/collections/pass_events/records*', async (route) => {
     if (route.request().method() === 'POST') {
@@ -266,7 +303,7 @@ test('student selects a destination and receives a distance-readable approval', 
   await page.getByRole('button', { name: 'Request hall pass' }).click();
   const notice = page.getByRole('status');
   await expect(notice).toHaveClass(/approved/);
-  await expect(notice.getByRole('heading')).toHaveText('Avery Brooks');
+  await expect(notice.getByRole('heading')).toHaveText('Avery B.');
   await expect(notice).toContainText('Return in 10 minutes');
 });
 
@@ -284,8 +321,8 @@ test('the server refuses a pass over the limit and the kiosk explains without na
   await expect(notice).toHaveClass(/denied/);
   await expect(notice).toContainText('hallway limit has been reached');
   await expect(notice).toContainText('2 of 2 students are out right now');
-  await expect(notice).not.toContainText('Noah Williams');
-  await expect(notice).not.toContainText('Avery Brooks');
+  await expect(notice).not.toContainText('Noah W.');
+  await expect(notice).not.toContainText('Avery B.');
 });
 
 test('student can sign themselves back in with the same ID', async ({ page }) => {
@@ -294,7 +331,7 @@ test('student can sign themselves back in with the same ID', async ({ page }) =>
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByRole('button', { name: 'I am back in class' }).click();
   await expect(page.getByRole('status')).toContainText('WELCOME BACK');
-  await expect(page.getByRole('status').getByRole('heading')).toHaveText('Noah Williams');
+  await expect(page.getByRole('status').getByRole('heading')).toHaveText('Noah W.');
 });
 
 test('teacher workspace exposes limits, analytics, and third-party check-in markers', async ({ page }) => {
@@ -373,12 +410,71 @@ test('exactly one Class is marked as the one the door screen is showing', async 
 
 test('the kiosk offers only students in the Active Class', async ({ page }) => {
   await openKiosk(page);
-  // Riley Okafor is on the Period 2 roster; the door screen is showing Period 1.
+  // Riley O. is on the Period 2 roster; the door screen is showing Period 1.
   await page.getByLabel('Student ID').fill('7788');
   await page.getByRole('button', { name: /Continue/ }).click();
   await expect(page.getByRole('alert')).toContainText('could not find');
   // A Period 1 student is recognised at the same screen.
   await page.getByLabel('Student ID').fill('5620');
   await page.getByRole('button', { name: /Continue/ }).click();
-  await expect(page.getByRole('heading', { name: 'Avery Brooks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Avery B.' })).toBeVisible();
+});
+
+async function openRoster(page: Page, className = 'Period 1') {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Classes' }).click();
+  await page.getByRole('button', { name: `Roster for ${className}` }).click();
+  await expect(page.getByRole('heading', { name: className, level: 1 })).toBeVisible();
+}
+
+test('pasted names are shortened, and two Mayas are told apart automatically', async ({ page }) => {
+  await openRoster(page);
+  await page.getByLabel('Paste your class list').fill('Maya Chen\nMaya Chavez');
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  // One letter is not enough to separate Chen from Chavez, so both grow to three.
+  await expect(page.getByText('Maya Che.')).toBeVisible();
+  await expect(page.getByText('Maya Cha.')).toBeVisible();
+  await page.getByRole('button', { name: 'Save roster' }).click();
+  await expect(page.getByRole('heading', { name: 'Maya Cha.' })).toBeVisible();
+});
+
+test('an import that cannot separate two students is refused and saves nothing', async ({ page }) => {
+  await openRoster(page);
+  await page.getByLabel('Paste your class list').fill('Priya Chenoweth\nPriya Chennai');
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByRole('alert')).toContainText('Priya Che.');
+  await expect(page.getByRole('alert')).toContainText('nickname');
+  // Refusing means refusing everything: no half-saved roster.
+  await expect(page.getByRole('button', { name: 'Save roster' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Priya Che.' })).toBeHidden();
+});
+
+test('a roster paste is understood however the school system exported it', async ({ page }) => {
+  await openRoster(page, 'Period 2');
+  await page.getByLabel('Paste your class list').fill('First,Last\nHana Suzuki\nOkonkwo, Chidi\nTomas,K\n\n');
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByText('Hana S.')).toBeVisible();
+  await expect(page.getByText('Chidi O.')).toBeVisible();
+  await expect(page.getByText('Tomas K.')).toBeVisible();
+  // The heading row and the blank line are not students.
+  await expect(page.getByText('First F.')).toBeHidden();
+});
+
+test('re-importing merges, and names that have gone are offered rather than removed', async ({ page }) => {
+  await openRoster(page);
+  await page.getByLabel('Paste your class list').fill('Maya Chen');
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByText('NO LONGER ON YOUR LIST')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Remove Jordan E.' })).toBeVisible();
+  // Left unticked, so nobody is removed by simply pasting a shorter list.
+  await page.getByRole('button', { name: 'Save roster' }).click();
+  await expect(page.getByRole('heading', { name: 'Jordan E.' })).toBeVisible();
+});
+
+test('a student who leaves keeps their history instead of being deleted', async ({ page }) => {
+  await openRoster(page);
+  await page.getByRole('button', { name: 'Remove Sofia R.' }).click();
+  await expect(page.getByText('NO LONGER IN THIS CLASS')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sofia R.' })).toBeVisible();
+  await expect(page.getByText('History kept')).toBeVisible();
 });

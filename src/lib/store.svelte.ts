@@ -2,6 +2,8 @@ import { ClientResponseError } from 'pocketbase';
 import { pb } from './pocketbase';
 import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
+import { displayName, planImport } from './roster';
+import type { ImportPlan } from './roster';
 import type { ActiveClass, Class, Modal, Notice, PassEvent, Student, TeacherTab, View } from './types';
 
 /**
@@ -14,6 +16,10 @@ export const app = $state({
   classes: [] as Class[],
   /** The Class the door screen is showing. Lives on the account, not the browser. */
   activeClassId: '',
+  /** The roster the teacher is editing, including Former Students. */
+  roster: [] as Student[],
+  /** The Class whose roster is open for editing, which is not the Active Class. */
+  editingClassId: '',
   view: 'teacher-login' as View,
   teacherTab: 'live' as TeacherTab,
   /** Shown in the kiosk header, e.g. "Room 214 door". */
@@ -88,9 +94,101 @@ export async function loadActiveClass() {
   ]);
   app.activeClass = {
     limit,
-    students: roster.map((record) => ({ id: record.studentId as string, name: record.name as string })),
+    students: roster.filter((record) => record.status !== 'former').map(toStudent),
     passes: foldEvents(events as unknown as PassEvent[]),
   };
+}
+
+function toStudent(record: { id: string; studentId?: unknown; firstName?: unknown; lastPrefix?: unknown; status?: unknown }): Student {
+  const firstName = String(record.firstName || '');
+  const lastPrefix = String(record.lastPrefix || '');
+  return {
+    id: String(record.studentId || ''),
+    recordId: record.id,
+    firstName,
+    lastPrefix,
+    status: record.status === 'former' ? 'former' : 'current',
+    name: displayName({ firstName, lastPrefix }),
+  };
+}
+
+/** The roster of one Class, Former Students included, for the teacher to edit. */
+export async function loadRoster(classId: string) {
+  const teacher = teacherId();
+  app.editingClassId = classId;
+  const records = await pb.collection('students').getFullList({
+    filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room: classId }),
+    sort: 'firstName',
+  });
+  app.roster = records.map(toStudent);
+}
+
+export function previewImport(text: string) {
+  return planImport(text, app.roster);
+}
+
+/**
+ * Saves a previewed import. Nothing is written when the plan carries an error,
+ * because two students who cannot be told apart would sign out as each other.
+ */
+export async function applyImport(classId: string, plan: ImportPlan, removeMissing: string[]) {
+  if (plan.error) return plan.error;
+  const teacher = teacherId();
+  for (const entry of plan.added) {
+    await pb.collection('students').create({
+      teacher,
+      class: classId,
+      // A placeholder while students still type an id. Ticket 07 removes it.
+      studentId: String(Math.floor(10000000 + Math.random() * 89999999)),
+      firstName: entry.firstName,
+      lastPrefix: entry.lastPrefix,
+      status: 'current',
+    });
+  }
+  for (const change of plan.matched) {
+    if (change.student.lastPrefix === change.lastPrefix) continue;
+    await pb.collection('students').update(change.student.recordId, { lastPrefix: change.lastPrefix });
+  }
+  for (const recordId of removeMissing) {
+    await pb.collection('students').update(recordId, { status: 'former' });
+  }
+  await loadRoster(classId);
+  await loadActiveClass();
+  return '';
+}
+
+export async function addStudent(classId: string, firstName: string, lastName: string) {
+  const teacher = teacherId();
+  await pb.collection('students').create({
+    teacher,
+    class: classId,
+    studentId: String(Math.floor(10000000 + Math.random() * 89999999)),
+    firstName,
+    lastPrefix: lastName.slice(0, 3),
+    status: 'current',
+  });
+  await loadRoster(classId);
+  await loadActiveClass();
+}
+
+export async function renameStudent(recordId: string, firstName: string, lastPrefix: string) {
+  await pb.collection('students').update(recordId, { firstName, lastPrefix: lastPrefix.slice(0, 3) });
+  await loadRoster(app.editingClassId);
+  await loadActiveClass();
+}
+
+/** A Student who has left keeps every Pass they took, so the Class's history stays whole. */
+export async function archiveStudent(recordId: string) {
+  await pb.collection('students').update(recordId, { status: 'former' });
+  await loadRoster(app.editingClassId);
+  await loadActiveClass();
+}
+
+/** Only ever for a Student added by mistake who has no history to lose. */
+export async function deleteStudent(recordId: string) {
+  await pb.collection('students').delete(recordId);
+  await loadRoster(app.editingClassId);
+  await loadActiveClass();
 }
 
 export async function createClass(name: string) {
@@ -183,7 +281,14 @@ export async function registerTeacher(fields: { displayName: string; email: stri
     await pb.collection('teachers').update(teacherId(), { passLimit: defaultLimit, activeClass: room.id });
     app.activeClassId = room.id;
     for (const student of defaultStudents) {
-      await pb.collection('students').create({ teacher: teacherId(), class: room.id, studentId: student.id, name: student.name });
+      await pb.collection('students').create({
+        teacher: teacherId(),
+        class: room.id,
+        studentId: student.id,
+        firstName: student.firstName,
+        lastPrefix: student.lastPrefix,
+        status: 'current',
+      });
     }
     await finishTeacherLogin();
     return '';

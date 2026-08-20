@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { app, archiveClass, createClass, moveClass, renameClass } from '../lib/store.svelte';
+  import { app, archiveClass, createClass, loadRoster, moveClass, renameClass } from '../lib/store.svelte';
+  import RosterPanel from './RosterPanel.svelte';
 
   let newName = $state('');
   let renamingId = $state('');
   let renameValue = $state('');
   let busy = $state(false);
+  let editing = $state(null as { id: string; name: string } | null);
+
+  async function openRoster(id: string, name: string) {
+    editing = { id, name };
+    await loadRoster(id);
+  }
 
   async function add(event: SubmitEvent) {
     event.preventDefault();
@@ -32,6 +39,9 @@
   }
 </script>
 
+{#if editing}
+  <RosterPanel classId={editing.id} name={editing.name} onBack={() => (editing = null)} />
+{:else}
 <section class="workspace-head">
   <div>
     <p class="eyebrow">YOUR DAY</p>
@@ -85,6 +95,7 @@
           <div class="class-actions">
             <button class="button small outline" onclick={() => moveClass(room.id, -1)} disabled={index === 0} aria-label="Move {room.name} earlier">↑</button>
             <button class="button small outline" onclick={() => moveClass(room.id, 1)} disabled={index === app.classes.length - 1} aria-label="Move {room.name} later">↓</button>
+            <button class="button small" onclick={() => openRoster(room.id, room.name)}>Roster for {room.name}</button>
             <button class="button small" onclick={() => startRename(room.id, room.name)}>Rename {room.name}</button>
             <button class="button small outline" onclick={() => archiveClass(room.id)}>Archive {room.name}</button>
           </div>
@@ -96,3 +107,4 @@
   </div>
   <p class="muted">Archiving a class hides it here. Its students and its pass history are kept.</p>
 </section>
+{/if}

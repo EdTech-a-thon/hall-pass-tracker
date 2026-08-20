@@ -1,4 +1,18 @@
-export type Student = { id: string; name: string };
+/**
+ * One child on one Class's roster. The same child taught in two Classes is two
+ * unrelated Students, deliberately — see docs/adr/0002.
+ */
+export type Student = {
+  /** The numeric id students used to type. Vestigial; removed in ticket 07. */
+  id: string;
+  recordId: string;
+  firstName: string;
+  /** As many leading letters of the last name as it takes to be unique. Never the whole name. */
+  lastPrefix: string;
+  status: 'current' | 'former';
+  /** "Maya C." — composed, never stored. */
+  name: string;
+};
 
 /**
  * One line in the append-only hall pass log: a student left, or a student came

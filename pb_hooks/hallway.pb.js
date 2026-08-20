@@ -43,8 +43,13 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
 
     let student;
     try {
-      student = tx.findFirstRecordByFilter("students", "teacher = {:teacher} && class = {:class} && studentId = {:studentId}", { teacher: teacherId, class: activeClass, studentId: body.studentId });
+      student = tx.findFirstRecordByFilter("students", "teacher = {:teacher} && class = {:class} && status = 'current' && studentId = {:studentId}", { teacher: teacherId, class: activeClass, studentId: body.studentId });
     } catch (_) { throw new BadRequestError("We could not find that student ID. Please try again."); }
+
+    // The Display Name is composed, never stored whole: the database holds a
+    // first name and a last-name prefix and nothing more. See docs/adr/0001.
+    const prefix = student.getString("lastPrefix");
+    const shownName = prefix ? student.getString("firstName") + " " + prefix + "." : student.getString("firstName");
 
     // Each student's most recent entry says whether they are out right now. Only
     // the recent past is read: nobody is still in the hallway after a month, and
@@ -61,7 +66,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     if (body.kind === "out" && alreadyOut) throw new BadRequestError("You are already signed out. Tap \"I am back\" instead.");
     if (body.kind === "in" && !alreadyOut) throw new BadRequestError("You are not signed out right now.");
     if (body.kind === "out" && outNow >= limit) {
-      response = { status: "denied", name: student.getString("name"), out: outNow, limit: limit };
+      response = { status: "denied", name: shownName, out: outNow, limit: limit };
       return;
     }
 
@@ -69,7 +74,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     entry.set("teacher", teacherId);
     entry.set("class", activeClass);
     entry.set("studentId", body.studentId);
-    entry.set("studentName", student.getString("name"));
+    entry.set("studentName", shownName);
     entry.set("kind", body.kind);
     entry.set("destination", body.kind === "out" ? String(body.destination || "").substring(0, 40) : "");
     entry.set("minutes", body.kind === "out" ? Math.min(120, Math.max(1, Math.round(body.minutes))) : 0);
@@ -78,7 +83,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
 
     response = {
       status: body.kind === "out" ? "approved" : "returned",
-      name: student.getString("name"),
+      name: shownName,
       destination: entry.getString("destination"),
       minutes: entry.getInt("minutes"),
       outAt: entry.getString("at"),

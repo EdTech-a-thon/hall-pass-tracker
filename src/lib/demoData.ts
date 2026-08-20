@@ -1,13 +1,13 @@
 import type { Student } from './types';
 
-/** The roster a brand-new classroom starts with, so the prototype is never empty. */
-export const defaultStudents: Student[] = [
-  { id: '1042', name: 'Maya Chen' },
-  { id: '2381', name: 'Jordan Ellis' },
-  { id: '3077', name: 'Sofia Ramirez' },
-  { id: '4419', name: 'Noah Williams' },
-  { id: '5620', name: 'Avery Brooks' },
-];
+/** The roster a brand-new Class starts with, so the prototype is never empty. */
+export const defaultStudents = [
+  { id: '1042', firstName: 'Maya', lastPrefix: 'C' },
+  { id: '2381', firstName: 'Jordan', lastPrefix: 'E' },
+  { id: '3077', firstName: 'Sofia', lastPrefix: 'R' },
+  { id: '4419', firstName: 'Noah', lastPrefix: 'W' },
+  { id: '5620', firstName: 'Avery', lastPrefix: 'B' },
+] satisfies Pick<Student, 'id' | 'firstName' | 'lastPrefix'>[];
 
-/** How many students a new classroom lets into the hallway at once. */
+/** How many students a new Class lets into the hallway at once. */
 export const defaultLimit = 2;
