@@ -3,8 +3,6 @@
  * unrelated Students, deliberately — see docs/adr/0002.
  */
 export type Student = {
-  /** The numeric id students used to type. Vestigial; removed in ticket 07. */
-  id: string;
   recordId: string;
   firstName: string;
   /** As many leading letters of the last name as it takes to be unique. Never the whole name. */
@@ -20,7 +18,8 @@ export type Student = {
  */
 export type PassEvent = {
   id: string;
-  studentId: string;
+  /** The roster row this entry belongs to. */
+  student: string;
   studentName: string;
   kind: 'out' | 'in';
   destination: string;
@@ -33,7 +32,7 @@ export type PassEvent = {
 /** A completed round trip, worked out by pairing each exit with its return. */
 export type Pass = {
   id: string;
-  studentId: string;
+  student: string;
   studentName: string;
   destination: string;
   minutes: number;

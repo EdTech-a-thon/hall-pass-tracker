@@ -26,9 +26,16 @@ async function registerTeacher(label: string) {
 async function classroom(label: string) {
   const teacher = await registerTeacher(label);
   const id = teacher.pb.authStore.record!.id;
-  await teacher.pb.collection('teachers').update(id, { passLimit: 1 });
-  await teacher.pb.collection('students').create({ teacher: id, studentId: '5620', name: 'Avery Brooks' });
-  return { ...teacher, id };
+  const room = await patiently(() => teacher.pb.collection('classes').create({ teacher: id, name: 'Period 1', position: 0, archived: false }));
+  await patiently(() => teacher.pb.collection('teachers').update(id, {
+    passLimit: 1,
+    activeClass: room.id,
+    destinations: [{ label: 'Water', minutes: 5 }],
+  }));
+  const avery = await patiently(() => teacher.pb.collection('students').create({
+    teacher: id, class: room.id, firstName: 'Avery', lastPrefix: 'B', status: 'current',
+  }));
+  return { ...teacher, id, room: room.id, avery: avery.id };
 }
 
 backendTest('real PocketBase registration is public but records remain private', async () => {
@@ -41,24 +48,51 @@ backendTest('real PocketBase registration is public but records remain private',
 
 backendTest('an authenticated kiosk action appends to the teacher pass log', async () => {
   const room = await classroom('Log Teacher');
-  const approved = await room.pb.send<{ status: string; name: string }>('/api/hallway/kiosk/events', {
-    method: 'POST', body: { studentId: '5620', kind: 'out', destination: 'Water', minutes: 5 },
+  const approved = await room.pb.send<{ status: string; name: string; minutes: number }>('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Water' },
   });
-  expect(approved).toMatchObject({ status: 'approved', name: 'Avery Brooks' });
+  // The name is composed from a first name and a prefix; no full last name exists.
+  expect(approved).toMatchObject({ status: 'approved', name: 'Avery B.' });
+  // The expected minutes come from the teacher's own list, not from this request.
+  expect(approved.minutes).toBe(5);
   const entries = await room.pb.collection('pass_events').getFullList();
   expect(entries).toHaveLength(1);
-  expect(entries[0]).toMatchObject({ studentId: '5620', kind: 'out', source: 'kiosk' });
+  expect(entries[0]).toMatchObject({ student: room.avery, kind: 'out', source: 'kiosk', class: room.room });
+});
+
+backendTest('the pass log refuses to be rewritten, even by the teacher who owns it', async () => {
+  const room = await classroom('Append Only Teacher');
+  await room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Water' },
+  });
+  const [entry] = await room.pb.collection('pass_events').getFullList();
+  // This is the guarantee the whole correction design rests on. See docs/adr/0004.
+  await expect(room.pb.collection('pass_events').update(entry.id, { destination: 'Nurse' })).rejects.toThrow();
+  await expect(room.pb.collection('pass_events').delete(entry.id)).rejects.toThrow();
+  // Refused, and unchanged: the entry is still there and still says what it said.
+  const after = await room.pb.collection('pass_events').getFullList();
+  expect(after).toHaveLength(1);
+  expect(after[0]).toMatchObject({ id: entry.id, destination: 'Water' });
+});
+
+backendTest('a destination the teacher has not set up is refused', async () => {
+  const room = await classroom('Destination Teacher');
+  await expect(room.pb.send('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student: room.avery, kind: 'out', destination: 'Rooftop' },
+  })).rejects.toMatchObject({ status: 400 });
 });
 
 backendTest('the server decides when the hallway is full', async () => {
   const room = await classroom('Limit Teacher');
-  await room.pb.collection('students').create({ teacher: room.id, studentId: '4419', name: 'Noah Williams' });
-  const send = (studentId: string, kind: string) => room.pb.send<{ status: string; out: number; limit: number }>('/api/hallway/kiosk/events', {
-    method: 'POST', body: { studentId, kind, destination: 'Water', minutes: 5 },
+  const noah = await room.pb.collection('students').create({
+    teacher: room.id, class: room.room, firstName: 'Noah', lastPrefix: 'W', status: 'current',
   });
-  await expect(send('5620', 'out')).resolves.toMatchObject({ status: 'approved', out: 1, limit: 1 });
-  await expect(send('4419', 'out')).resolves.toMatchObject({ status: 'denied', out: 1, limit: 1 });
-  await expect(send('5620', 'in')).resolves.toMatchObject({ status: 'returned', out: 0 });
+  const send = (student: string, kind: string) => room.pb.send<{ status: string; out: number; limit: number }>('/api/hallway/kiosk/events', {
+    method: 'POST', body: { student, kind, destination: 'Water' },
+  });
+  await expect(send(room.avery, 'out')).resolves.toMatchObject({ status: 'approved', out: 1, limit: 1 });
+  await expect(send(noah.id, 'out')).resolves.toMatchObject({ status: 'denied', out: 1, limit: 1 });
+  await expect(send(room.avery, 'in')).resolves.toMatchObject({ status: 'returned', out: 0 });
 });
 
 backendTest('the kiosk PIN is remembered as a hidden hash', async () => {

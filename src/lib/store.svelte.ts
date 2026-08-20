@@ -116,11 +116,10 @@ export async function loadActiveClass() {
   };
 }
 
-function toStudent(record: { id: string; studentId?: unknown; firstName?: unknown; lastPrefix?: unknown; status?: unknown }): Student {
+function toStudent(record: { id: string; firstName?: unknown; lastPrefix?: unknown; status?: unknown }): Student {
   const firstName = String(record.firstName || '');
   const lastPrefix = String(record.lastPrefix || '');
   return {
-    id: String(record.studentId || ''),
     recordId: record.id,
     firstName,
     lastPrefix,
@@ -155,8 +154,6 @@ export async function applyImport(classId: string, plan: ImportPlan, removeMissi
     await pb.collection('students').create({
       teacher,
       class: classId,
-      // A placeholder while students still type an id. Ticket 07 removes it.
-      studentId: String(Math.floor(10000000 + Math.random() * 89999999)),
       firstName: entry.firstName,
       lastPrefix: entry.lastPrefix,
       status: 'current',
@@ -179,7 +176,6 @@ export async function addStudent(classId: string, firstName: string, lastName: s
   await pb.collection('students').create({
     teacher,
     class: classId,
-    studentId: String(Math.floor(10000000 + Math.random() * 89999999)),
     firstName,
     lastPrefix: lastName.slice(0, 3),
     status: 'current',
@@ -305,7 +301,6 @@ export async function registerTeacher(fields: { displayName: string; email: stri
       await pb.collection('students').create({
         teacher: teacherId(),
         class: room.id,
-        studentId: student.id,
         firstName: student.firstName,
         lastPrefix: student.lastPrefix,
         status: 'current',
@@ -331,7 +326,7 @@ export async function markReturned(passId: string) {
   if (!pass) return;
   await pb.collection('pass_events').create({
     teacher: teacherId(),
-    studentId: pass.studentId,
+    student: pass.student,
     studentName: pass.studentName,
     kind: 'in',
     source: 'teacher',
@@ -411,7 +406,7 @@ function showNotice(notice: Notice) {
 
 /** Whether this student is in the hallway right now, so the door screen can say so. */
 export function passFor(student: Student) {
-  return out().find((pass) => pass.studentId === student.id);
+  return out().find((pass) => pass.student === student.recordId);
 }
 
 /**
@@ -449,7 +444,7 @@ async function sendKioskEvent(student: Student, kind: 'out' | 'in', destination 
     // only where the student is going and the server decides the rest.
     const result = await pb.send<{ status: string; name: string; destination: string; minutes: number; outAt: string; out: number; limit: number }>(
       '/api/hallway/kiosk/events',
-      { method: 'POST', body: { studentId: student.id, kind, destination, cancel } },
+      { method: 'POST', body: { student: student.recordId, kind, destination, cancel } },
     );
     if (result.status === 'denied') {
       showNotice({

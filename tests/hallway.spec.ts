@@ -21,12 +21,12 @@ const sampleClasses = [
  * "Maya C." is the whole of what Hallway knows about her. See docs/adr/0001.
  */
 const roster = [
-  { id: '1042', firstName: 'Maya', lastPrefix: 'C', class: periodOne },
-  { id: '2381', firstName: 'Jordan', lastPrefix: 'E', class: periodOne },
-  { id: '3077', firstName: 'Sofia', lastPrefix: 'R', class: periodOne },
-  { id: '4419', firstName: 'Noah', lastPrefix: 'W', class: periodOne },
-  { id: '5620', firstName: 'Avery', lastPrefix: 'B', class: periodOne },
-  { id: '7788', firstName: 'Riley', lastPrefix: 'O', class: periodTwo },
+  { id: 'stu000000000001', firstName: 'Maya', lastPrefix: 'C', class: periodOne },
+  { id: 'stu000000000002', firstName: 'Jordan', lastPrefix: 'E', class: periodOne },
+  { id: 'stu000000000003', firstName: 'Sofia', lastPrefix: 'R', class: periodOne },
+  { id: 'stu000000000004', firstName: 'Noah', lastPrefix: 'W', class: periodOne },
+  { id: 'stu000000000005', firstName: 'Avery', lastPrefix: 'B', class: periodOne },
+  { id: 'stu000000000006', firstName: 'Riley', lastPrefix: 'O', class: periodTwo },
 ];
 
 /** The teacher's own Destination list, each with the minutes a trip should take. */
@@ -41,22 +41,22 @@ function shown(student: { firstName: string; lastPrefix: string }) {
   return student.lastPrefix ? `${student.firstName} ${student.lastPrefix}.` : student.firstName;
 }
 
-type Event = { id: string; studentId: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
+type Event = { id: string; student: string; studentName: string; kind: 'out' | 'in'; destination: string; minutes: number; source: string; signedInBy: string; class: string; at: string };
 
 /** The same class the old demo data described, written as a log of exits and returns. */
 function sampleLog(): Event[] {
-  const entry = (id: string, studentId: string, kind: 'out' | 'in', at: number, extra: Partial<Event> = {}): Event => ({
-    id, studentId, studentName: shown(roster.find((student) => student.id === studentId)!),
+  const entry = (id: string, student: string, kind: 'out' | 'in', at: number, extra: Partial<Event> = {}): Event => ({
+    id, student, studentName: shown(roster.find((item) => item.id === student)!),
     kind, destination: '', minutes: 0, source: 'kiosk', signedInBy: '', class: periodOne, at: minutesAgo(at), ...extra,
   });
   return [
-    entry('e3', '3077', 'out', 70, { destination: 'Counselor', minutes: 15 }),
-    entry('e4', '3077', 'in', 52, { source: 'teacher', signedInBy: 'Ms. Rivera' }),
-    entry('e5', '1042', 'out', 25, { destination: 'Water', minutes: 5 }),
-    entry('e6', '1042', 'in', 21, {}),
-    entry('e1', '2381', 'out', 18, { destination: 'Restroom', minutes: 8 }),
-    entry('e2', '2381', 'in', 10, {}),
-    entry('e7', '4419', 'out', 6, { destination: 'Main office', minutes: 10 }),
+    entry('e3', 'stu000000000003', 'out', 70, { destination: 'Counselor', minutes: 15 }),
+    entry('e4', 'stu000000000003', 'in', 52, { source: 'teacher', signedInBy: 'Ms. Rivera' }),
+    entry('e5', 'stu000000000001', 'out', 25, { destination: 'Water', minutes: 5 }),
+    entry('e6', 'stu000000000001', 'in', 21, {}),
+    entry('e1', 'stu000000000002', 'out', 18, { destination: 'Restroom', minutes: 8 }),
+    entry('e2', 'stu000000000002', 'in', 10, {}),
+    entry('e7', 'stu000000000004', 'out', 6, { destination: 'Main office', minutes: 10 }),
   ];
 }
 
@@ -79,17 +79,17 @@ async function stubKioskBackend(
   const currentDestinations = options.destinations ?? (() => sampleDestinations);
 
   await page.route('**/api/hallway/kiosk/events', async (route) => {
-    const body = route.request().postDataJSON() as { studentId: string; kind: 'out' | 'in'; destination: string; cancel?: boolean };
+    const body = route.request().postDataJSON() as { student: string; kind: 'out' | 'in'; destination: string; cancel?: boolean };
     // The expected minutes are the teacher's setting, looked up here exactly as
     // the real route does, rather than anything the browser gets to claim.
     const minutes = currentDestinations().find((item) => item.label === body.destination)?.minutes ?? 0;
-    const student = roster.find((item) => item.id === body.studentId && item.class === activeClass);
+    const student = roster.find((item) => item.id === body.student && item.class === activeClass);
     if (!student) {
       await route.fulfill({ status: 400, json: { message: 'We could not find that student ID. Please try again.' } });
       return;
     }
     const latest: Record<string, string> = {};
-    for (const event of log) latest[event.studentId] = event.kind;
+    for (const event of log) latest[event.student] = event.kind;
     const outNow = Object.values(latest).filter((kind) => kind === 'out').length;
     if (body.kind === 'out' && outNow >= limit) {
       await route.fulfill({ json: { status: 'denied', name: shown(student), out: outNow, limit } });
@@ -98,7 +98,7 @@ async function stubKioskBackend(
     const at = minutesAgo(0);
     // An undo is a new entry saying the trip was cancelled, never a deletion.
     const source = body.kind === 'in' && body.cancel ? 'cancelled' : 'kiosk';
-    log.push({ id: `new${log.length}`, studentId: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source, signedInBy: '', at, class: activeClass });
+    log.push({ id: `new${log.length}`, student: student.id, studentName: shown(student), kind: body.kind, destination: body.destination, minutes, source, signedInBy: '', at, class: activeClass });
     await route.fulfill({
       json: {
         status: body.kind === 'out' ? 'approved' : body.cancel ? 'cancelled' : 'returned',
@@ -162,7 +162,7 @@ async function stubTeacherBackend(
     await route.fulfill({ json: { token: fakeToken, record: { id: teacherId, collectionId: 'teachers', collectionName: 'teachers', verified: true, displayName: 'Ms. Rivera', passLimit: 2, activeClass, destinations: sampleDestinations } } });
   });
   const students = roster.map((student) => ({
-    id: `rec${student.id}`, studentId: student.id, teacher: teacherId,
+    id: student.id, teacher: teacherId,
     class: student.class, firstName: student.firstName, lastPrefix: student.lastPrefix, status: 'current',
   }));
   let issued = 0;
@@ -553,8 +553,8 @@ test('the destination breakdown comes from real trips, not a fixed list', async 
 function overdueLog(): Event[] {
   const base = { destination: '', minutes: 0, source: 'kiosk', signedInBy: '', class: periodOne };
   return [
-    { ...base, id: 'o1', studentId: '1042', studentName: 'Maya C.', kind: 'out', destination: 'Restroom', minutes: 8, at: minutesAgo(20) },
-    { ...base, id: 'o2', studentId: '2381', studentName: 'Jordan E.', kind: 'out', destination: 'Counselor', minutes: 20, at: minutesAgo(4) },
+    { ...base, id: 'o1', student: 'stu000000000001', studentName: 'Maya C.', kind: 'out', destination: 'Restroom', minutes: 8, at: minutesAgo(20) },
+    { ...base, id: 'o2', student: 'stu000000000002', studentName: 'Jordan E.', kind: 'out', destination: 'Counselor', minutes: 20, at: minutesAgo(4) },
   ];
 }
 

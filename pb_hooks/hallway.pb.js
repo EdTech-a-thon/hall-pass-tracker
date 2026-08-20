@@ -30,7 +30,7 @@ routerAdd("POST", "/api/hallway/kiosk/pin/verify", (e) => {
 // here, from the log, and always within the Active Class: one period's records
 // must never block the students standing in the room.
 routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
-  const body = new DynamicModel({ studentId: "", kind: "", destination: "", cancel: false });
+  const body = new DynamicModel({ student: "", kind: "", destination: "", cancel: false });
   e.bindBody(body);
   if (body.kind !== "out" && body.kind !== "in") throw new BadRequestError("Unknown kiosk action");
 
@@ -41,10 +41,12 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     const activeClass = teacher.getString("activeClass");
     if (!activeClass) throw new BadRequestError("No class has been set up yet. Please ask your teacher.");
 
+    // Identified by roster row, and only ever a current Student in the Class the
+    // door screen is actually showing.
     let student;
     try {
-      student = tx.findFirstRecordByFilter("students", "teacher = {:teacher} && class = {:class} && status = 'current' && studentId = {:studentId}", { teacher: teacherId, class: activeClass, studentId: body.studentId });
-    } catch (_) { throw new BadRequestError("We could not find that student ID. Please try again."); }
+      student = tx.findFirstRecordByFilter("students", "id = {:id} && teacher = {:teacher} && class = {:class} && status = 'current'", { id: body.student, teacher: teacherId, class: activeClass });
+    } catch (_) { throw new BadRequestError("We could not find that student. Please ask your teacher."); }
 
     // The Display Name is composed, never stored whole: the database holds a
     // first name and a last-name prefix and nothing more. See docs/adr/0001.
@@ -57,10 +59,10 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
     const log = tx.findRecordsByFilter("pass_events", "teacher = {:teacher} && class = {:class} && at > {:since}", "at", 5000, 0, { teacher: teacherId, class: activeClass, since: since });
     const latest = {};
-    for (let index = 0; index < log.length; index++) latest[log[index].getString("studentId")] = log[index].getString("kind");
+    for (let index = 0; index < log.length; index++) latest[log[index].getString("student")] = log[index].getString("kind");
     let outNow = 0;
     for (const id in latest) if (latest[id] === "out") outNow++;
-    const alreadyOut = latest[body.studentId] === "out";
+    const alreadyOut = latest[body.student] === "out";
     const limit = teacher.getInt("passLimit") || 2;
 
     // How long a trip should take is the teacher's setting, never the browser's,
@@ -68,7 +70,16 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     // cannot reach back and rewrite months of history.
     let minutes = 0;
     if (body.kind === "out") {
-      const allowed = teacher.get("destinations") || [];
+      // PocketBase hands a JSON field to a hook as raw bytes, not a parsed
+      // array, so it has to be decoded before it can be read.
+      const stored = teacher.get("destinations");
+      let allowed = [];
+      if (stored) {
+        try {
+          allowed = JSON.parse(typeof stored === "string" ? stored : stored.string());
+        } catch (_) { allowed = []; }
+      }
+      if (!allowed || typeof allowed.length !== "number") allowed = [];
       let match = null;
       for (let index = 0; index < allowed.length; index++) {
         if (allowed[index].label === body.destination) match = allowed[index];
@@ -87,7 +98,7 @@ routerAdd("POST", "/api/hallway/kiosk/events", (e) => {
     const entry = new Record(tx.findCollectionByNameOrId("pass_events"));
     entry.set("teacher", teacherId);
     entry.set("class", activeClass);
-    entry.set("studentId", body.studentId);
+    entry.set("student", student.id);
     entry.set("studentName", shownName);
     entry.set("kind", body.kind);
     entry.set("destination", body.kind === "out" ? String(body.destination || "").substring(0, 40) : "");

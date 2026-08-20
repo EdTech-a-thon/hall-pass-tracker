@@ -16,21 +16,21 @@ export function foldEvents(events: PassEvent[]): Pass[] {
     if (event.kind === 'out') {
       const pass: Pass = {
         id: event.id,
-        studentId: event.studentId,
+        student: event.student,
         studentName: event.studentName,
         destination: event.destination,
         minutes: event.minutes,
         outAt: event.at,
       };
       passes.push(pass);
-      open.set(event.studentId, pass);
+      open.set(event.student, pass);
       continue;
     }
-    const pass = open.get(event.studentId);
+    const pass = open.get(event.student);
     if (!pass) continue;
     pass.inAt = event.at;
     if (event.source === 'teacher') pass.signedInBy = event.signedInBy || 'the teacher';
-    open.delete(event.studentId);
+    open.delete(event.student);
   }
   return passes;
 }
