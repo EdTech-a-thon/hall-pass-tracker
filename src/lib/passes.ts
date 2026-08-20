@@ -91,6 +91,12 @@ function toDate(value: string) {
   return new Date(value.replace(' ', 'T'));
 }
 
+/** The local calendar day a stored timestamp falls on, as "2026-08-19". */
+export function dayKey(value: string) {
+  const local = toDate(value);
+  return new Date(local.getTime() - local.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
 /** Formats a stored timestamp as a short local clock time, e.g. "2:05 PM". */
 export function time(value: string) {
   return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(toDate(value));

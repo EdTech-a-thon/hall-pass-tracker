@@ -78,6 +78,14 @@ The browser tests run against a stubbed backend. The tests in
 `tests/signup-real.spec.ts`, which drives the whole flow in a real browser:
 registering, creating a kiosk PIN, entering kiosk mode, and exiting securely.
 
+## Getting the records out
+
+The **Download CSV** button on the dashboard produces a real spreadsheet of the
+class you are looking at, which opens in Sheets or Excel by double-clicking. It
+reflects any corrections you have made, so the file agrees with what you see on
+screen. Trips whose return was never observed — a class change, or a mis-tap
+undone at the door — say so rather than reporting a duration nobody measured.
+
 Design decisions that would be surprising without their reasoning live in
 [docs/adr](docs/adr), and the project's vocabulary is in [CONTEXT.md](CONTEXT.md).
 Both create throwaway teacher accounts,

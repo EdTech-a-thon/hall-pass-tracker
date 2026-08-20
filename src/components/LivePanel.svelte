@@ -1,6 +1,6 @@
 <script lang="ts">
   import { duration, hasRealDuration, isOverdue } from '../lib/passes';
-  import { app, browseClass, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
+  import { app, browseClass, downloadCsv, markReturned, out, setLimit, teacherName } from '../lib/store.svelte';
 
   // Trips ended by a class change or an undo never had a real return time, so
   // including them would quietly move the average toward a number nobody
@@ -35,7 +35,7 @@
     >
       {app.viewingClassId === app.activeClassId ? 'Showing on the door screen' : 'Show this class on the door'}
     </button>
-    <button class="button outline" onclick={() => (app.modal = { kind: 'export' })}>Export to Google Sheets</button>
+    <button class="button outline" onclick={downloadCsv}>Download CSV</button>
   </div>
 </section>
 

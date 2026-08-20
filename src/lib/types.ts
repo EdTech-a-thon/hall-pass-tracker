@@ -87,5 +87,4 @@ export type Modal =
   | { kind: 'request'; student: Student }
   | { kind: 'kiosk-pin'; purpose: 'setup' | 'exit' | 'change' | 'switch' }
   | { kind: 'class-switch' }
-  | { kind: 'correct'; pass: Pass }
-  | { kind: 'export' };
+  | { kind: 'correct'; pass: Pass };

@@ -7,7 +7,6 @@
   import KioskPinModal from './components/KioskPinModal.svelte';
   import ClassSwitchModal from './components/ClassSwitchModal.svelte';
   import CorrectionModal from './components/CorrectionModal.svelte';
-  import DemoModal from './components/DemoModal.svelte';
   import Notice from './components/Notice.svelte';
   import { app } from './lib/store.svelte';
 </script>
@@ -30,8 +29,6 @@
   <ClassSwitchModal />
 {:else if app.modal?.kind === 'correct'}
   <CorrectionModal pass={app.modal.pass} />
-{:else if app.modal}
-  <DemoModal />
 {/if}
 
 {#if app.notice}

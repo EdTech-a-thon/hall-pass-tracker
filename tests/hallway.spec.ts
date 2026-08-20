@@ -421,8 +421,7 @@ test('teacher workspace exposes limits, analytics, and third-party check-in mark
   await page.getByRole('button', { name: 'Analytics' }).click();
   await expect(page.getByRole('heading', { name: 'Hall pass analytics' })).toBeVisible();
   await expect(page.getByText('Signed in by Ms. Rivera')).toBeVisible();
-  await page.getByRole('button', { name: 'Export to Google Sheets' }).click();
-  await expect(page.getByRole('heading', { name: 'Hallway analytics exported' })).toBeVisible();
+  // Exporting is covered by its own tests now that it produces a real file.
 });
 
 test('teacher can set a new kiosk PIN from Profile', async ({ page }) => {
@@ -737,4 +736,54 @@ test('a trip ended by a class change is excluded rather than given a made-up dur
   await expect(row).toContainText('Ended by class change');
   await expect(row).toContainText('return time unknown');
   await expect(row).not.toContainText('Overdue');
+});
+
+test('the teacher downloads a real spreadsheet, not a mock one', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download CSV' }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^hallway-period-1-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const stream = await file.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  const csv = Buffer.concat(chunks).toString('utf8');
+
+  expect(csv.split('\n')[0]).toBe('Date,Student,Destination,Left,Returned,Minutes out,Expected,Overdue,Ended by,Corrected');
+  expect(csv).toContain('Sofia R.');
+  expect(csv).toContain('Counselor');
+  // Sofia was out eighteen minutes against an expected fifteen.
+  expect(csv).toMatch(/Sofia R\.,Counselor,[^,]*,[^,]*,18,15,yes/);
+  // The old prop is gone.
+  await expect(page.getByText('DEMO GOOGLE WORKSPACE')).toBeHidden();
+});
+
+test('the CSV reflects corrections rather than the original reading', async ({ page }) => {
+  await openTeacher(page);
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  await page.getByRole('button', { name: 'Correct Sofia R.' }).click();
+  await page.getByLabel('This trip really belonged to').selectOption({ label: 'Jordan E.' });
+  await page.getByRole('button', { name: 'Save correction' }).click();
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download CSV' }).click();
+  const stream = await (await download).createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  const csv = Buffer.concat(chunks).toString('utf8');
+
+  // The counsellor trip now belongs to Jordan, and is marked as corrected.
+  expect(csv).toMatch(/Jordan E\.,Counselor,.*,yes\s*$/m);
+  expect(csv).not.toMatch(/Sofia R\.,Counselor/);
+});
+
+test('the weekly chart says when there is not enough history rather than drawing one', async ({ page }) => {
+  await openTeacher(page, { log: [] });
+  await page.getByRole('button', { name: 'Analytics' }).click();
+  await expect(page.getByText('Not enough history yet')).toBeVisible();
+  await expect(page.locator('.bar-chart')).toHaveCount(0);
+  // And no invented total.
+  await expect(page.locator('.chart-card')).toContainText('0 total');
 });

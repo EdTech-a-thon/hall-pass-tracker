@@ -1,19 +1,30 @@
 <script lang="ts">
-  import { duration, hasRealDuration, isOverdue, time } from '../lib/passes';
-  import { correctionsBetween } from '../lib/store.svelte';
+  import { dayKey, duration, hasRealDuration, isOverdue, time } from '../lib/passes';
+  import { correctionsBetween, downloadCsv } from '../lib/store.svelte';
   import type { PassEvent } from '../lib/types';
   import { app } from '../lib/store.svelte';
 
   const rows = $derived([...app.activeClass.passes].reverse());
 
-  /** Static sample week, since the prototype has no multi-day history yet. */
-  const week = [
-    { day: 'M', height: 40 },
-    { day: 'T', height: 76 },
-    { day: 'W', height: 54 },
-    { day: 'T', height: 64 },
-    { day: 'F', height: 24 },
-  ];
+  const weekdays = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
+
+  /** The last five days of real history. Empty on day one, which is honest. */
+  const week = $derived.by(() => {
+    const counts = [];
+    for (let back = 4; back >= 0; back -= 1) {
+      const when = new Date();
+      when.setDate(when.getDate() - back);
+      const key = new Date(when.getTime() - when.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+      counts.push({
+        day: weekdays[when.getDay()],
+        key,
+        count: app.activeClass.passes.filter((pass) => dayKey(pass.outAt) === key).length,
+      });
+    }
+    const most = Math.max(1, ...counts.map((entry) => entry.count));
+    return counts.map((entry) => ({ ...entry, height: Math.round((entry.count / most) * 100) }));
+  });
+  const weekTotal = $derived(week.reduce((sum, entry) => sum + entry.count, 0));
   const dots = ['blue-dot', 'green-dot', 'amber-dot', 'gray-dot'];
 
   const today = new Date().toISOString().slice(0, 10);
@@ -49,7 +60,7 @@
     <h1>Hall pass analytics</h1>
     <p>Review patterns and verify how each student returned.</p>
   </div>
-  <button class="button outline" onclick={() => (app.modal = { kind: 'export' })}>Export to Google Sheets</button>
+  <button class="button outline" onclick={downloadCsv}>Download CSV</button>
 </section>
 
 <section class="analytics-layout">
@@ -59,13 +70,18 @@
         <p class="eyebrow">THIS WEEK</p>
         <h2>Passes by day</h2>
       </div>
-      <strong>24 total</strong>
+      <strong>{weekTotal} total</strong>
     </div>
-    <div class="bar-chart" aria-label="Passes by day: Monday 4, Tuesday 7, Wednesday 5, Thursday 6, Friday 2">
-      {#each week as bar, index (index)}
-        <div><span style:height="{bar.height}%"></span><small>{bar.day}</small></div>
-      {/each}
-    </div>
+    {#if weekTotal}
+      <div class="bar-chart" aria-label={`Passes by day: ${week.map((bar) => `${bar.day} ${bar.count}`).join(', ')}`}>
+        {#each week as bar (bar.key)}
+          <div><span style:height="{bar.height}%"></span><small>{bar.day}</small></div>
+        {/each}
+      </div>
+    {:else}
+      <!-- Better to say so than to draw a flat line a teacher might read as a trend. -->
+      <div class="empty-state">Not enough history yet. Trips will appear here as they are recorded.</div>
+    {/if}
   </article>
 
   <article class="panel destinations">

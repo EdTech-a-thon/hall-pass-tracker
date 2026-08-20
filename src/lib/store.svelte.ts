@@ -2,6 +2,7 @@ import { ClientResponseError } from 'pocketbase';
 import { pb } from './pocketbase';
 import { defaultLimit, defaultStudents } from './demoData';
 import { activePasses, dueTimeFrom, foldEvents } from './passes';
+import { passesToCsv } from './csv';
 import { displayName, planImport } from './roster';
 import type { ImportPlan } from './roster';
 import type { ActiveClass, Class, Destination, Modal, Notice, Pass, PassEvent, Student, TeacherTab, View } from './types';
@@ -418,6 +419,26 @@ export async function correctionsBetween(from: string, to: string) {
     sort: '-at',
   });
   return events as unknown as PassEvent[];
+}
+
+/**
+ * Hands the teacher a spreadsheet of the Class they are looking at. A real file
+ * rather than the mock Google Sheet this used to draw: a prototype that breaks
+ * its promise in front of an audience is worse than one that does something
+ * small honestly.
+ */
+export function downloadCsv() {
+  const room = app.classes.find((item) => item.id === (app.viewingClassId || app.activeClassId));
+  const name = (room?.name || 'class').toLowerCase().replaceAll(/[^a-z0-9]+/g, '-');
+  const blob = new Blob([passesToCsv(app.activeClass.passes)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `hallway-${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function setLimit(limit: number) {
