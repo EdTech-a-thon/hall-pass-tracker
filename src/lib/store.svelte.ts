@@ -158,7 +158,7 @@ export async function loadActiveClass() {
     return;
   }
   const [roster, events] = await Promise.all([
-    pb.collection('students').getFullList({ filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room }), sort: 'name' }),
+    pb.collection('students').getFullList({ filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room }), sort: 'firstName,lastPrefix' }),
     pb.collection('pass_events').getFullList({ filter: pb.filter('teacher = {:teacher} && class = {:room}', { teacher, room }), sort: 'at' }),
   ]);
   app.activeClass = {
