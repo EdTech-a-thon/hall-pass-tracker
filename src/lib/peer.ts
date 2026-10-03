@@ -15,6 +15,14 @@ const server = {
   port: Number(env.VITE_PEER_PORT || 443),
   path: (env.VITE_PEER_PATH as string) || '/peerjs',
   secure: env.VITE_PEER_SECURE !== 'false',
+  /**
+   * Google's public STUN server only tells each device its own network
+   * address. There is deliberately no relay (TURN) server: left to its
+   * defaults, PeerJS would send pass data through its own public relays when a
+   * network blocks direct connections. Here such a network just can't pair a
+   * device, and the teacher uses the laptop as the kiosk instead.
+   */
+  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
 };
 
 /** Every connection this page opened, so they can all be closed when it goes away. */
@@ -35,7 +43,7 @@ if (typeof window !== 'undefined') window.addEventListener('pagehide', releaseAl
 import.meta.hot?.dispose(releaseAll);
 
 /**
- * Opens a connection to PeerJS's matchmaking server. If it drops, it tries
+ * Opens a connection to our matchmaking server. If it drops, it tries
  * again after 3 seconds, then 6, 12… up to a minute, so an unreachable server
  * is not hammered.
  */

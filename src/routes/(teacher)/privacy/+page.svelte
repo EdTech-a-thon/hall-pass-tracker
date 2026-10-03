@@ -31,9 +31,9 @@
       stores nothing, and never receives your class or pass data.
     </p>
     <p>
-      Some school networks block devices from talking directly. Then the encrypted data is passed along by a relay run
-      by <a href="https://peerjs.com" target="_blank" rel="noopener noreferrer">PeerJS</a>, which can't read it.
-      Google's public connection service helps each device learn its own network address; it sees no class data.
+      Your class and pass data never passes through any server. Google's public connection service helps each device
+      learn its own network address; it sees no class data. Some school networks block devices from talking directly.
+      On those, a device can't be paired, and you can use your computer as the kiosk instead.
     </p>
     <p>The kiosk keeps a copy of your students' short names and holds passes only until your computer receives them.</p>
   </section>
