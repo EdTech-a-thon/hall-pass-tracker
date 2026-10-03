@@ -1,5 +1,6 @@
 <script lang="ts">
   import { account, setPassOptions } from '#lib/account.svelte.ts';
+  import RequestCard from '#lib/RequestCard.svelte';
 </script>
 
 <div class="page">
@@ -47,6 +48,12 @@
       </label>
     </div>
   </section>
+
+  <RequestCard
+    title="Need a setting we didn't think of?"
+    text="Email us, and we'll add it."
+    subject="Hallway: a pass option idea"
+  />
 </div>
 
 <style>
