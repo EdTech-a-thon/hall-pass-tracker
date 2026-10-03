@@ -13,8 +13,9 @@
   // The dialog edits a copy; nothing changes until Save.
   // svelte-ignore state_referenced_locally
   let label = $state(destination?.label ?? '');
+  // A number field hands back a number, or null while it's empty.
   // svelte-ignore state_referenced_locally
-  let minutes = $state(destination?.minutes ? String(destination.minutes) : '');
+  let minutes = $state<number | null>(destination?.minutes ?? null);
   // svelte-ignore state_referenced_locally
   let color = $state<DestinationColor>(destination?.color ?? 'green');
   // svelte-ignore state_referenced_locally
@@ -37,7 +38,7 @@
   function save(event: SubmitEvent) {
     event.preventDefault();
     const name = label.trim();
-    const limit = minutes.trim() ? Math.round(Number(minutes)) : null;
+    const limit = typeof minutes === 'number' && !Number.isNaN(minutes) ? Math.round(minutes) : null;
     if (!name) {
       error = 'Give the destination a name.';
       return;

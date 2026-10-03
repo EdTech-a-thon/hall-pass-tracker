@@ -15,6 +15,22 @@ const server = {
   port: Number(env.VITE_PEER_PORT || 443),
   path: (env.VITE_PEER_PATH as string) || '/peerjs',
   secure: env.VITE_PEER_SECURE !== 'false',
+  /**
+   * Google's public STUN server only tells each device its own network
+   * address. When a network blocks direct connections, the encrypted data is
+   * relayed through PeerJS's public TURN servers, which can't read it.
+   * TEMPORARY: replace the relay with one we run, then drop this entry.
+   */
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      {
+        urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
+        username: 'peerjs',
+        credential: 'peerjsp',
+      },
+    ],
+  },
 };
 
 /** Every connection this page opened, so they can all be closed when it goes away. */
@@ -35,7 +51,7 @@ if (typeof window !== 'undefined') window.addEventListener('pagehide', releaseAl
 import.meta.hot?.dispose(releaseAll);
 
 /**
- * Opens a connection to PeerJS's matchmaking server. If it drops, it tries
+ * Opens a connection to our matchmaking server. If it drops, it tries
  * again after 3 seconds, then 6, 12… up to a minute, so an unreachable server
  * is not hammered.
  */

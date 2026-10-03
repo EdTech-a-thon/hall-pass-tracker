@@ -216,3 +216,18 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await page.goto('/');
   await expect(page).toHaveURL(/\/classes\//);
 });
+
+test('a destination can have a time limit', async ({ page }) => {
+  await page.goto('/destinations');
+  await page.getByRole('button', { name: /New destination|Add/ }).first().click();
+  await page.getByLabel('Name').fill('Nurse');
+  await page.getByLabel(/Minutes the trip should take/).fill('15');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'New destination' })).toBeHidden();
+  await expect(page.getByText('15 minutes')).toBeVisible();
+
+  await page.getByRole('button', { name: /Nurse/ }).click();
+  await page.getByLabel(/Minutes the trip should take/).fill('');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit Nurse' })).toBeHidden();
+});

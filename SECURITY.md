@@ -22,10 +22,11 @@ storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`
   introduces the two devices. It sees their randomly generated addresses but
   stores nothing and never receives pass data.
 - Pass data travels over WebRTC's encrypted channel, directly between the
-  devices where the network allows. Where it doesn't, WebRTC falls back to
-  PeerJS's public relay servers (`turn.peerjs.com`), which pass the encrypted
-  data along without being able to read it. Google's public STUN server helps
-  each device learn its own network address; it sees no pass data.
+  devices where the network allows. Where it doesn't, it is relayed through
+  PeerJS's public TURN servers (`turn.peerjs.com`), which pass the encrypted
+  data along without being able to read it. This relay is temporary, until we
+  run our own. Google's public STUN server helps each device learn its own
+  network address; it sees no pass data.
 - The 6-digit pairing code is a temporary address. It works once and expires
   after 10 minutes. A code could, rarely, be guessed by someone else in those
   minutes, and their device would become the kiosk. Pairing again replaces it.

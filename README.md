@@ -20,7 +20,7 @@ entirely in the browser:
   [PeerJS](https://peerjs.com) (WebRTC). Our matchmaking server,
   `peer.teacher.dev`, only introduces the two devices. On networks that block
   direct connections, the encrypted data is relayed through PeerJS's public
-  relay (see SECURITY.md).
+  relay for now (see SECURITY.md).
 - The kiosk is in charge of the door. It decides who may leave, and it keeps
   working while the laptop is closed, saving passes on the device and sending
   them when the two reconnect. If the school network blocks devices from
