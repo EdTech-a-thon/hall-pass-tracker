@@ -17,12 +17,20 @@ const server = {
   secure: env.VITE_PEER_SECURE !== 'false',
   /**
    * Google's public STUN server only tells each device its own network
-   * address. There is deliberately no relay (TURN) server: left to its
-   * defaults, PeerJS would send pass data through its own public relays when a
-   * network blocks direct connections. Here such a network just can't pair a
-   * device, and the teacher uses the laptop as the kiosk instead.
+   * address. When a network blocks direct connections, the encrypted data is
+   * relayed through PeerJS's public TURN servers, which can't read it.
+   * TEMPORARY: replace the relay with one we run, then drop this entry.
    */
-  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      {
+        urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
+        username: 'peerjs',
+        credential: 'peerjsp',
+      },
+    ],
+  },
 };
 
 /** Every connection this page opened, so they can all be closed when it goes away. */

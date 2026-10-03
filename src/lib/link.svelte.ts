@@ -18,7 +18,8 @@ import type { KioskMessage, LaptopMessage } from './types';
 /**
  * The laptop's end of the kiosk connection. The two devices talk directly
  * (PeerJS over WebRTC); our matchmaking server only introduces them, and pass
- * data never passes through it or any other server. See docs/adr/0005.
+ * data never passes through it. A network that blocks direct connections
+ * relays the encrypted data through PeerJS's public relay (see peer.ts). See docs/adr/0005.
  */
 
 const pairingMinutes = 10;
