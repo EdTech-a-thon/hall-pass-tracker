@@ -13,9 +13,9 @@
   } from '#lib/account.svelte.ts';
   import ConfirmDialog from '#lib/ConfirmDialog.svelte';
   import Icon from '#lib/Icon.svelte';
-  import { beginPairing, cancelPairing, link, refreshLink } from '#lib/link.svelte.ts';
+  import { cancelPairing, link, refreshLink } from '#lib/link.svelte.ts';
+  import PairingDialog from '#lib/PairingDialog.svelte';
   import { now, time } from '#lib/passes.ts';
-  import QrCode from '#lib/QrCode.svelte';
 
   let newPin = $state('');
   let pinError = $state('');
@@ -23,18 +23,10 @@
   let pendingClass = $state('');
   let confirmRemove = $state(false);
 
-  // The countdown under the pairing code.
-  let clock = $state(Date.now());
-  $effect(() => {
-    const timer = setInterval(() => (clock = Date.now()), 1000);
-    return () => clearInterval(timer);
-  });
-  $effect(() => () => cancelPairing());
+  let pairing = $state(false);
 
   const kiosk = $derived(account.kiosk);
   const activeName = $derived(account.activeClass ? findClass(account.activeClass.id)?.name : undefined);
-  const pairUrl = $derived(link.pairing ? `${location.origin}/door?code=${link.pairing.code}` : '');
-  const secondsLeft = $derived(link.pairing ? Math.max(0, Math.round((link.pairing.expiresAt - clock) / 1000)) : 0);
 
   function savePin(event: SubmitEvent) {
     event.preventDefault();
@@ -61,11 +53,12 @@
     pendingClass = '';
   }
 
-  async function pair() {
-    await beginPairing();
+  function pair() {
+    pairing = true;
   }
 
   function thisComputer() {
+    pairing = false;
     cancelPairing();
     useThisComputer();
     refreshLink();
@@ -164,12 +157,12 @@
 
         <div class="row">
           {#if kiosk.kind === 'device'}
-            <button class="btn" onclick={pair} disabled={account.networkBlocked}>
+            <button class="btn" onclick={pair}>
               <Icon name="tablet" size={16} />Pair a different device
             </button>
             <button class="btn" onclick={thisComputer}><Icon name="monitor" size={16} />Use this computer instead</button>
           {:else}
-            <button class="btn" onclick={pair} disabled={account.networkBlocked}>
+            <button class="btn" onclick={pair}>
               <Icon name="tablet" size={16} />Pair a device instead
             </button>
           {/if}
@@ -185,7 +178,7 @@
             A tablet or Chromebook by the door. It talks straight to this laptop and keeps working while the laptop
             is closed.
           </p>
-          <div><button class="btn btn-primary" onclick={pair} disabled={account.networkBlocked}>Show pairing code</button></div>
+          <div><button class="btn btn-primary" onclick={pair}>Pair a device</button></div>
         </section>
         <section class="choice-card">
           <span class="icon-tile"><Icon name="monitor" /></span>
@@ -209,39 +202,6 @@
       </div>
     {/if}
 
-    {#if link.pairing}
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <p class="eyebrow">Pair a device</p>
-            <h2>On the door device, open the camera and scan this code</h2>
-            <p class="muted small">
-              Or go to <strong>{location.host}/door</strong> and type the code. It works once and expires in
-              {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}.
-            </p>
-          </div>
-          <button class="btn btn-quiet" onclick={cancelPairing}>Cancel</button>
-        </div>
-        {#if link.pairing.state === 'failed'}
-          <p class="form-error">Couldn't reach the pairing service. Check this computer's internet connection and try again.</p>
-        {:else}
-          <div class="row" style="gap:28px;align-items:center">
-            <QrCode text={pairUrl} label="QR code for pairing" />
-            <div class="stack" style="gap:4px">
-              <span class="pair-code">{link.pairing.code}</span>
-              <span class="muted small">
-                {link.pairing.state === 'starting'
-                  ? 'Getting a code ready…'
-                  : link.pairing.state === 'connecting'
-                    ? 'Device found. Connecting…'
-                    : 'Waiting for the device…'}
-              </span>
-            </div>
-          </div>
-        {/if}
-      </section>
-    {/if}
-
     <section class="card">
       <div class="card-head">
         <div>
@@ -254,6 +214,10 @@
     </section>
   {/if}
 </div>
+
+{#if pairing}
+  <PairingDialog onClose={() => (pairing = false)} onUseThisComputer={thisComputer} />
+{/if}
 
 {#if pendingClass && activeName}
   <ConfirmDialog

@@ -30,6 +30,7 @@
   } from '#lib/door.svelte.ts';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
+  import Modal from '#lib/Modal.svelte';
 
   const local = $derived(isLocal());
   const paired = $derived(!!door.device);
@@ -236,7 +237,7 @@
   {/if}
 
   {#if choosingFor && cls}
-    <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="choose-title">
+    <Modal overlay="overlay" labelledby="choose-title" onClose={() => (choosingFor = null)}>
       <div class="sheet">
         <p class="door-eyebrow">Pass for</p>
         <h2 id="choose-title">{choosingFor.name}</h2>
@@ -251,12 +252,12 @@
         </div>
         <button class="quiet-link" onclick={() => (choosingFor = null)}>Cancel</button>
       </div>
-    </div>
+    </Modal>
   {/if}
 
   {#if waitingFor}
     {@const spot = lineSpotFor(waitingFor.id)}
-    <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="waiting-title">
+    <Modal overlay="overlay" labelledby="waiting-title" onClose={() => (waitingFor = null)}>
       <div class="sheet">
         <p class="door-eyebrow">In line</p>
         <h2 id="waiting-title">{waitingFor.name}</h2>
@@ -276,7 +277,7 @@
           >
         </div>
       </div>
-    </div>
+    </Modal>
   {/if}
 
   {#if door.notice}
@@ -304,7 +305,7 @@
   {/if}
 
   {#if teacher !== 'closed'}
-    <div class="overlay" role="dialog" aria-modal="true" aria-label="Teacher menu">
+    <Modal overlay="overlay" label="Teacher menu" onClose={() => (teacher = 'closed')}>
       <div class="sheet">
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
@@ -350,7 +351,7 @@
         {/if}
         <button class="quiet-link" onclick={() => (teacher = 'closed')}>Cancel</button>
       </div>
-    </div>
+    </Modal>
   {/if}
 </div>
 
@@ -655,7 +656,7 @@
     cursor: pointer;
   }
 
-  .overlay {
+  :global(.overlay) {
     position: fixed;
     inset: 0;
     z-index: 10;

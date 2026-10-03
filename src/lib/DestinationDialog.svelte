@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Modal from './Modal.svelte';
   import { account, deleteDestination, saveDestination } from './account.svelte';
   import { destinationColors, destinationIcons, type DestinationColor, type DestinationIcon } from './destinations';
   import Icon from './Icon.svelte';
@@ -47,9 +48,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
-
-<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="destination-title">
+<Modal onClose={onClose} labelledby="destination-title">
   <form class="dialog" onsubmit={save}>
     <div class="dialog-head">
       <h2 id="destination-title">{destination ? `Edit ${destination.label}` : 'New destination'}</h2>
@@ -121,4 +120,4 @@
       </div>
     </div>
   </form>
-</div>
+</Modal>

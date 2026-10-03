@@ -80,13 +80,14 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
 
   await createClassWithRoster(laptop, 'Period 3');
   await setPin(laptop);
-  await laptop.getByRole('button', { name: 'Show pairing code' }).click();
-  const code = (await laptop.locator('.pair-code').textContent({ timeout: 20_000 }))!.trim();
-  await expect(laptop.getByText('Waiting for the device…')).toBeVisible({ timeout: 20_000 });
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  const code = (await laptop.locator('.pair-code').textContent())!.trim();
 
   await tablet.goto(`/door?code=${code}`);
   await expect(tablet.getByRole('heading', { name: 'Tap your name' })).toBeVisible({ timeout: 30_000 });
-  await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 30_000 });
+  await expect(laptop.getByRole('heading', { name: 'Connected!' })).toBeVisible({ timeout: 30_000 });
+  await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 10_000 });
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
   await tablet.getByRole('button', { name: 'Office' }).click();
@@ -133,4 +134,16 @@ test('students line up when the pass limit is reached', async ({ page }) => {
   // Maya Ch. is up next and goes where she lined up for.
   await page.getByRole('button', { name: /Maya Ch\..*Your turn/ }).click();
   await expect(page.getByText('Maya Ch.: Water')).toBeVisible();
+});
+
+test('pop-ups close with Escape or a click outside', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 6');
+  await page.getByRole('button', { name: 'Add students' }).click();
+  await expect(page.getByRole('heading', { name: 'Add students' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'Add students' })).toBeHidden();
+
+  await page.getByRole('button', { name: 'Add students' }).click();
+  await page.mouse.click(5, 5);
+  await expect(page.getByRole('heading', { name: 'Add students' })).toBeHidden();
 });

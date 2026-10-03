@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Modal from './Modal.svelte';
   import { correctPass } from './account.svelte';
   import { displayName } from './roster';
   import type { Pass, Student } from './types';
@@ -35,10 +36,8 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
-
-<div class="backdrop">
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="correct-title">
+<Modal onClose={onClose} labelledby="correct-title">
+  <div class="dialog">
     <div class="dialog-head">
       <div>
         <p class="eyebrow">Correct a pass</p>
@@ -62,4 +61,4 @@
       <button class="btn btn-primary" onclick={save}>Save correction</button>
     </div>
   </div>
-</div>
+</Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Modal from './Modal.svelte';
   import { applyImport } from './account.svelte';
   import Icon from './Icon.svelte';
   import { displayName, planImport, type ImportPlan } from './roster';
@@ -29,9 +30,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
-
-<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="add-title">
+<Modal onClose={onClose} labelledby="add-title">
   <div class="dialog" style="width:min(560px,100%)">
     <div class="dialog-head">
       <div>
@@ -96,4 +95,4 @@
       </div>
     {/if}
   </div>
-</div>
+</Modal>

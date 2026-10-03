@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Modal from './Modal.svelte';
   import { goto } from '$app/navigation';
   import { classPasses, deleteClass, updateClass } from './account.svelte';
   import Icon from './Icon.svelte';
@@ -25,9 +26,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
-
-<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+<Modal onClose={onClose} labelledby="settings-title">
   {#if confirmingDelete}
     <div class="dialog">
       <h2 id="settings-title">Delete {cls.name}?</h2>
@@ -56,4 +55,4 @@
       </div>
     </form>
   {/if}
-</div>
+</Modal>

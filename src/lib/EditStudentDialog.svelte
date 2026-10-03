@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Modal from './Modal.svelte';
   import { renameStudent } from './account.svelte';
   import { displayName, maxPrefix } from './roster';
   import type { Class, Student } from './types';
@@ -34,9 +35,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
-
-<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+<Modal onClose={onClose} labelledby="edit-title">
   <form class="dialog" onsubmit={save}>
     <h2 id="edit-title">Edit {displayName(student)}</h2>
     <label class="field">First name or nickname <input bind:value={firstName} /></label>
@@ -50,4 +49,4 @@
       <button class="btn btn-primary">Save</button>
     </div>
   </form>
-</div>
+</Modal>
