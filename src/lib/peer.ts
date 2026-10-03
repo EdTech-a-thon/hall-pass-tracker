@@ -4,7 +4,7 @@ import type { DataConnection, Peer } from 'peerjs';
 export const pairingPrefix = 'hallway-pair-';
 
 /**
- * Hallway's own matchmaking server (a standard PeerJS server). It only
+ * Happy Hallways' own matchmaking server (a standard PeerJS server). It only
  * introduces devices to each other; it stores nothing. Set VITE_PEER_HOST (and
  * VITE_PEER_PORT, VITE_PEER_PATH, VITE_PEER_SECURE) in .env.local to point at
  * another one, e.g. a local `peerjs` server while testing.

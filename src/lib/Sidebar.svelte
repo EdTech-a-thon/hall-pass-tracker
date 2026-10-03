@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { account, findClass } from './account.svelte';
+  import BrandMark from './BrandMark.svelte';
   import HelpButton from './HelpButton.svelte';
   import Icon from './Icon.svelte';
   import KioskBadge from './KioskBadge.svelte';
@@ -23,7 +24,7 @@
 </script>
 
 <aside class="sidebar">
-  <a class="brand" href="/"><span class="brand-mark"><Icon name="door" size={17} /></span>Hallway</a>
+  <a class="brand" href="/"><BrandMark />Happy Hallways</a>
 
   <nav class="nav" aria-label="Main">
     <button class="nav-toggle" aria-expanded={classesOpen} onclick={() => (classesOpen = !classesOpen)}>

@@ -40,7 +40,7 @@
       <button class="btn btn-small btn-quiet" onclick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
     </div>
     <p class="muted small">
-      Paste a list, one student per line, or choose a CSV. Hallway keeps only first names plus the fewest letters of
+      Paste a list, one student per line, or choose a CSV. Happy Hallways keeps only first names plus the fewest letters of
       the last name it needs to tell students apart.
     </p>
     <textarea aria-label="One student per line" bind:value={pasted} rows="7" placeholder={'Maya Chen\nJordan Ellis'}></textarea>

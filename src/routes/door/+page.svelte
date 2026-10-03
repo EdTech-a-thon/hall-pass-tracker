@@ -29,6 +29,7 @@
     upNext,
     waitingCount,
   } from '#lib/door.svelte.ts';
+  import BrandMark from '#lib/BrandMark.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
   import Modal from '#lib/Modal.svelte';
@@ -135,19 +136,19 @@
   }
 </script>
 
-<svelte:head><title>Hallway kiosk</title></svelte:head>
+<svelte:head><title>Happy Hallways kiosk</title></svelte:head>
 
 <div class="door">
   {#if !local && !paired}
     <!-- Not a kiosk yet: pair with the teacher's laptop. -->
     <main class="pairing">
-      <span class="mark"><Icon name="door" size={26} /></span>
+      <span class="mark"><BrandMark size={52} /></span>
       <h1>Make this device the kiosk</h1>
       {#if door.status === 'replaced'}
         <p class="lede">This device is no longer the kiosk. A different one was paired on the teacher's laptop.</p>
       {/if}
       <p class="lede">
-        On the teacher's laptop, open Hallway and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
+        On the teacher's laptop, open Happy Hallways and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
         code here, or scan the QR code with this device's camera.
       </p>
       <form onsubmit={submitCode}>
@@ -173,7 +174,7 @@
   {:else}
     <header class="door-head">
       <div>
-        <p class="door-eyebrow">{cls?.name ?? 'Hallway'}</p>
+        <p class="door-eyebrow">{cls?.name ?? 'Happy Hallways'}</p>
         <h1>Tap your name</h1>
       </div>
       {#if paired}
@@ -610,11 +611,6 @@
   .mark {
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    background: var(--accent);
-    color: #fff;
   }
 
   form {
@@ -693,7 +689,7 @@
     display: grid;
     place-items: center;
     padding: 16px;
-    background: rgb(20 30 24 / 40%);
+    background: rgb(42 34 22 / 40%);
     backdrop-filter: blur(3px);
   }
 
@@ -705,7 +701,7 @@
     border: 1px solid var(--door-line);
     border-radius: 16px;
     background: #fff;
-    box-shadow: 0 16px 48px rgb(20 30 24 / 18%);
+    box-shadow: 0 16px 48px rgb(42 34 22 / 18%);
     text-align: center;
   }
 

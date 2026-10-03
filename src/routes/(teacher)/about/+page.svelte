@@ -2,12 +2,12 @@
   import { supportEmail, supportMailto } from '#lib/support.ts';
 </script>
 
-<svelte:head><title>About · Hallway</title></svelte:head>
+<svelte:head><title>About · Happy Hallways</title></svelte:head>
 
 <div class="page site-prose">
   <header>
     <p class="eyebrow">About</p>
-    <h1>About Hallway</h1>
+    <h1>About Happy Hallways</h1>
     <p class="muted">
       A free hall pass for teachers. Students sign themselves out at a kiosk by the door, and you see who's out and
       how much class each student misses.
@@ -20,7 +20,7 @@
       <h2>From the EdTech-a-thon</h2>
     </div>
     <p>
-      Hallway is a project from the
+      Happy Hallways is a project from the
       <a href="https://edtechathon.com" target="_blank" rel="noopener noreferrer">EdTech-a-thon</a>, a community of
       builders making free tools for classrooms. It was shaped by the teachers who asked us for it. Learn more about who
       we are and what else we're building at
@@ -47,7 +47,7 @@
       We'd love to hear from you. Tell us what's working, what's not, or pitch us an idea for a tool you wish existed.
       We're here to help.
     </p>
-    <div><a class="btn btn-primary" href={supportMailto('Hallway feedback')}>Email {supportEmail}</a></div>
+    <div><a class="btn btn-primary" href={supportMailto('Happy Hallways feedback')}>Email {supportEmail}</a></div>
   </section>
 </div>
 

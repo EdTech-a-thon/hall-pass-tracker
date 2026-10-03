@@ -1,26 +1,29 @@
 /*
- * Hallway's look: Formative's layout (left sidebar, page header) with Test
- * Parrot's quieter finish (flat surfaces, hairline borders, small dense type),
- * in one clean sans-serif. Forest green is the main accent; destinations bring
- * their own colors; red is kept for things that destroy data.
+ * Happy Hallways' look: Formative's layout (left sidebar, page header) with
+ * Test Parrot's quieter finish (flat surfaces, hairline borders, small dense
+ * type), in one clean sans-serif, on warm sunny neutrals. The sun logo brings
+ * the yellow; forest green is the main accent; destinations bring their own
+ * colors; red is kept for things that destroy data.
  */
 :root {
-  --bg: #f3f5f1;
-  --surface: #fdfdfb;
-  --surface-sunk: #f6f8f4;
-  --border: #e1e6de;
-  --border-strong: #c9d1c6;
-  --text: #1d2a22;
-  --muted: #5f6c64;
-  --faint: #8b968f;
-  --accent: #1e5738;
-  --accent-hover: #174a2f;
-  --accent-wash: #e5efe7;
+  --bg: #faf6ee;
+  --surface: #fffdf9;
+  --surface-sunk: #f8f2e8;
+  --border: #ece4d6;
+  --border-strong: #d9cdba;
+  --text: #2a261f;
+  --muted: #6a6258;
+  --faint: #988f82;
+  --accent: #1f6343;
+  --accent-hover: #185237;
+  --accent-wash: #e8f1e6;
   --live: #2f9a5d;
   --warn: #8a5210;
   --warn-wash: #f7ecd9;
   --danger: #a3321f;
   --danger-wash: #f8e0da;
+  --sun: #fbbf24;
+  --sun-ray: #f59e0b;
   --sans: 'Nunito Sans', system-ui, -apple-system, sans-serif;
   --radius: 10px;
   color-scheme: light;
@@ -251,15 +254,6 @@ textarea {
   text-decoration: none;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-}
 
 .nav {
   display: grid;
@@ -773,7 +767,7 @@ tr.detail td {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgb(20 30 24 / 45%);
+  background: rgb(42 34 22 / 45%);
   backdrop-filter: blur(3px);
 }
 
@@ -787,7 +781,7 @@ tr.detail td {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgb(20 30 24 / 22%);
+  box-shadow: 0 16px 48px rgb(42 34 22 / 22%);
 }
 
 .dialog-head {

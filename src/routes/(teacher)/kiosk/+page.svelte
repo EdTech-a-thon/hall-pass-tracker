@@ -92,7 +92,7 @@
   {#if link.status === 'taken'}
     <div class="notice-bar" role="alert">
       <Icon name="alert-triangle" />
-      Hallway is open in another tab, or this account was imported on another computer. The kiosk can only connect to
+      Happy Hallways is open in another tab, or this account was imported on another computer. The kiosk can only connect to
       one of them. Close the other one, then reload this page.
     </div>
   {/if}

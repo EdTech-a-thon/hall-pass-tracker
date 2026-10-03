@@ -119,7 +119,7 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 16px;
-    box-shadow: 0 16px 48px rgb(20 30 24 / 22%);
+    box-shadow: 0 16px 48px rgb(42 34 22 / 22%);
     text-align: center;
   }
 
