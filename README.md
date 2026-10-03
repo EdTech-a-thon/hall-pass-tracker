@@ -43,8 +43,30 @@ bun run dev      # http://localhost:8000
 ```
 
 `bun run check` type-checks the project. `bun run test` runs the browser
-tests (the pairing test needs an internet connection to reach PeerJS's public
-server).
+tests.
+
+### Testing pairing without the public server
+
+PeerJS's free public server limits how often one internet address may connect,
+and repeated test runs can get you temporarily blocked. To test against a
+matchmaking server on your own machine instead:
+
+```bash
+bunx --package peer peerjs --port 9000 --path /hallway
+```
+
+and create `.env.local` (it is not committed) with your machine's address:
+
+```
+VITE_PEER_HOST=192.168.0.29
+VITE_PEER_PORT=9000
+VITE_PEER_PATH=/hallway
+VITE_PEER_SECURE=false
+```
+
+To try a laptop and a kiosk in one browser, open them at two different
+addresses, e.g. `http://127.0.0.1:8000` and `http://192.168.0.29:8000`. Each
+address keeps its own saved data, just like two separate devices.
 
 ## Learn more
 

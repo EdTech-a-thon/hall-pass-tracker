@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { setDoorLocked } from '#lib/account.svelte.ts';
@@ -35,20 +35,21 @@
   let pinError = $state('');
   let confirmForget = $state(false);
 
-  // Opening the door screen locks it (on the laptop) or connects it (on a paired device).
   onMount(() => {
+    // Opening the door screen locks it (on the laptop) or connects it (on a paired device).
     if (local) setDoorLocked(true);
     else if (paired) connectToLaptop();
+    // Arriving from the QR code: pair straight away, then drop the code from the
+    // address so a later reload never retries a code that has been used up.
+    if (page.url.searchParams.has('code')) replaceState('/door', {});
+    else return;
+    if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
   });
 
-  // Arriving from the QR code: pair straight away.
-  let autoPaired = false;
-  $effect(() => {
-    if (!autoPaired && !local && !paired && /^\d{6}$/.test(code)) {
-      autoPaired = true;
-      pairWithCode(code);
-    }
-  });
+  /** Puts the cursor in a field as soon as it appears, so the teacher can just type. */
+  function focusOnShow(input: HTMLInputElement) {
+    input.focus();
+  }
 
   function submitCode(event: SubmitEvent) {
     event.preventDefault();
@@ -129,6 +130,9 @@
         </button>
       </form>
       {#if door.pairing.state === 'error'}<p class="door-error" role="alert">{door.pairing.message}</p>{/if}
+      {#if door.pairing.state === 'connecting' && door.pairing.slow}
+        <p class="lede small" role="status">Still trying… Check that the code matches the one on the teacher's screen.</p>
+      {/if}
       <a class="quiet-link" href="/">This is the teacher's computer</a>
     </main>
   {:else}
@@ -216,8 +220,7 @@
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
           <form onsubmit={submitPin}>
-            <!-- svelte-ignore a11y_autofocus -->
-            <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} autofocus />
+            <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} {@attach focusOnShow} />
             <button class="door-btn primary">Unlock</button>
           </form>
           {#if pinError}<p class="door-error" role="alert">{pinError}</p>{/if}

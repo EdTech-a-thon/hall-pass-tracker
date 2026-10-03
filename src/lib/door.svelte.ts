@@ -49,7 +49,7 @@ export const door = $state({
   device: loadDevice(),
   /** Only meaningful on a paired device. */
   status: 'offline' as 'offline' | 'live' | 'replaced',
-  pairing: { state: 'idle' as 'idle' | 'connecting' | 'error', message: '' },
+  pairing: { state: 'idle' as 'idle' | 'connecting' | 'error', message: '', slow: false },
   notice: null as DoorNotice | null,
 });
 
@@ -300,7 +300,7 @@ export async function connectToLaptop() {
   clearInterval(retryTimer);
   retryTimer = window.setInterval(() => {
     if (door.device && door.status === 'offline') dial();
-  }, 8000);
+  }, 4000);
 }
 
 /** Stops being a kiosk. Anything not yet handed over is lost, so the page warns first. */
@@ -320,7 +320,10 @@ export function forgetDevice() {
  * and only the teacher's own computer can be the kiosk.
  */
 export async function pairWithCode(code: string) {
-  door.pairing = { state: 'connecting', message: '' };
+  door.pairing = { state: 'connecting', message: '', slow: false };
+  // A wrong code is only reported once the matchmaking server gives up on it,
+  // which can take a while; meanwhile, suggest checking the code.
+  const slowTimer = setTimeout(() => (door.pairing.slow = true), 6000);
   door.status = 'offline';
   const temporary = await createPeer();
   let done = false;
@@ -328,8 +331,9 @@ export async function pairWithCode(code: string) {
     if (done) return;
     done = true;
     clearTimeout(timer);
+    clearTimeout(slowTimer);
     temporary.destroy();
-    door.pairing = { state: 'error', message };
+    door.pairing = { state: 'error', message, slow: false };
   };
   const timer = setTimeout(
     () =>
@@ -352,6 +356,7 @@ export async function pairWithCode(code: string) {
       if (message.type !== 'paired' || done) return;
       done = true;
       clearTimeout(timer);
+      clearTimeout(slowTimer);
       door.device = {
         laptopPeerId: message.laptopPeerId,
         kioskId: message.kioskId,
@@ -362,7 +367,7 @@ export async function pairWithCode(code: string) {
         outbox: [],
       };
       saveDevice();
-      door.pairing = { state: 'idle', message: '' };
+      door.pairing = { state: 'idle', message: '', slow: false };
       setTimeout(() => temporary.destroy(), 500);
       connectToLaptop();
     });

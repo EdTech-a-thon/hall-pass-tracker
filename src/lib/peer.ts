@@ -3,6 +3,20 @@ import type { Peer } from 'peerjs';
 /** A pairing code is the last part of a temporary address the kiosk dials once. */
 export const pairingPrefix = 'hallway-pair-';
 
+/**
+ * Which matchmaking server to use. By default PeerJS's free public one; set
+ * VITE_PEER_HOST (and optionally VITE_PEER_PORT, VITE_PEER_PATH) in
+ * .env.local to use your own, e.g. a local `peerjs` server while testing.
+ */
+const server = import.meta.env.VITE_PEER_HOST
+  ? {
+      host: import.meta.env.VITE_PEER_HOST as string,
+      port: Number(import.meta.env.VITE_PEER_PORT ?? 443),
+      path: (import.meta.env.VITE_PEER_PATH as string) ?? '/',
+      secure: import.meta.env.VITE_PEER_SECURE !== 'false',
+    }
+  : {};
+
 /** Every connection this page opened, so they can all be closed when it goes away. */
 const live = new Set<Peer>();
 
@@ -27,7 +41,7 @@ import.meta.hot?.dispose(releaseAll);
  */
 export async function createPeer(id?: string): Promise<Peer> {
   const { Peer } = await import('peerjs');
-  const peer = id ? new Peer(id) : new Peer();
+  const peer = id ? new Peer(id, server) : new Peer(server);
   live.add(peer);
 
   let delay = 3000;
