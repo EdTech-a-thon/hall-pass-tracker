@@ -32,11 +32,7 @@ export function knownIcon(name: string): DestinationIcon {
 /** Every new account starts with these, so students can sign out on day one. */
 export function defaultDestinations(newId: () => string): Destination[] {
   return [
-    { id: newId(), label: 'Restroom', minutes: 5, color: 'blue', icon: 'toilet' },
-    { id: newId(), label: 'Water', minutes: 3, color: 'teal', icon: 'droplet' },
-    { id: newId(), label: 'Office', minutes: 10, color: 'orange', icon: 'building' },
-    { id: newId(), label: 'Counselor', minutes: 15, color: 'purple', icon: 'heart-handshake' },
-    { id: newId(), label: 'Nurse', minutes: 15, color: 'pink', icon: 'stethoscope' },
+    { id: newId(), label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet' },
   ];
 }
 

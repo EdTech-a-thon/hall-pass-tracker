@@ -21,7 +21,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
     "test": "playwright test",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "demo": "bun scripts/make-demo.ts"
   },
   "type": "module",
   "dependencies": {

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function createClassWithRoster(page: Page, name: string) {
-  await page.goto('/');
+  await page.goto('/classes/new');
   await page.getByLabel('Class name').fill(name);
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Maya Chen\nMaya Carter\nJordan Ellis');
@@ -28,16 +28,23 @@ test('a teacher runs the kiosk on their own computer', async ({ page }) => {
 
   // Sign out; the limit of 1 then refuses a second student.
   await page.getByRole('button', { name: /Jordan E\./ }).click();
-  await page.getByRole('button', { name: 'Restroom' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await expect(page.getByText('Pass approved', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
   await page.getByRole('button', { name: /Maya Ch\./ }).click();
-  await page.getByRole('button', { name: 'Water' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await expect(page.getByText('Please wait in class')).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
 
-  // Teacher pages stay locked until the PIN is entered.
+  // Leaving the kiosk asks first; teacher pages stay locked until the PIN is entered.
+  const asked = new Promise<string>((resolve) =>
+    page.once('dialog', async (dialog) => {
+      resolve(dialog.type());
+      await dialog.accept();
+    }),
+  );
   await page.goto('/kiosk');
+  expect(await asked).toBe('beforeunload');
   await expect(page).toHaveURL(/\/door/);
 
   await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
@@ -66,7 +73,7 @@ test('export and import put the teacher back where they were', async ({ page }) 
 
   await page.evaluate(() => localStorage.clear());
   await page.goto('/');
-  await expect(page.getByText('Start with your first class')).toBeVisible();
+  await expect(page).toHaveURL(/\/welcome$/);
   await page.goto('/settings');
   await page.locator('input[type=file]').setInputFiles(file!);
   await page.getByRole('button', { name: 'Replace everything' }).click();
@@ -90,7 +97,7 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
   await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 10_000 });
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
-  await tablet.getByRole('button', { name: 'Office' }).click();
+  await tablet.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await expect(tablet.getByText('Pass approved', { exact: true })).toBeVisible();
 
   await laptop.getByRole('link', { name: /^Period 3/ }).click();
@@ -111,12 +118,12 @@ test('students line up when the pass limit is reached', async ({ page }) => {
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
 
   await page.getByRole('button', { name: /Jordan E\./ }).click();
-  await page.getByRole('button', { name: 'Restroom' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await page.getByRole('button', { name: 'Done' }).click();
 
   // Full: Maya Ch. joins the line instead of being turned away.
   await page.getByRole('button', { name: /Maya Ch\./ }).click();
-  await page.getByRole('button', { name: 'Water' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await page.getByRole('button', { name: 'Join the line' }).click();
   await expect(page.getByText("You're 1st in line")).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
@@ -127,13 +134,13 @@ test('students line up when the pass limit is reached', async ({ page }) => {
   await expect(page.getByText(/it's your turn/)).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
   await page.getByRole('button', { name: /Maya Ca\./ }).click();
-  await page.getByRole('button', { name: 'Office' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await expect(page.getByText('Join the line?')).toBeVisible();
   await page.getByRole('button', { name: 'Not now' }).click();
 
   // Maya Ch. is up next and goes where she lined up for.
   await page.getByRole('button', { name: /Maya Ch\..*Your turn/ }).click();
-  await expect(page.getByText('Maya Ch.: Water')).toBeVisible();
+  await expect(page.getByText('Maya Ch.: Bathroom')).toBeVisible();
 });
 
 test('pop-ups close with Escape or a click outside', async ({ page }) => {
@@ -166,7 +173,7 @@ test('no-pass times hold everyone back, but students can line up', async ({ page
 
   await expect(page.getByText('No passes right now.')).toBeVisible();
   await page.getByRole('button', { name: /Jordan E\./ }).click();
-  await page.getByRole('button', { name: 'Restroom' }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
   await expect(page.getByText(/Passes open at 9:30 AM. Join the line/)).toBeVisible();
   await page.getByRole('button', { name: 'Join the line' }).click();
   await page.getByRole('button', { name: 'Done' }).click();
@@ -176,5 +183,36 @@ test('no-pass times hold everyone back, but students can line up', async ({ page
   await page.clock.runFor('21:00');
   await expect(page.getByText('No passes right now.')).toBeHidden();
   await page.getByRole('button', { name: /Jordan E\..*Your turn/ }).click();
-  await expect(page.getByText('Jordan E.: Restroom')).toBeVisible();
+  await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
+});
+
+test('a first visit gets the welcome page, a tour and a checklist', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/welcome$/);
+  await expect(page.getByRole('heading', { name: /Know who’s out/ })).toBeVisible();
+  await page.getByRole('link', { name: /Get started, it’s free/ }).click();
+
+  await expect(page.getByRole('heading', { name: 'Add your class' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByRole('heading', { name: 'Set your destinations' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByRole('heading', { name: 'Start the kiosk' })).toBeVisible();
+  await expect(page.getByRole('note')).toContainText('Keep both screens open');
+  await page.getByRole('button', { name: 'Add your class' }).click();
+
+  await expect(page.getByText('Start with your first class')).toBeVisible();
+  const checklist = page.getByRole('complementary', { name: 'Getting started' });
+  await expect(checklist).toContainText('0 of 3');
+  await page.getByLabel('Class name').fill('Period 5');
+  await page.getByRole('button', { name: 'Create class' }).click();
+  await page.getByLabel('One student per line').fill('Elliot Roe\nDuncan Johnson');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('button', { name: 'Save students' }).click();
+  await expect(checklist).toContainText('1 of 3');
+  await checklist.getByRole('link', { name: 'Set your destinations' }).click();
+  await expect(checklist).toContainText('2 of 3');
+
+  // Once welcomed, the app opens straight away.
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/classes\//);
 });

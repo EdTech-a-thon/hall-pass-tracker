@@ -4,6 +4,8 @@
   import { dayKey, shortDate } from '#lib/passes.ts';
   import { download } from '#lib/csv.ts';
   import Icon from '#lib/Icon.svelte';
+  import { leaveTo } from '#lib/leaving.ts';
+  import { onboarding, updateOnboarding } from '#lib/onboarding.svelte.ts';
 
   let pending = $state('');
   let error = $state('');
@@ -29,7 +31,7 @@
     try {
       importAccount(pending);
       // Start fresh so the kiosk connection picks up the imported pairing.
-      location.href = '/';
+      leaveTo('/');
     } catch (problem) {
       error = problem instanceof Error ? problem.message : 'That file could not be read.';
       pending = '';
@@ -87,6 +89,22 @@
     </div>
     {#if error}<p class="form-error" role="alert">{error}</p>{/if}
   </section>
+
+  <section class="card">
+    <div>
+      <p class="eyebrow">Getting started</p>
+      <h2>Help getting set up</h2>
+    </div>
+    <label class="check">
+      <input
+        type="checkbox"
+        checked={onboarding.showChecklist}
+        onchange={(event) => updateOnboarding({ showChecklist: event.currentTarget.checked })}
+      />
+      Show the getting-started checklist
+    </label>
+    <div><a class="btn" href="/welcome/tour"><Icon name="circle-play" size={16} />Replay the welcome tour</a></div>
+  </section>
 </div>
 
 {#if pending}
@@ -99,3 +117,20 @@
     onCancel={() => (pending = '')}
   />
 {/if}
+
+<style>
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .check input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+</style>

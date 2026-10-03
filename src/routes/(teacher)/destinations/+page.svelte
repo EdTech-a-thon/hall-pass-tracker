@@ -3,10 +3,14 @@
   import DestinationDialog from '#lib/DestinationDialog.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
+  import { updateOnboarding } from '#lib/onboarding.svelte.ts';
   import type { Destination } from '#lib/types.ts';
 
   /** undefined: closed. null: adding a new one. */
   let editing = $state<Destination | null | undefined>(undefined);
+
+  // Looking over the destinations ticks them off the getting-started checklist.
+  updateOnboarding({ visitedDestinations: true });
 </script>
 
 <div class="page">
