@@ -1,27 +1,48 @@
 # Hallway Security Model
 
-This prototype treats a student-operated kiosk as hostile. Browser code is never an authorization boundary.
+Hallway is a local-first prototype. There is no server holding student data:
+each teacher's classes, rosters and passes live in their own browser's local
+storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`.
 
-## Required deployment controls
+## What is stored, and where
 
-- Host teacher and kiosk interfaces on different origins and browser profiles.
-- Run the kiosk in a managed, unprivileged operating-system kiosk account. Restrict navigation, extensions, downloads, removable media, firmware boot, and browser password storage.
-- Put PocketBase behind HTTPS, restrict CORS, enable HSTS, encrypt PocketBase settings, and restrict superuser access by IP and MFA.
-- Never put a superuser token, teacher token, recovery key, or teacher password in Vite environment variables or kiosk storage.
-- Keep collections locked. Client writes go through authenticated custom routes with strict body limits.
-- Treat student IDs as identifiers, not proof of identity. Production should use opaque badges or separate PINs if impersonation is not an accepted risk.
-- Fail closed when PocketBase is unavailable. Never report approval until a server transaction succeeds.
+- **Student names** are a first name plus the fewest letters of the last name
+  needed to tell students apart (at most three). The rest is discarded when the
+  roster is pasted (`docs/adr/0001`).
+- **On the teacher's laptop:** everything, in local storage, unencrypted.
+  Anyone who can use that browser profile can read it. The backup file is
+  ordinary JSON and should be kept like any other class record.
+- **On a paired kiosk:** each class's display names, destinations and Pass
+  Limit, the teacher's PIN, and passes that are open or not yet handed to the
+  laptop. It never holds the full history.
 
-## Authentication boundary
+## The connection between kiosk and laptop
 
-Teachers use PocketBase email/password authentication. Public registration creates a new teacher record, which is also a new isolated classroom in this one-teacher/one-class prototype. Public registration does not grant access to existing classrooms: PocketBase routes scope records to the authenticated teacher ID, while each browser vault is encrypted and namespaced by that same ID.
+- Hallway's matchmaking server (`peer.teacher.dev`, a standard PeerJS server)
+  introduces the two devices. It sees their randomly generated addresses but
+  stores nothing and never receives pass data.
+- Pass data travels over WebRTC's encrypted channel, directly between the
+  devices where the network allows. Where it doesn't, WebRTC falls back to
+  PeerJS's public relay servers (`turn.peerjs.com`), which pass the encrypted
+  data along without being able to read it. Google's public STUN server helps
+  each device learn its own network address; it sees no pass data.
+- The 6-digit pairing code is a temporary address. It works once and expires
+  after 10 minutes. A code could, rarely, be guessed by someone else in those
+  minutes, and their device would become the kiosk. Pairing again replaces it.
+- After pairing, the kiosk proves itself with a long random secret. The laptop
+  ignores connections without the current kiosk's secret, except that a
+  replaced kiosk may hand over passes it still holds, once.
 
-This deployment cannot send email, so email verification, password-reset email, and PocketBase email-OTP MFA are unavailable. PocketBase does not natively support authenticator-app TOTP, and this project does not roll its own. Production authenticator-app MFA requires an audited external identity provider or a separately reviewed PocketBase extension.
+## What the PIN does and doesn't do
 
-Teacher tokens use an in-memory `BaseAuthStore`; refreshing destroys the session. Kiosks never receive teacher credentials. A teacher creates a single-use, eight-digit, five-minute link code on a trusted device. Redemption creates a restricted device principal. Revocation disables the device and rotates its PocketBase token key.
+The teacher PIN locks the Hallway interface on the kiosk (switching class,
+unpairing, leaving kiosk mode). It is stored in plain text in local storage on
+both devices, so it does not stop a technically capable person with access to
+the device's browser tools. For real classroom use, run the kiosk device in its
+operating system's managed kiosk or guided-access mode.
 
-## Encryption boundary
+## Kiosk screen
 
-The teacher password is processed by libsodium Argon2id and authenticated secretbox encryption in the teacher browser. PocketBase stores ciphertext. Encryption protects server storage and backups; it cannot protect plaintext on a compromised endpoint. The kiosk must receive only the minimum current data, not the full roster or historical vault.
-
-If both the teacher password and recovery key are lost, encrypted student records cannot be recovered. Because email delivery is unavailable, there is also no self-service password reset.
+The kiosk shows who is out and where they went, never how long they've been
+gone or whether they are overdue (`docs/adr/0003`). When the Pass Limit is
+reached it says how many are out, never who.
