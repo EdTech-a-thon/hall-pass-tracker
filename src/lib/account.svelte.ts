@@ -1,4 +1,4 @@
-import { defaultDestinations } from './destinations';
+import { defaultDestinations, knownIcon } from './destinations';
 import { endUnseen, mergeInto, newId, now } from './passes';
 import { displayName, type ImportPlan } from './roster';
 import type { Account, ActiveClass, Class, Destination, DoorSetup, LineSpot, Pass, Student } from './types';
@@ -50,6 +50,7 @@ function upgrade(saved: SavedAccount): Account {
         }))
       : defaults;
   }
+  for (const destination of saved.destinations) destination.icon = knownIcon(destination.icon);
   // The Pass Limit used to be set per class; the first class's becomes everyone's.
   saved.passLimit ??= saved.classes[0]?.limit ?? 1;
   for (const cls of saved.classes) {

@@ -1,7 +1,8 @@
 <script lang="ts">
   import Modal from './Modal.svelte';
   import { account, deleteDestination, saveDestination } from './account.svelte';
-  import { destinationColors, destinationIcons, type DestinationColor, type DestinationIcon } from './destinations';
+  import { destinationColors, type DestinationColor, type DestinationIcon } from './destinations';
+  import { destinationIconGroups } from './icons';
   import Icon from './Icon.svelte';
   import { newId } from './passes';
   import type { Destination } from './types';
@@ -21,6 +22,17 @@
   let error = $state('');
 
   const colorNames = Object.keys(destinationColors) as DestinationColor[];
+
+  /** Icon names read as words: "glass-water" is found by "water". */
+  let iconSearch = $state('');
+  const iconGroups = $derived(
+    Object.entries(destinationIconGroups)
+      .map(([group, names]) => ({
+        group,
+        names: names.filter((name) => name.replaceAll('-', ' ').includes(iconSearch.trim().toLowerCase())),
+      }))
+      .filter((entry) => entry.names.length),
+  );
 
   function save(event: SubmitEvent) {
     event.preventDefault();
@@ -49,7 +61,7 @@
 </script>
 
 <Modal onClose={onClose} labelledby="destination-title">
-  <form class="dialog" onsubmit={save}>
+  <form class="dialog" style="width:min(560px,100%)" onsubmit={save}>
     <div class="dialog-head">
       <h2 id="destination-title">{destination ? `Edit ${destination.label}` : 'New destination'}</h2>
       <span
@@ -90,18 +102,27 @@
 
     <div class="field">
       <span>Icon</span>
-      <div class="icon-choices" role="group" aria-label="Icon">
-        {#each destinationIcons as name (name)}
-          <button
-            type="button"
-            class="icon-choice"
-            style:color={icon === name ? destinationColors[color].strong : ''}
-            aria-label={name.replace('-2', '').replace('-', ' ')}
-            aria-pressed={icon === name}
-            onclick={() => (icon = name)}
-          >
-            <Icon {name} size={20} />
-          </button>
+      <input type="search" placeholder="Search icons, e.g. water, book, bus" bind:value={iconSearch} aria-label="Search icons" />
+      <div class="icon-groups">
+        {#each iconGroups as entry (entry.group)}
+          <p class="eyebrow">{entry.group}</p>
+          <div class="icon-choices" role="group" aria-label={entry.group}>
+            {#each entry.names as name (name)}
+              <button
+                type="button"
+                class="icon-choice"
+                style:color={icon === name ? destinationColors[color].strong : ''}
+                title={name.replaceAll('-', ' ')}
+                aria-label={name.replaceAll('-', ' ')}
+                aria-pressed={icon === name}
+                onclick={() => (icon = name)}
+              >
+                <Icon {name} size={20} />
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <p class="muted small">No icons match "{iconSearch}".</p>
         {/each}
       </div>
     </div>
