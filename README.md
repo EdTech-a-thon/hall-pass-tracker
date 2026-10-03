@@ -17,8 +17,10 @@ entirely in the browser:
   to Netflix on a TV: the laptop shows a 6-digit code and a QR code, and the
   door device enters or scans it once.
 - A paired kiosk talks **directly** to the laptop using
-  [PeerJS](https://peerjs.com) (WebRTC). PeerJS's free public server only
-  introduces the two devices; pass data never goes through it.
+  [PeerJS](https://peerjs.com) (WebRTC). Our matchmaking server,
+  `peer.teacher.dev`, only introduces the two devices. On networks that block
+  direct connections, the encrypted data is relayed through PeerJS's public
+  relay (see SECURITY.md).
 - The kiosk is in charge of the door. It decides who may leave, and it keeps
   working while the laptop is closed, saving passes on the device and sending
   them when the two reconnect. If the school network blocks devices from
@@ -45,11 +47,10 @@ bun run dev      # http://localhost:8000
 `bun run check` type-checks the project. `bun run test` runs the browser
 tests.
 
-### Testing pairing without the public server
+### Testing pairing against a local matchmaking server
 
-PeerJS's free public server limits how often one internet address may connect,
-and repeated test runs can get you temporarily blocked. To test against a
-matchmaking server on your own machine instead:
+Pairing uses `peer.teacher.dev` by default. To test against a matchmaking
+server on your own machine instead:
 
 ```bash
 bunx --package peer peerjs --port 9000 --path /hallway

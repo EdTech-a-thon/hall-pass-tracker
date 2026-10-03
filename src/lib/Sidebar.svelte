@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { account, findClass } from './account.svelte';
   import Icon from './Icon.svelte';
+  import KioskBadge from './KioskBadge.svelte';
   import { link } from './link.svelte';
 
   let classesOpen = $state(true);
@@ -32,10 +33,10 @@
       <div class="nav-sub">
         {#each account.classes as cls (cls.id)}
           <a class="nav-link" class:active={path.startsWith(`/classes/${cls.id}`)} href="/classes/{cls.id}">
-            <span>
-              {cls.name}
-              {#if account.kiosk && account.activeClass?.id === cls.id}<span class="nav-meta">On the kiosk</span>{/if}
-            </span>
+            <span>{cls.name}</span>
+            {#if account.kiosk && account.activeClass?.id === cls.id}
+              <span style="margin-left:auto"><KioskBadge compact /></span>
+            {/if}
           </a>
         {/each}
         <a class="nav-link add" class:active={path === '/classes/new'} href="/classes/new">
@@ -43,6 +44,10 @@
         </a>
       </div>
     {/if}
+
+    <a class="nav-link" class:active={path === '/destinations'} href="/destinations">
+      <Icon name="map-pin" />Destinations
+    </a>
 
     <a class="nav-link" class:active={path === '/kiosk'} href="/kiosk">
       <Icon name="tablet" />

@@ -24,9 +24,10 @@ A full last name is never stored.
 _Avoid_: Full name, last initial, student name
 
 **Destination**:
-A place a student may go. Each class has its own list, and each destination
-carries the number of minutes that trip is expected to take. A new class starts
-with a copy of the most recent class's list.
+A place a student may go. The teacher keeps one list for all their classes. A
+destination may carry the number of minutes that trip is expected to take; one
+without a time can never be Overdue. Each has a color and an icon, so students
+recognise it at the kiosk.
 _Avoid_: Reason, location, place
 
 **Pass**:

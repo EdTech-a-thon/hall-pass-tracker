@@ -15,7 +15,7 @@
   function create(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    goto(`/classes/${createClass(name.trim())}/roster`);
+    goto(`/classes/${createClass(name.trim())}?add`);
   }
 </script>
 

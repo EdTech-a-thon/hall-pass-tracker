@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { classPasses, findClass, markReturned } from '#lib/account.svelte.ts';
   import CorrectionDialog from '#lib/CorrectionDialog.svelte';
+  import DestinationIcon from '#lib/DestinationIcon.svelte';
   import { download, passesToCsv } from '#lib/csv.ts';
   import Icon from '#lib/Icon.svelte';
   import { dayKey, duration, hasRealDuration, isOverdue, shortDate, time } from '#lib/passes.ts';
@@ -58,11 +59,11 @@
           {#each out as pass (pass.id)}
             <tr>
               <td><strong>{pass.studentName}</strong></td>
-              <td>{pass.destination}</td>
+              <td><span class="destination-chip"><DestinationIcon label={pass.destination} size={24} />{pass.destination}</span></td>
               <td>{time(pass.outAt)}</td>
               <td class="num">
                 {#if isOverdue(pass, clock)}<span class="badge warn">Overdue</span>{/if}
-                {duration(pass, clock)} of {pass.minutes}
+                {duration(pass, clock)}{pass.minutes ? ` of ${pass.minutes}` : ''}
               </td>
               <td class="num">
                 <button class="btn btn-small" onclick={() => markReturned(pass.id)}>
@@ -114,7 +115,10 @@
     </div>
     {#each shares as share (share.label)}
       <div class="share">
-        <div class="share-row"><span>{share.label}</span><span>{share.share}% · {share.count}</span></div>
+        <div class="share-row">
+          <span class="destination-chip"><DestinationIcon label={share.label} size={22} />{share.label}</span>
+          <span>{share.share}% · {share.count}</span>
+        </div>
         <div class="share-track"><span style:width="{share.share}%"></span></div>
       </div>
     {:else}
@@ -143,7 +147,7 @@
             <tr>
               <td>{shortDate(pass.outAt)}, {time(pass.outAt)}</td>
               <td><strong>{pass.studentName}</strong></td>
-              <td>{pass.destination}</td>
+              <td><span class="destination-chip"><DestinationIcon label={pass.destination} size={22} />{pass.destination}</span></td>
               <td class="num">
                 {#if !pass.inAt}
                   …

@@ -6,8 +6,8 @@ async function createClassWithRoster(page: Page, name: string) {
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Maya Chen\nMaya Carter\nJordan Ellis');
   await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save roster' }).click();
-  await expect(page.getByText('3 students', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save students' }).click();
+  await expect(page.getByText(/3 students/)).toBeVisible();
 }
 
 async function setPin(page: Page) {
@@ -18,6 +18,7 @@ async function setPin(page: Page) {
 
 test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await createClassWithRoster(page, 'Period 1');
+  await page.getByRole('link', { name: 'Students' }).click();
   await expect(page.getByText('Maya Ch.')).toBeVisible();
 
   await setPin(page);
@@ -70,6 +71,7 @@ test('export and import put the teacher back where they were', async ({ page }) 
   await page.locator('input[type=file]').setInputFiles(file!);
   await page.getByRole('button', { name: 'Replace everything' }).click();
   await expect(page.getByRole('heading', { name: 'Period 2' })).toBeVisible();
+  await expect(page.getByText(/3 students/)).toBeVisible();
 });
 
 test('a paired device runs the door and syncs to the laptop', async ({ browser }) => {

@@ -1,0 +1,124 @@
+<script lang="ts">
+  import { account, deleteDestination, saveDestination } from './account.svelte';
+  import { destinationColors, destinationIcons, type DestinationColor, type DestinationIcon } from './destinations';
+  import Icon from './Icon.svelte';
+  import { newId } from './passes';
+  import type { Destination } from './types';
+
+  /** Edits one destination, or creates one when `destination` is null. */
+  let { destination, onClose }: { destination: Destination | null; onClose: () => void } = $props();
+
+  // The dialog edits a copy; nothing changes until Save.
+  // svelte-ignore state_referenced_locally
+  let label = $state(destination?.label ?? '');
+  // svelte-ignore state_referenced_locally
+  let minutes = $state(destination?.minutes ? String(destination.minutes) : '');
+  // svelte-ignore state_referenced_locally
+  let color = $state<DestinationColor>(destination?.color ?? 'green');
+  // svelte-ignore state_referenced_locally
+  let icon = $state<DestinationIcon>(destination?.icon ?? 'map-pin');
+  let error = $state('');
+
+  const colorNames = Object.keys(destinationColors) as DestinationColor[];
+
+  function save(event: SubmitEvent) {
+    event.preventDefault();
+    const name = label.trim();
+    const limit = minutes.trim() ? Math.round(Number(minutes)) : null;
+    if (!name) {
+      error = 'Give the destination a name.';
+      return;
+    }
+    if (account.destinations.some((each) => each.id !== destination?.id && each.label.toLowerCase() === name.toLowerCase())) {
+      error = `There's already a destination called ${name}.`;
+      return;
+    }
+    if (limit !== null && !(limit >= 1 && limit <= 120)) {
+      error = 'Minutes should be between 1 and 120, or left empty for no time limit.';
+      return;
+    }
+    saveDestination({ id: destination?.id ?? newId(), label: name, minutes: limit, color, icon });
+    onClose();
+  }
+
+  function remove() {
+    if (destination) deleteDestination(destination.id);
+    onClose();
+  }
+</script>
+
+<svelte:window onkeydown={(event) => event.key === 'Escape' && onClose()} />
+
+<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="destination-title">
+  <form class="dialog" onsubmit={save}>
+    <div class="dialog-head">
+      <h2 id="destination-title">{destination ? `Edit ${destination.label}` : 'New destination'}</h2>
+      <span
+        class="destination-icon"
+        style:width="44px"
+        style:height="44px"
+        style:background={destinationColors[color].soft}
+        style:color={destinationColors[color].strong}
+        aria-hidden="true"
+      >
+        <Icon name={icon} size={24} />
+      </span>
+    </div>
+
+    <label class="field">Name <input bind:value={label} placeholder="Library" /></label>
+
+    <label class="field">
+      Minutes the trip should take (optional)
+      <input type="number" min="1" max="120" bind:value={minutes} placeholder="No time limit" style="max-width:160px" />
+      <span class="muted small" style="font-weight:500">Leave it empty if this trip has no time limit. It'll never show as overdue.</span>
+    </label>
+
+    <div class="field">
+      <span>Color</span>
+      <div class="swatches" role="group" aria-label="Color">
+        {#each colorNames as name (name)}
+          <button
+            type="button"
+            class="swatch"
+            style:background={destinationColors[name].strong}
+            aria-label={name}
+            aria-pressed={color === name}
+            onclick={() => (color = name)}
+          ></button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="field">
+      <span>Icon</span>
+      <div class="icon-choices" role="group" aria-label="Icon">
+        {#each destinationIcons as name (name)}
+          <button
+            type="button"
+            class="icon-choice"
+            style:color={icon === name ? destinationColors[color].strong : ''}
+            aria-label={name.replace('-2', '').replace('-', ' ')}
+            aria-pressed={icon === name}
+            onclick={() => (icon = name)}
+          >
+            <Icon {name} size={20} />
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    {#if error}<p class="form-error" role="alert">{error}</p>{/if}
+
+    <div class="dialog-actions" style="justify-content:space-between">
+      {#if destination}
+        <button type="button" class="btn btn-danger" onclick={remove}><Icon name="trash" size={15} />Delete</button>
+      {:else}
+        <span></span>
+      {/if}
+      <div class="row">
+        <button type="button" class="btn" onclick={onClose}>Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </form>
+</div>

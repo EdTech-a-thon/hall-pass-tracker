@@ -1,3 +1,5 @@
+import type { DestinationColor, DestinationIcon } from './destinations';
+
 /**
  * One child on one Class's roster. The same child taught in two Classes is two
  * unrelated Students, deliberately — see docs/adr/0002.
@@ -11,8 +13,18 @@ export type Student = {
   status: 'current' | 'former';
 };
 
-/** A place a student may go, with the minutes that trip is expected to take. */
-export type Destination = { label: string; minutes: number };
+/**
+ * A place a student may go. One list serves all the teacher's classes. A trip
+ * with no expected minutes is never Overdue.
+ */
+export type Destination = {
+  id: string;
+  label: string;
+  /** Minutes the trip should take, or null for no time limit. */
+  minutes: number | null;
+  color: DestinationColor;
+  icon: DestinationIcon;
+};
 
 /** A group of students a teacher sees together during one period. */
 export type Class = {
@@ -20,7 +32,6 @@ export type Class = {
   name: string;
   /** The Pass Limit: how many students from this class may be out at once. */
   limit: number;
-  destinations: Destination[];
   students: Student[];
   createdAt: string;
 };
@@ -36,7 +47,7 @@ export type Pass = {
   /** "Maya C.", frozen when the student left so history reads the same after a rename. */
   studentName: string;
   destination: string;
-  /** The destination's expected minutes, frozen when the student left. */
+  /** The destination's expected minutes, frozen when the student left. 0 means no time limit. */
   minutes: number;
   outAt: string;
   inAt?: string;
@@ -61,6 +72,7 @@ export type Account = {
   /** The fixed address a paired kiosk uses to find this laptop again. */
   laptopPeerId: string;
   classes: Class[];
+  destinations: Destination[];
   passes: Pass[];
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */
   pin: string;
@@ -78,13 +90,13 @@ export type DoorClass = {
   id: string;
   name: string;
   limit: number;
-  destinations: Destination[];
   students: { id: string; name: string }[];
 };
 
 /** Everything the laptop hands the kiosk so it can run the door on its own. */
 export type DoorSetup = {
   classes: DoorClass[];
+  destinations: Destination[];
   activeClass: ActiveClass | null;
   pin: string;
   /** Passes still open, plus today's, so both sides agree on who is out. */
@@ -94,10 +106,12 @@ export type DoorSetup = {
 /** Messages that travel between the kiosk and the laptop. */
 export type KioskMessage =
   | { type: 'passes'; passes: Pass[] }
-  | { type: 'active-class'; activeClass: ActiveClass };
+  | { type: 'active-class'; activeClass: ActiveClass }
+  | { type: 'ping' };
 
 export type LaptopMessage =
   | { type: 'paired'; laptopPeerId: string; kioskId: string; secret: string; setup: DoorSetup }
   | { type: 'setup'; setup: DoorSetup }
   | { type: 'ack'; passes: { id: string; updatedAt: string }[] }
-  | { type: 'replaced' };
+  | { type: 'replaced' }
+  | { type: 'ping' };

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { classPasses, findClass } from '#lib/account.svelte.ts';
+  import { classPasses, findClass, removeStudent, restoreStudent } from '#lib/account.svelte.ts';
+  import EditStudentDialog from '#lib/EditStudentDialog.svelte';
+  import Icon from '#lib/Icon.svelte';
+  import type { Student } from '#lib/types.ts';
   import { duration, hasRealDuration, isOverdue, shortDate, time } from '#lib/passes.ts';
   import { studentSummaries, type StudentSummary } from '#lib/stats.ts';
 
@@ -9,6 +12,11 @@
   type SortKey = 'minutesWeek' | 'week' | 'today' | 'total' | 'minutesTotal' | 'overdue' | 'name';
   let sortBy = $state<SortKey>('minutesWeek');
   let open = $state('');
+  let editing = $state(null as Student | null);
+
+  function studentFor(id: string) {
+    return cls.students.find((student) => student.id === id);
+  }
 
   const rows = $derived.by(() => {
     const summaries = studentSummaries(cls, classPasses(cls.id));
@@ -38,6 +46,7 @@
       <h2>Who goes, and how much class they miss</h2>
       <p class="muted small">
         Minutes count only trips whose return someone saw. Click a student to see their trips.
+        Removed students keep their history here.
       </p>
     </div>
   </div>
@@ -56,6 +65,7 @@
                 </button>
               </th>
             {/each}
+            <th><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -73,10 +83,28 @@
               <td class="num">
                 {#if summary.overdue}<span class="badge warn">{summary.overdue}</span>{:else}0{/if}
               </td>
+              <td class="num" style="white-space:nowrap">
+                {#if summary.former}
+                  <button class="btn btn-small btn-quiet" onclick={(event) => { event.stopPropagation(); restoreStudent(cls.id, summary.id); }}>
+                    Bring back
+                  </button>
+                {:else}
+                  <button
+                    class="btn btn-small btn-quiet"
+                    aria-label="Edit {summary.name}"
+                    onclick={(event) => { event.stopPropagation(); editing = studentFor(summary.id) ?? null; }}
+                  >
+                    <Icon name="pencil" size={14} />
+                  </button>
+                  <button class="btn btn-small btn-quiet" onclick={(event) => { event.stopPropagation(); removeStudent(cls.id, summary.id); }}>
+                    Remove
+                  </button>
+                {/if}
+              </td>
             </tr>
             {#if open === summary.id}
               <tr class="detail">
-                <td colspan="7">
+                <td colspan="8">
                   {#if summary.passes.length}
                     <ul class="trips">
                       {#each summary.passes.slice(0, 15) as pass (pass.id)}
@@ -104,9 +132,16 @@
       </table>
     </div>
   {:else}
-    <div class="empty">Add students on the Roster tab to see them here.</div>
+    <div class="empty">
+      <span class="icon-tile"><Icon name="users" /></span>
+      No students yet. Use Add students at the top to paste your class list.
+    </div>
   {/if}
 </section>
+
+{#if editing}
+  <EditStudentDialog {cls} student={editing} onClose={() => (editing = null)} />
+{/if}
 
 <style>
   th .btn {

@@ -8,7 +8,7 @@
   function create(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    goto(`/classes/${createClass(name.trim())}/roster`);
+    goto(`/classes/${createClass(name.trim())}?add`);
   }
 </script>
 
@@ -19,9 +19,9 @@
       <h1>New class</h1>
       <p class="muted">
         {#if previous}
-          It starts with the same destinations and pass limit as {previous.name}. You can change them under Setup.
+          It starts with the same pass limit as {previous.name}. You can change it in the class settings.
         {:else}
-          It starts with Restroom, Water, Office and Counselor. You can change them under Setup.
+          Next you'll add its students.
         {/if}
       </p>
     </div>

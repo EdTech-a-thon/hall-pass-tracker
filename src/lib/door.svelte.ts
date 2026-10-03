@@ -1,7 +1,7 @@
 import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, receivePasses, setActiveClass } from './account.svelte';
 import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
-import { createPeer, pairingPrefix } from './peer';
+import { createPeer, keepAlive, pairingPrefix } from './peer';
 import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, Pass } from './types';
 
 /**
@@ -147,7 +147,7 @@ export function signBackIn(studentId: string) {
 export function requestPass(studentId: string, destination: string) {
   const cls = activeDoorClass();
   const student = cls?.students.find((each) => each.id === studentId);
-  const place = cls?.destinations.find((each) => each.label === destination);
+  const place = setup()?.destinations.find((each) => each.label === destination);
   if (!cls || !student || !place) return;
   const out = outCount(cls.id);
   if (out >= cls.limit) {
@@ -168,13 +168,18 @@ export function requestPass(studentId: string, destination: string) {
     studentId,
     studentName: student.name,
     destination,
-    minutes: place.minutes,
+    minutes: place.minutes ?? 0,
     outAt: at,
     updatedAt: at,
   };
   record([pass]);
   showNotice(
-    { kind: 'approved', title: `${student.name}: ${destination}`, message: `Back by ${dueTime(pass)}`, undoPassId: pass.id },
+    {
+      kind: 'approved',
+      title: `${student.name}: ${destination}`,
+      message: pass.minutes ? `Back by ${dueTime(pass)}` : 'Come straight back to class.',
+      undoPassId: pass.id,
+    },
     8,
   );
 }
@@ -276,6 +281,7 @@ function dial() {
   });
   connection = attempt;
   attempt.on('open', () => {
+    keepAlive(attempt);
     door.status = 'live';
     flush();
     if (device.activeClass) send({ type: 'active-class', activeClass: $state.snapshot(device.activeClass) });

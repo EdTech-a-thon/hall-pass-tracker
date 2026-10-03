@@ -11,7 +11,7 @@ import {
   setNetworkBlocked,
 } from './account.svelte';
 import { newId } from './passes';
-import { createPeer, pairingPrefix } from './peer';
+import { createPeer, keepAlive, pairingPrefix } from './peer';
 import type { KioskMessage, LaptopMessage } from './types';
 
 /**
@@ -67,7 +67,7 @@ export async function refreshLink() {
   if (link.status !== 'live') link.status = paired ? 'offline' : 'off';
   // Several screens call this at once; only the first may claim the address.
   if (peer || starting) return;
-  starting = createPeer(account.laptopPeerId).then((created) => {
+  starting = createPeer(account.laptopPeerId).then(async (created) => {
     peer = created;
     created.on('connection', accept);
     created.on('error', (error) => {
@@ -81,6 +81,15 @@ export async function refreshLink() {
         setTimeout(refreshLink, 30_000);
       }
     });
+    // Wait until the address is registered, so a kiosk that dials straight
+    // away (as a newly paired one does) finds the laptop on its first try.
+    if (!created.open) {
+      await new Promise<void>((resolve) => {
+        created.once('open', () => resolve());
+        created.once('error', () => resolve());
+        setTimeout(resolve, 10_000);
+      });
+    }
   });
   await starting;
   starting = null;
@@ -105,6 +114,7 @@ function acceptCurrent(connection: DataConnection) {
   connection.on('open', () => {
     kioskConnection?.close();
     kioskConnection = connection;
+    keepAlive(connection);
     link.status = 'live';
     markKioskSeen();
     send(connection, { type: 'setup', setup: doorSetup() });

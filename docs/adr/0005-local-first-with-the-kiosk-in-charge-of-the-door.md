@@ -2,8 +2,10 @@
 
 Hallway has no server. A teacher's data lives in their laptop's browser, and the
 kiosk talks to that laptop directly, device to device, after a one-time pairing.
-A public matchmaking service introduces the two devices; pass data never passes
-through it. We dropped the hosted database because accounts, passwords and a
+A small matchmaking server of our own (a standard PeerJS server) introduces the
+two devices and stores nothing. Pass data normally travels directly between
+them; on networks that forbid that, it is relayed, still encrypted, through
+PeerJS's public relay. We dropped the hosted database because accounts, passwords and a
 server holding a class list of minors were costs teachers never asked for, and
 the export file gives them a way back if a browser is lost.
 

@@ -21,11 +21,13 @@
     undoPass,
     waitingCount,
   } from '#lib/door.svelte.ts';
+  import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
 
   const local = $derived(isLocal());
   const paired = $derived(!!door.device);
   const cls = $derived(activeDoorClass());
+  const destinations = $derived(setup()?.destinations ?? []);
 
   let code = $state(page.url.searchParams.get('code') ?? '');
   let choosingFor = $state(null as { id: string; name: string } | null);
@@ -156,8 +158,8 @@
     </header>
 
     {#if cls}
-      {#if !cls.destinations.length}
-        <p class="door-error">Your teacher hasn't set up any destinations for this class yet.</p>
+      {#if !destinations.length}
+        <p class="door-error">Your teacher hasn't set up any destinations yet.</p>
       {/if}
       <main class="names" aria-label="Students in {cls.name}">
         {#each cls.students as student (student.id)}
@@ -165,7 +167,13 @@
           <!-- Where they went, never how long: the door carries no clock. See docs/adr/0003. -->
           <button class="name" class:out={pass} onclick={() => tap(student)}>
             <span class="name-text">{student.name}</span>
-            <span class="name-status">{pass ? `Out · ${pass.destination}` : 'In class'}</span>
+            {#if pass}
+              <span class="name-status out-status">
+                <DestinationIcon label={pass.destination} list={destinations} size={22} />Out · {pass.destination}
+              </span>
+            {:else}
+              <span class="name-status">In class</span>
+            {/if}
           </button>
         {:else}
           <p class="lede">There are no students on this class's roster yet.</p>
@@ -188,8 +196,11 @@
         <h2 id="choose-title">{choosingFor.name}</h2>
         <p class="lede">Where are you going?</p>
         <div class="choices">
-          {#each cls.destinations as destination (destination.label)}
-            <button class="door-btn choice" onclick={() => choose(destination.label)}>{destination.label}</button>
+          {#each destinations as destination (destination.id)}
+            <button class="door-btn choice" onclick={() => choose(destination.label)}>
+              <DestinationIcon label={destination.label} list={destinations} size={40} />
+              {destination.label}
+            </button>
           {/each}
         </div>
         <button class="quiet-link" onclick={() => (choosingFor = null)}>Cancel</button>
@@ -257,20 +268,19 @@
 </div>
 
 <style>
-  /* The door screen is dark and high-contrast: it sits on a wall all day and is read from across the room. */
+  /* The door screen is read from across the room: large type, plain light surfaces, strong contrast. */
   .door {
-    --door-bg: #0f1a14;
-    --door-tile: #1a2a21;
-    --door-line: #2c4135;
-    --door-text: #f1f5f2;
-    --door-muted: #a9b9af;
-    --door-accent: #5cc98b;
-    --door-out: #f0b45a;
+    --door-bg: var(--bg);
+    --door-tile: #fff;
+    --door-line: var(--border);
+    --door-text: var(--text);
+    --door-muted: var(--muted);
+    --door-accent: var(--accent);
+    --door-out: #a8620f;
     min-height: 100vh;
     padding: 28px clamp(16px, 4vw, 48px) 90px;
     background: var(--door-bg);
     color: var(--door-text);
-    color-scheme: dark;
   }
 
   h1 {
@@ -361,11 +371,14 @@
   }
 
   .name.out {
-    border-color: var(--door-out);
-    background: #2a2416;
+    border-color: #e6c48f;
+    background: #fdf6ea;
   }
 
-  .name.out .name-status {
+  .out-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: var(--door-out);
   }
 
@@ -411,7 +424,8 @@
     width: 52px;
     height: 52px;
     border-radius: 14px;
-    background: #1e5738;
+    background: var(--accent);
+    color: #fff;
   }
 
   form {
@@ -452,12 +466,13 @@
   .door-btn.primary {
     background: var(--door-accent);
     border-color: var(--door-accent);
-    color: #0b2016;
+    color: #fff;
   }
 
   .door-btn.danger {
-    background: #8d2c1c;
-    border-color: #8d2c1c;
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
   }
 
   .door-btn:disabled {
@@ -469,7 +484,7 @@
   }
 
   .door-error {
-    color: #ffb4a3;
+    color: var(--danger);
     font-weight: 700;
   }
 
@@ -489,7 +504,8 @@
     display: grid;
     place-items: center;
     padding: 16px;
-    background: rgb(5 10 7 / 80%);
+    background: rgb(20 30 24 / 40%);
+    backdrop-filter: blur(3px);
   }
 
   .sheet {
@@ -499,7 +515,8 @@
     padding: 28px;
     border: 1px solid var(--door-line);
     border-radius: 16px;
-    background: #14231a;
+    background: #fff;
+    box-shadow: 0 16px 48px rgb(20 30 24 / 18%);
     text-align: center;
   }
 
@@ -514,6 +531,8 @@
   }
 
   .door-btn.choice {
+    justify-content: flex-start;
+    gap: 14px;
     min-height: 72px;
     font-size: 20px;
   }
@@ -528,19 +547,22 @@
     gap: 12px;
     padding: 24px;
     text-align: center;
-    background: #14513a;
+    background: #e3f0e7;
+    --notice-strong: var(--accent);
   }
 
   .notice.denied {
-    background: #5a3a12;
+    background: #fbefdc;
+    --notice-strong: #a8620f;
   }
 
   .notice.returned {
-    background: #1d3f5c;
+    background: #e1ecf8;
+    --notice-strong: #2361a6;
   }
 
   .notice .door-eyebrow {
-    color: rgb(255 255 255 / 75%);
+    color: var(--notice-strong);
   }
 
   .notice h2 {
@@ -553,7 +575,8 @@
     width: 86px;
     height: 86px;
     border-radius: 50%;
-    background: rgb(255 255 255 / 14%);
+    background: var(--notice-strong);
+    color: #fff;
   }
 
   .notice-message {
@@ -569,7 +592,6 @@
   }
 
   .notice .door-btn {
-    background: rgb(255 255 255 / 12%);
-    border-color: rgb(255 255 255 / 25%);
+    background: #fff;
   }
 </style>

@@ -18,13 +18,17 @@ storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`
 
 ## The connection between kiosk and laptop
 
-- PeerJS's public server (`0.peerjs.com`) brokers the introduction between the
-  two devices. It sees their randomly generated addresses, but no pass data,
-  which travels over WebRTC's encrypted channel directly between the devices.
+- Hallway's matchmaking server (`peer.teacher.dev`, a standard PeerJS server)
+  introduces the two devices. It sees their randomly generated addresses but
+  stores nothing and never receives pass data.
+- Pass data travels over WebRTC's encrypted channel, directly between the
+  devices where the network allows. Where it doesn't, WebRTC falls back to
+  PeerJS's public relay servers (`turn.peerjs.com`), which pass the encrypted
+  data along without being able to read it. Google's public STUN server helps
+  each device learn its own network address; it sees no pass data.
 - The 6-digit pairing code is a temporary address. It works once and expires
-  after 10 minutes. On a public broker a code could, rarely, be guessed by
-  someone else in those minutes, and their device would become the kiosk.
-  Pairing again replaces it.
+  after 10 minutes. A code could, rarely, be guessed by someone else in those
+  minutes, and their device would become the kiosk. Pairing again replaces it.
 - After pairing, the kiosk proves itself with a long random secret. The laptop
   ignores connections without the current kiosk's secret, except that a
   replaced kiosk may hand over passes it still holds, once.

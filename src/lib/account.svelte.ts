@@ -1,3 +1,4 @@
+import { defaultDestinations } from './destinations';
 import { endUnseen, mergeInto, newId, now } from './passes';
 import { displayName, type ImportPlan } from './roster';
 import type { Account, ActiveClass, Class, Destination, DoorSetup, Pass, Student } from './types';
@@ -8,18 +9,12 @@ import type { Account, ActiveClass, Class, Destination, DoorSetup, Pass, Student
  */
 const storageKey = 'hallway.account';
 
-export const defaultDestinations: Destination[] = [
-  { label: 'Restroom', minutes: 5 },
-  { label: 'Water', minutes: 3 },
-  { label: 'Office', minutes: 10 },
-  { label: 'Counselor', minutes: 15 },
-];
-
 function blankAccount(): Account {
   return {
     version: 1,
     laptopPeerId: `hallway-${newId()}`,
     classes: [],
+    destinations: defaultDestinations(newId),
     passes: [],
     pin: '',
     kiosk: null,
@@ -29,10 +24,36 @@ function blankAccount(): Account {
   };
 }
 
+/**
+ * Accounts saved before destinations became one shared list kept a list on
+ * each class. Those become the shared list, so nothing the teacher set is lost.
+ */
+type SavedAccount = Omit<Account, 'destinations' | 'classes'> & {
+  destinations?: Destination[];
+  classes: (Class & { destinations?: { label: string; minutes: number }[] })[];
+};
+
+function upgrade(saved: SavedAccount): Account {
+  if (!saved.destinations) {
+    const old = saved.classes.find((cls) => cls.destinations?.length)?.destinations;
+    const defaults = defaultDestinations(newId);
+    saved.destinations = old
+      ? old.map((each): Destination => ({
+          ...(defaults.find((preset) => preset.label === each.label) ?? defaults[defaults.length - 1]),
+          id: newId(),
+          label: each.label,
+          minutes: each.minutes || null,
+        }))
+      : defaults;
+  }
+  for (const cls of saved.classes) delete cls.destinations;
+  return saved as Account;
+}
+
 function load(): Account {
   try {
     const saved = localStorage.getItem(storageKey);
-    if (saved) return { ...blankAccount(), ...JSON.parse(saved) };
+    if (saved) return upgrade({ ...blankAccount(), destinations: undefined, ...JSON.parse(saved) });
   } catch {
     // Storage blocked or unreadable: start empty rather than not at all.
   }
@@ -68,14 +89,13 @@ export function openPasses(classId?: string) {
 // Classes
 // ---------------------------------------------------------------------------
 
-/** A new class copies the setup of the most recent one, so nothing is entered twice. */
+/** A new class copies the Pass Limit of the most recent one. */
 export function createClass(name: string) {
   const previous = account.classes.at(-1);
   const cls: Class = {
     id: newId(),
     name,
     limit: previous?.limit ?? 1,
-    destinations: structuredClone($state.snapshot(previous?.destinations) ?? defaultDestinations),
     students: [],
     createdAt: now(),
   };
@@ -85,7 +105,7 @@ export function createClass(name: string) {
   return cls.id;
 }
 
-export function updateClass(id: string, changes: Partial<Pick<Class, 'name' | 'limit' | 'destinations'>>) {
+export function updateClass(id: string, changes: Partial<Pick<Class, 'name' | 'limit'>>) {
   const cls = findClass(id);
   if (!cls) return;
   Object.assign(cls, changes);
@@ -100,6 +120,23 @@ export function deleteClass(id: string) {
     const next = account.classes[0];
     account.activeClass = next ? { id: next.id, changedAt: now() } : null;
   }
+  save();
+}
+
+// ---------------------------------------------------------------------------
+// Destinations
+// ---------------------------------------------------------------------------
+
+export function saveDestination(destination: Destination) {
+  const index = account.destinations.findIndex((each) => each.id === destination.id);
+  if (index === -1) account.destinations.push(destination);
+  else account.destinations[index] = destination;
+  save();
+}
+
+/** Past passes keep the name, so removing a destination never rewrites history. */
+export function deleteDestination(id: string) {
+  account.destinations = account.destinations.filter((each) => each.id !== id);
   save();
 }
 
@@ -277,11 +314,11 @@ export function doorSetup(): DoorSetup {
       id: cls.id,
       name: cls.name,
       limit: cls.limit,
-      destinations: cls.destinations,
       students: cls.students
         .filter((student) => student.status === 'current')
         .map((student) => ({ id: student.id, name: displayName(student) })),
     })),
+    destinations: account.destinations,
     activeClass: account.activeClass,
     pin: account.pin,
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),
@@ -308,5 +345,5 @@ export function importAccount(text: string) {
     throw new Error('That file is not a Hallway export.');
   }
   delete parsed.app;
-  localStorage.setItem(storageKey, JSON.stringify({ ...blankAccount(), ...parsed }));
+  localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), destinations: undefined, ...parsed })));
 }
