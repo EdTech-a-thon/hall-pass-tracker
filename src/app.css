@@ -351,13 +351,23 @@ textarea {
 }
 
 .sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
 .main {
-  padding: 40px clamp(18px, 5vw, 64px) 64px;
+  display: flex;
+  flex-direction: column;
+  padding: 40px clamp(18px, 5vw, 64px) 0;
+}
+
+.main > .page {
+  flex: 1;
+  margin-bottom: 48px;
 }
 
 .page {

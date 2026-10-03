@@ -25,6 +25,7 @@ const interfaceIcons = {
   'user-plus': 'user-plus',
   ellipsis: 'ellipsis',
   search: 'search',
+  help: 'circle-question-mark',
 };
 
 /** Icons a teacher can give a destination, in the groups the picker shows. */

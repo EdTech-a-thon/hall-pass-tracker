@@ -4,6 +4,7 @@
   import { isPairedDevice } from '#lib/door.svelte.ts';
   import { refreshLink } from '#lib/link.svelte.ts';
   import Sidebar from '#lib/Sidebar.svelte';
+  import SiteFooter from '#lib/SiteFooter.svelte';
 
   let { children } = $props();
 
@@ -29,6 +30,7 @@
     <Sidebar />
     <main class="main">
       {@render children()}
+      <SiteFooter />
     </main>
   </div>
 {/if}

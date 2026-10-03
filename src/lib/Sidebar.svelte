@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { account, findClass } from './account.svelte';
+  import HelpButton from './HelpButton.svelte';
   import Icon from './Icon.svelte';
   import KioskBadge from './KioskBadge.svelte';
   import { link } from './link.svelte';
@@ -61,6 +62,7 @@
   </nav>
 
   <div class="sidebar-foot">
+    <HelpButton />
     <a class="nav-link" class:active={path === '/settings'} href="/settings"><Icon name="settings" />Settings</a>
   </div>
 </aside>

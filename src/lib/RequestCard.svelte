@@ -1,10 +1,11 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import { supportMailto } from './support';
 
   /** An invitation to email the team, like the "Need a different figure?" box on Math Figures. */
   let { title, text, subject }: { title: string; text: string; subject: string } = $props();
 
-  const href = $derived(`mailto:support@teacher.dev?subject=${encodeURIComponent(subject)}`);
+  const href = $derived(supportMailto(subject));
 </script>
 
 <a class="request" {href}>
