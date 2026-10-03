@@ -32,6 +32,7 @@
   import BrandMark from '#lib/BrandMark.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
+  import { askBeforeLeaving } from '#lib/leaving.ts';
   import Modal from '#lib/Modal.svelte';
   import { formatClock } from '#lib/schedule.ts';
 
@@ -137,6 +138,9 @@
 </script>
 
 <svelte:head><title>Happy Hallways kiosk</title></svelte:head>
+
+<!-- Closing the kiosk stops students signing out, and may strand passes not yet sent. -->
+<svelte:window onbeforeunload={(event) => askBeforeLeaving(event, local || paired)} />
 
 <div class="door">
   {#if !local && !paired}

@@ -932,3 +932,65 @@ tr.detail td {
 .choice-card.disabled {
   opacity: 0.6;
 }
+
+/* ---------- Welcome page and tour ---------- */
+
+.welcome-eyebrow {
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 52px;
+  padding: 13px 22px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgb(31 99 67 / 20%);
+  transition:
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+.cta:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.cta.small {
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.cta.secondary {
+  background: #fff;
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.cta.secondary:hover {
+  background: var(--accent-wash);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta,
+  .cta:hover {
+    transition: none;
+    transform: none;
+  }
+}

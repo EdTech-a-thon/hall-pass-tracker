@@ -26,6 +26,10 @@ const interfaceIcons = {
   ellipsis: 'ellipsis',
   search: 'search',
   help: 'circle-question-mark',
+  'arrow-right': 'arrow-right',
+  'chevron-up': 'chevron-up',
+  'shield-check': 'shield-check',
+  'circle-play': 'circle-play',
 };
 
 /** Icons a teacher can give a destination, in the groups the picker shows. */

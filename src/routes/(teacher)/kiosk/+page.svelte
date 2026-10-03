@@ -89,6 +89,18 @@
     </div>
   </header>
 
+  {#if kiosk}
+    <div class="notice-bar" role="note">
+      <Icon name="alert-triangle" />
+      {#if kiosk.kind === 'device'}
+        Keep Happy Hallways open on this laptop and on the kiosk all day. Passes reach you only while both are open;
+        until then they wait on the kiosk.
+      {:else}
+        Keep the kiosk screen open all day. While it's closed, students can't sign out.
+      {/if}
+    </div>
+  {/if}
+
   {#if link.status === 'taken'}
     <div class="notice-bar" role="alert">
       <Icon name="alert-triangle" />

@@ -2,7 +2,10 @@
   import { goto } from '$app/navigation';
   import { account } from '#lib/account.svelte.ts';
   import { isPairedDevice } from '#lib/door.svelte.ts';
+  import GettingStarted from '#lib/GettingStarted.svelte';
+  import { askBeforeLeaving } from '#lib/leaving.ts';
   import { refreshLink } from '#lib/link.svelte.ts';
+  import { onboarding } from '#lib/onboarding.svelte.ts';
   import Sidebar from '#lib/Sidebar.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
 
@@ -25,6 +28,9 @@
   });
 </script>
 
+<!-- A paired kiosk sends its passes to this page, so closing it asks first. -->
+<svelte:window onbeforeunload={(event) => askBeforeLeaving(event, !belongsAtDoor && account.kiosk?.kind === 'device')} />
+
 {#if !belongsAtDoor}
   <div class="shell">
     <Sidebar />
@@ -33,4 +39,5 @@
       <SiteFooter />
     </main>
   </div>
+  {#if onboarding.showChecklist}<GettingStarted />{/if}
 {/if}
