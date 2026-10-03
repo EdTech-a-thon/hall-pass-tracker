@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0006
+---
+
 # Corrections are new log entries, never edits
 
 Teachers need to reassign a trip to the student it really belonged to and adjust

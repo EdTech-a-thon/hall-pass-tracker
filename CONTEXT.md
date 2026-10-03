@@ -1,7 +1,8 @@
 # Hallway
 
-Hallway records students leaving the classroom and coming back. A screen by the
-door signs them out and in; the teacher watches from their own workspace.
+Hallway records students leaving the classroom and coming back. A kiosk by the
+door signs them out and in; the teacher watches from their own laptop. Everything
+lives on the teacher's own devices; there is no server and no sign-in.
 
 ## Language
 
@@ -23,8 +24,9 @@ A full last name is never stored.
 _Avoid_: Full name, last initial, student name
 
 **Destination**:
-A place a student may go. The teacher chooses the list for their whole account,
-and each destination carries the number of minutes that trip is expected to take.
+A place a student may go. Each class has its own list, and each destination
+carries the number of minutes that trip is expected to take. A new class starts
+with a copy of the most recent class's list.
 _Avoid_: Reason, location, place
 
 **Pass**:
@@ -32,22 +34,31 @@ One round trip — a student left for a destination and has, or has not yet, com
 back.
 _Avoid_: Trip, hall pass, request
 
-**Pass Event**:
-A single line in the permanent log: a student left, or a student came back.
-Events are never edited or erased.
-_Avoid_: Log entry, record
+**Pass Limit**:
+The most students from one class who may be out at the same time. Each class
+sets its own.
+_Avoid_: Max out, cap, capacity
 
-**Kiosk Mode**:
-The locked, student-facing screen by the classroom door. It shows one class at a
-time, and the teacher's PIN is required to leave it or to change which class it
-is showing.
-_Avoid_: Kiosk view, door mode, student mode
+**Kiosk**:
+The locked, student-facing device by the classroom door. A teacher has at most
+one kiosk at a time; pairing a new one disconnects the old. The kiosk decides
+who may leave right now and keeps working while the teacher's laptop is closed,
+handing its passes over once the two can reach each other again.
+_Avoid_: Kiosk mode, door screen, station, student mode
+
+**Pairing**:
+Making a device the teacher's kiosk, by typing a short code or scanning a QR code
+shown on the teacher's laptop. It happens once; afterwards the kiosk finds the
+laptop again on its own. The code is single-use and short-lived. A device that
+has not paired successfully is never a kiosk; if pairing is impossible on the
+network, the teacher's own computer is the kiosk.
+_Avoid_: Linking, connecting, logging in
 
 **Active Class**:
-The class kiosk mode is currently showing. Changing it ends every pass still open
+The class the kiosk is currently showing. Changing it ends every pass still open
 in the class being left. It moves only when someone deliberately moves it — from
-the door screen with the teacher's PIN, or with an explicit button in the
-dashboard. Browsing a different class in the dashboard does not move it.
+the teacher's laptop, or at the kiosk with the teacher's PIN. Browsing a
+different class on the laptop does not move it.
 _Avoid_: Current class, selected class
 
 **Overdue**:
@@ -56,9 +67,9 @@ teacher's dashboard says a pass is overdue; kiosk mode never does.
 _Avoid_: Late, over time, flagged
 
 **Correction**:
-A teacher's after-the-fact amendment to the log — giving a trip to the student it
-really belonged to, or adjusting when it started or ended. Every correction is
-itself recorded, so the original reading and who changed it are never lost.
+A teacher's after-the-fact change to a pass — giving it to the student it really
+belonged to, or adjusting when it started or ended. The pass is changed in place
+and shows that it was corrected; the earlier reading is not kept.
 _Avoid_: Edit, fix, override
 
 **Former Student**:
@@ -66,3 +77,10 @@ A student who has left a class part-way through the year. They disappear from
 the door screen but keep every trip they ever took, so the class's history stays
 whole. A student who has history is never truly deleted.
 _Avoid_: Archived student, deleted student, inactive student
+
+**Account**:
+Everything one teacher's laptop holds: classes, students, passes, destinations
+and the kiosk pairing. It lives in that one browser. Exporting it produces a
+single file; importing that file replaces everything and puts the teacher back
+exactly where they were.
+_Avoid_: Profile, workspace, backup, login
