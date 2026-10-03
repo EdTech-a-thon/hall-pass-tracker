@@ -61,7 +61,7 @@ test('export and import put the teacher back where they were', async ({ page }) 
   await createClassWithRoster(page, 'Period 2');
   await page.getByRole('link', { name: 'Settings' }).click();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export account' }).click();
+  await page.getByRole('button', { name: 'Download backup' }).click();
   const file = await (await download).path();
 
   await page.evaluate(() => localStorage.clear());
@@ -99,4 +99,38 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
   await laptop.getByRole('button', { name: 'Mark back' }).click();
   await tablet.getByRole('button', { name: 'Done' }).click();
   await expect(tablet.getByRole('button', { name: /Maya Ca\..*In class/ })).toBeVisible({ timeout: 15_000 });
+});
+
+test('students line up when the pass limit is reached', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 4');
+  await page.getByRole('link', { name: 'Pass Options' }).click();
+  await page.getByRole('switch', { name: 'Let students line up' }).check();
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: 'Restroom' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // Full: Maya Ch. joins the line instead of being turned away.
+  await page.getByRole('button', { name: /Maya Ch\./ }).click();
+  await page.getByRole('button', { name: 'Water' }).click();
+  await page.getByRole('button', { name: 'Join the line' }).click();
+  await expect(page.getByText("You're 1st in line")).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: /Maya Ch\..*1st in line/ })).toBeVisible();
+
+  // Someone not in line can't take the spot that opens.
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await expect(page.getByText(/it's your turn/)).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Maya Ca\./ }).click();
+  await page.getByRole('button', { name: 'Office' }).click();
+  await expect(page.getByText('Join the line?')).toBeVisible();
+  await page.getByRole('button', { name: 'Not now' }).click();
+
+  // Maya Ch. is up next and goes where she lined up for.
+  await page.getByRole('button', { name: /Maya Ch\..*Your turn/ }).click();
+  await expect(page.getByText('Maya Ch.: Water')).toBeVisible();
 });

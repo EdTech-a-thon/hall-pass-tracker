@@ -41,10 +41,10 @@
   <header class="page-head">
     <div>
       <p class="eyebrow">Settings</p>
-      <h1>Your account</h1>
+      <h1>Your data</h1>
       <p class="muted">
-        Everything Hallway knows lives in this browser on this computer. If the browser's data is cleared, it's gone,
-        so export a copy now and then.
+        Hallway has no sign-in. Everything it knows lives in this browser on this computer, and if the browser's data
+        is cleared, it's gone. Download a backup now and then.
       </p>
     </div>
   </header>
@@ -52,36 +52,36 @@
   <section class="card">
     <div class="card-head">
       <div>
-        <p class="eyebrow">Export</p>
-        <h2>Download your whole account</h2>
+        <p class="eyebrow">Backup</p>
+        <h2>Download a backup</h2>
         <p class="muted small">
-          One file with every class, student, pass, destination and your kiosk pairing.
+          One file with every class, student, pass, destination, your pass options and your kiosk pairing.
           {#if account.lastExportedAt}
-            Last exported {daysSinceExport === 0 ? 'today' : `${shortDate(account.lastExportedAt)}, ${daysSinceExport} ${daysSinceExport === 1 ? 'day' : 'days'} ago`}.
+            Last backed up {daysSinceExport === 0 ? 'today' : `${shortDate(account.lastExportedAt)}, ${daysSinceExport} ${daysSinceExport === 1 ? 'day' : 'days'} ago`}.
           {:else}
-            Never exported yet.
+            No backup yet.
           {/if}
         </p>
       </div>
-      <button class="btn btn-primary" onclick={exportFile}><Icon name="download" size={16} />Export account</button>
+      <button class="btn btn-primary" onclick={exportFile}><Icon name="download" size={16} />Download backup</button>
     </div>
     {#if daysSinceExport === null || daysSinceExport > 7}
-      <div class="notice-bar"><Icon name="alert-triangle" />It's been a while. An export is your only backup.</div>
+      <div class="notice-bar"><Icon name="alert-triangle" />It's been a while. A backup is the only copy outside this browser.</div>
     {/if}
   </section>
 
   <section class="card">
     <div class="card-head">
       <div>
-        <p class="eyebrow">Import</p>
-        <h2>Restore from an export</h2>
+        <p class="eyebrow">Restore</p>
+        <h2>Restore from a backup</h2>
         <p class="muted small">
           Replaces everything in this browser with the file, including the kiosk pairing, so you're back exactly where
           you were. Use it on a new computer, or to undo a mistake.
         </p>
       </div>
       <label class="btn">
-        <Icon name="upload" size={16} />Choose file
+        <Icon name="upload" size={16} />Choose backup file
         <input class="sr-only" type="file" accept=".json,application/json" onchange={chooseFile} />
       </label>
     </div>

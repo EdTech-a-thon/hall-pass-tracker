@@ -600,6 +600,33 @@ textarea {
   font-weight: 600;
 }
 
+.line-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.line-position {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 /* ---------- Tables ---------- */
 
 .table-wrap {

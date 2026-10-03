@@ -30,8 +30,6 @@ export type Destination = {
 export type Class = {
   id: string;
   name: string;
-  /** The Pass Limit: how many students from this class may be out at once. */
-  limit: number;
   students: Student[];
   createdAt: string;
 };
@@ -58,6 +56,15 @@ export type Pass = {
   updatedAt: string;
 };
 
+/** One student waiting in the Line at the kiosk, with where they want to go. */
+export type LineSpot = {
+  studentId: string;
+  studentName: string;
+  classId: string;
+  destination: string;
+  joinedAt: string;
+};
+
 /** Which class the kiosk is showing, and when someone last deliberately changed it. */
 export type ActiveClass = { id: string; changedAt: string };
 
@@ -66,7 +73,7 @@ export type Kiosk =
   | { kind: 'this-computer'; locked: boolean }
   | { kind: 'device'; kioskId: string; secret: string; pairedAt: string; lastSeenAt?: string };
 
-/** Everything one teacher's laptop holds. Exporting writes exactly this to a file. */
+/** Everything the teacher's laptop holds. A Backup is exactly this, written to a file. */
 export type Account = {
   version: 1;
   /** The fixed address a paired kiosk uses to find this laptop again. */
@@ -74,6 +81,12 @@ export type Account = {
   classes: Class[];
   destinations: Destination[];
   passes: Pass[];
+  /** The Pass Limit: how many students may be out at once, in every class. */
+  passLimit: number;
+  /** Whether students may join a Line once the Pass Limit is reached. */
+  lineEnabled: boolean;
+  /** The Line as the kiosk last reported it. The kiosk is in charge of it. */
+  line: LineSpot[];
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */
   pin: string;
   kiosk: Kiosk | null;
@@ -89,7 +102,6 @@ export type Account = {
 export type DoorClass = {
   id: string;
   name: string;
-  limit: number;
   students: { id: string; name: string }[];
 };
 
@@ -97,6 +109,8 @@ export type DoorClass = {
 export type DoorSetup = {
   classes: DoorClass[];
   destinations: Destination[];
+  passLimit: number;
+  lineEnabled: boolean;
   activeClass: ActiveClass | null;
   pin: string;
   /** Passes still open, plus today's, so both sides agree on who is out. */
@@ -107,6 +121,7 @@ export type DoorSetup = {
 export type KioskMessage =
   | { type: 'passes'; passes: Pass[] }
   | { type: 'active-class'; activeClass: ActiveClass }
+  | { type: 'line'; line: LineSpot[] }
   | { type: 'ping' };
 
 export type LaptopMessage =

@@ -36,9 +36,17 @@ back.
 _Avoid_: Trip, hall pass, request
 
 **Pass Limit**:
-The most students from one class who may be out at the same time. Each class
-sets its own.
+The most students who may be out at the same time. One setting for all the
+teacher's classes, in Pass Options.
 _Avoid_: Max out, cap, capacity
+
+**Line**:
+Students waiting at the kiosk once the Pass Limit is reached, in the order they
+joined, each with where they want to go. A teacher turns it on in Pass Options.
+When a spot opens it is held for the first in line, who is **Up Next**; nobody
+else may take it. The line belongs to the class on the kiosk and empties when
+the class changes. Being in line is not a pass and leaves nothing in history.
+_Avoid_: Queue, wait list
 
 **Kiosk**:
 The locked, student-facing device by the classroom door. A teacher has at most
@@ -79,9 +87,10 @@ the door screen but keep every trip they ever took, so the class's history stays
 whole. A student who has history is never truly deleted.
 _Avoid_: Archived student, deleted student, inactive student
 
-**Account**:
-Everything one teacher's laptop holds: classes, students, passes, destinations
-and the kiosk pairing. It lives in that one browser. Exporting it produces a
-single file; importing that file replaces everything and puts the teacher back
-exactly where they were.
-_Avoid_: Profile, workspace, backup, login
+**Backup**:
+A single file holding everything the teacher's laptop knows: classes, students,
+passes, destinations, Pass Options and the kiosk pairing. Restoring it replaces
+everything in that browser and puts the teacher back exactly where they were.
+Hallway has no accounts or sign-in; the backup is the only copy that leaves the
+browser.
+_Avoid_: Account, profile, export file

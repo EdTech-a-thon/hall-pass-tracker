@@ -7,18 +7,25 @@
     activeDoorClass,
     changeClass,
     checkPin,
+    clearLine,
     connectToLaptop,
     dismissNotice,
     door,
     forgetDevice,
     isLocal,
+    joinLine,
+    leaveLine,
+    line,
+    lineSpotFor,
     openPassFor,
     outCount,
     pairWithCode,
+    passLimit,
     requestPass,
     setup,
     signBackIn,
     undoPass,
+    upNext,
     waitingCount,
   } from '#lib/door.svelte.ts';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
@@ -28,9 +35,13 @@
   const paired = $derived(!!door.device);
   const cls = $derived(activeDoorClass());
   const destinations = $derived(setup()?.destinations ?? []);
+  const waiting = $derived(line());
+  const next = $derived(upNext());
 
   let code = $state(page.url.searchParams.get('code') ?? '');
   let choosingFor = $state(null as { id: string; name: string } | null);
+  /** A student in the Line who tapped their name before it was their turn. */
+  let waitingFor = $state(null as { id: string; name: string } | null);
   /** The teacher menu: closed, asking for the PIN, or open. */
   let teacher = $state('closed' as 'closed' | 'pin' | 'menu');
   let pin = $state('');
@@ -59,8 +70,19 @@
   }
 
   function tap(student: { id: string; name: string }) {
-    if (openPassFor(student.id)) signBackIn(student.id);
-    else choosingFor = student;
+    if (openPassFor(student.id)) {
+      signBackIn(student.id);
+      return;
+    }
+    const spot = lineSpotFor(student.id);
+    if (!spot) choosingFor = student;
+    // Their turn: go straight to where they lined up for.
+    else if (next?.studentId === student.id) requestPass(student.id, spot.destination);
+    else waitingFor = student;
+  }
+
+  function ordinal(position: number) {
+    return position === 1 ? '1st' : position === 2 ? '2nd' : position === 3 ? '3rd' : `${position}th`;
   }
 
   function choose(destination: string) {
@@ -157,6 +179,18 @@
       {/if}
     </header>
 
+    {#if cls && waiting.length}
+      <div class="line-strip" aria-label="The line">
+        <strong>Line</strong>
+        {#each waiting as spot, index (spot.studentId)}
+          <span class="line-spot" class:next={next?.studentId === spot.studentId}>
+            <span class="line-number">{index + 1}</span>{spot.studentName}
+            {#if next?.studentId === spot.studentId}· your turn!{/if}
+          </span>
+        {/each}
+      </div>
+    {/if}
+
     {#if cls}
       {#if !destinations.length}
         <p class="door-error">Your teacher hasn't set up any destinations yet.</p>
@@ -164,12 +198,22 @@
       <main class="names" aria-label="Students in {cls.name}">
         {#each cls.students as student (student.id)}
           {@const pass = openPassFor(student.id)}
+          {@const spot = pass ? null : lineSpotFor(student.id)}
+          {@const isNext = next?.studentId === student.id}
           <!-- Where they went, never how long: the door carries no clock. See docs/adr/0003. -->
-          <button class="name" class:out={pass} onclick={() => tap(student)}>
+          <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} onclick={() => tap(student)}>
             <span class="name-text">{student.name}</span>
             {#if pass}
               <span class="name-status out-status">
                 <DestinationIcon label={pass.destination} list={destinations} size={22} />Out · {pass.destination}
+              </span>
+            {:else if isNext && spot}
+              <span class="name-status next-status">
+                <DestinationIcon label={spot.destination} list={destinations} size={22} />Your turn: tap!
+              </span>
+            {:else if spot}
+              <span class="name-status waiting-status">
+                <DestinationIcon label={spot.destination} list={destinations} size={22} />{ordinal(spot.position)} in line
               </span>
             {:else}
               <span class="name-status">In class</span>
@@ -179,7 +223,9 @@
           <p class="lede">There are no students on this class's roster yet.</p>
         {/each}
       </main>
-      <p class="count">{outCount(cls.id)} of {cls.limit} out</p>
+      <p class="count">
+        {outCount(cls.id)} of {passLimit()} out{waiting.length ? ` · ${waiting.length} in line` : ''}
+      </p>
     {:else}
       <main class="pairing">
         <p class="lede">No class is on the kiosk yet. Teacher: choose one from your laptop, or tap Teacher below.</p>
@@ -208,11 +254,37 @@
     </div>
   {/if}
 
+  {#if waitingFor}
+    {@const spot = lineSpotFor(waitingFor.id)}
+    <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="waiting-title">
+      <div class="sheet">
+        <p class="door-eyebrow">In line</p>
+        <h2 id="waiting-title">{waitingFor.name}</h2>
+        {#if spot}
+          <p class="lede">
+            You're {ordinal(spot.position)} in line for {spot.destination}. When your name turns green, tap it to go.
+          </p>
+        {/if}
+        <div class="choices">
+          <button class="door-btn primary" onclick={() => (waitingFor = null)}>Stay in line</button>
+          <button
+            class="door-btn"
+            onclick={() => {
+              if (waitingFor) leaveLine(waitingFor.id);
+              waitingFor = null;
+            }}>Leave the line</button
+          >
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if door.notice}
     <div class="notice {door.notice.kind}" role="status">
       <span class="notice-symbol"><Icon name={door.notice.kind === 'denied' ? 'x' : 'check'} size={46} stroke={2.5} /></span>
       <p class="door-eyebrow">
-        {door.notice.kind === 'denied' ? 'Not right now' : door.notice.kind === 'returned' ? 'Welcome back' : 'Pass approved'}
+        {door.notice.eyebrow ??
+          (door.notice.kind === 'denied' ? 'Not right now' : door.notice.kind === 'returned' ? 'Welcome back' : 'Pass approved')}
       </p>
       <h2>{door.notice.title}</h2>
       <p class="notice-message">{door.notice.message}</p>
@@ -220,7 +292,13 @@
         {#if door.notice.undoPassId}
           <button class="door-btn" onclick={() => undoPass(door.notice!.undoPassId!)}>That's not me</button>
         {/if}
-        <button class="door-btn" onclick={dismissNotice}>Done</button>
+        {#if door.notice.offerLine}
+          {@const offer = door.notice.offerLine}
+          <button class="door-btn primary" onclick={() => joinLine(offer.studentId, offer.destination)}>Join the line</button>
+          <button class="door-btn" onclick={dismissNotice}>Not now</button>
+        {:else}
+          <button class="door-btn" onclick={dismissNotice}>Done</button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -254,7 +332,16 @@
               </button>
             {/each}
           </div>
-          <p class="lede small">Students still out in the current class will have their passes ended.</p>
+          <p class="lede small">Students still out in the current class will have their passes ended, and the line will be cleared.</p>
+          {#if waiting.length}
+            <button
+              class="door-btn"
+              onclick={() => {
+                clearLine();
+                teacher = 'closed';
+              }}>Clear the line ({waiting.length})</button
+            >
+          {/if}
           {#if local}
             <button class="door-btn" onclick={exitToTeacher}><Icon name="unlock" size={16} />Exit kiosk</button>
           {:else}
@@ -380,6 +467,77 @@
     align-items: center;
     gap: 8px;
     color: var(--door-out);
+  }
+
+  .name.waiting {
+    border-color: #b9d0ec;
+    background: #f1f6fd;
+  }
+
+  .name.up-next {
+    border-color: var(--accent);
+    border-width: 2px;
+    background: #e9f4ec;
+  }
+
+  .waiting-status,
+  .next-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .waiting-status {
+    color: #2361a6;
+  }
+
+  .next-status {
+    color: var(--accent);
+  }
+
+  .line-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    border: 1px solid #b9d0ec;
+    border-radius: 12px;
+    background: #f1f6fd;
+    font-size: 16px;
+  }
+
+  .line-spot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 4px;
+    border-radius: 999px;
+    background: #fff;
+    font-weight: 700;
+  }
+
+  .line-spot.next {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .line-number {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #e1ecf8;
+    color: #2361a6;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .line-spot.next .line-number {
+    background: #fff;
+    color: var(--accent);
   }
 
   .count {

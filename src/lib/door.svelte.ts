@@ -1,8 +1,8 @@
 import type { DataConnection, Peer } from 'peerjs';
-import { account, doorSetup, receivePasses, setActiveClass } from './account.svelte';
+import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
-import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, Pass } from './types';
+import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass } from './types';
 
 /**
  * The kiosk: the student-facing screen by the door. It runs either on a paired
@@ -24,14 +24,20 @@ type PairedDevice = {
   passes: Pass[];
   /** Ids of passes changed here that the laptop has not confirmed yet. */
   outbox: string[];
+  /** The Line. The kiosk is in charge of it and tells the laptop. */
+  line?: LineSpot[];
 };
 
 export type DoorNotice = {
   kind: 'approved' | 'denied' | 'returned';
+  /** The small heading above the title, when the kind's usual one doesn't fit. */
+  eyebrow?: string;
   title: string;
   message: string;
   /** A pass that a mis-tap can still undo, for a few seconds. */
   undoPassId?: string;
+  /** Offered when the Pass Limit is reached and the Line is on. */
+  offerLine?: { studentId: string; destination: string };
 };
 
 const storageKey = 'hallway.door';
@@ -98,6 +104,30 @@ export function outCount(classId: string) {
   return allPasses().filter((pass) => pass.classId === classId && !pass.inAt).length;
 }
 
+export function passLimit() {
+  return setup()?.passLimit ?? 1;
+}
+
+/** The Line for the class on the kiosk, first in line first. */
+export function line(): LineSpot[] {
+  const classId = activeClassId();
+  const all = isLocal() ? account.line : (door.device?.line ?? []);
+  return all.filter((spot) => spot.classId === classId);
+}
+
+export function lineSpotFor(studentId: string) {
+  const spots = line();
+  const index = spots.findIndex((spot) => spot.studentId === studentId);
+  return index === -1 ? null : { ...spots[index], position: index + 1 };
+}
+
+/** The first in line, once a spot has opened for them. */
+export function upNext() {
+  const classId = activeClassId();
+  if (!classId || outCount(classId) >= passLimit()) return null;
+  return line()[0] ?? null;
+}
+
 export function checkPin(pin: string) {
   return pin === setup()?.pin;
 }
@@ -137,12 +167,34 @@ export function signBackIn(studentId: string) {
   if (!pass) return;
   const at = now();
   record([{ ...$state.snapshot(pass), inAt: at, endedBy: 'student', updatedAt: at }]);
-  showNotice({ kind: 'returned', title: `Welcome back, ${pass.studentName}`, message: 'You are signed back in.' }, 4);
+  const next = upNext();
+  showNotice(
+    {
+      kind: 'returned',
+      title: `Welcome back, ${pass.studentName}`,
+      message: next ? `${next.studentName}, it's your turn. Tap your name to go.` : 'You are signed back in.',
+    },
+    4,
+  );
+}
+
+function saveLine(next: LineSpot[]) {
+  const snapshot = $state.snapshot(next);
+  if (isLocal()) {
+    setLine(snapshot);
+    return;
+  }
+  const device = door.device;
+  if (!device) return;
+  device.line = snapshot;
+  saveDevice();
+  send({ type: 'line', line: snapshot });
 }
 
 /**
- * Grants a pass if the class is under its Pass Limit. A refusal gives a count,
- * never the names of who is out.
+ * Grants a pass if there is a spot free and nobody ahead in the Line. When the
+ * class is at its Pass Limit, the student may join the Line instead (if the
+ * teacher turned it on). A refusal gives a count, never who is out.
  */
 export function requestPass(studentId: string, destination: string) {
   const cls = activeDoorClass();
@@ -150,17 +202,33 @@ export function requestPass(studentId: string, destination: string) {
   const place = setup()?.destinations.find((each) => each.label === destination);
   if (!cls || !student || !place) return;
   const out = outCount(cls.id);
-  if (out >= cls.limit) {
+  const limit = passLimit();
+  const first = line()[0];
+  // A free spot is held for whoever is first in line.
+  const mayGo = out < limit && (!first || first.studentId === studentId);
+  if (!mayGo) {
+    const waiting = line().length;
     showNotice(
-      {
-        kind: 'denied',
-        title: 'Please wait in class',
-        message: `${out} of ${cls.limit} ${cls.limit === 1 ? 'student is' : 'students are'} already out. Try again when someone comes back.`,
-      },
-      6,
+      setup()?.lineEnabled
+        ? {
+            kind: 'denied',
+            title: 'Join the line?',
+            message:
+              out >= limit
+                ? `${out} of ${limit} ${limit === 1 ? 'student is' : 'students are'} out${waiting ? `, and ${waiting} ${waiting === 1 ? 'is' : 'are'} waiting` : ''}.`
+                : `${waiting} ${waiting === 1 ? 'student is' : 'students are'} already waiting.`,
+            offerLine: { studentId, destination },
+          }
+        : {
+            kind: 'denied',
+            title: 'Please wait in class',
+            message: `${out} of ${limit} ${limit === 1 ? 'student is' : 'students are'} already out. Try again when someone comes back.`,
+          },
+      10,
     );
     return;
   }
+  if (first?.studentId === studentId) saveLine(line().slice(1));
   const at = now();
   const pass: Pass = {
     id: newId(),
@@ -182,6 +250,41 @@ export function requestPass(studentId: string, destination: string) {
     },
     8,
   );
+}
+
+export function joinLine(studentId: string, destination: string) {
+  const cls = activeDoorClass();
+  const student = cls?.students.find((each) => each.id === studentId);
+  if (!cls || !student || lineSpotFor(studentId)) return;
+  saveLine([
+    ...line(),
+    { studentId, studentName: student.name, classId: cls.id, destination, joinedAt: now() },
+  ]);
+  const position = line().length;
+  showNotice(
+    {
+      kind: 'returned',
+      eyebrow: 'In line',
+      title: `You're ${ordinal(position)} in line`,
+      message: 'Watch for your name. When it turns green, tap it to go.',
+    },
+    5,
+  );
+}
+
+export function leaveLine(studentId: string) {
+  saveLine(line().filter((spot) => spot.studentId !== studentId));
+}
+
+export function clearLine() {
+  saveLine([]);
+}
+
+function ordinal(position: number) {
+  if (position === 1) return '1st';
+  if (position === 2) return '2nd';
+  if (position === 3) return '3rd';
+  return `${position}th`;
 }
 
 /** "That's not me": undoes a pass given to the wrong student moments ago. */
@@ -207,6 +310,8 @@ function adoptActiveClass(activeClass: ActiveClass) {
   if (!device) return;
   const leaving = device.activeClass?.id;
   device.activeClass = activeClass;
+  // The Line belongs to the class at the door; a new class starts with none.
+  if (leaving !== activeClass.id) device.line = [];
   saveDevice();
   if (leaving && leaving !== activeClass.id) {
     const open = device.passes.filter((pass) => pass.classId === leaving && !pass.inAt);
@@ -284,6 +389,7 @@ function dial() {
     keepAlive(attempt);
     door.status = 'live';
     flush();
+    send({ type: 'line', line: $state.snapshot(device.line ?? []) });
     if (device.activeClass) send({ type: 'active-class', activeClass: $state.snapshot(device.activeClass) });
   });
   attempt.on('data', (data) => receive(data as LaptopMessage));

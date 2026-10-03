@@ -1,7 +1,7 @@
 import { defaultDestinations } from './destinations';
 import { endUnseen, mergeInto, newId, now } from './passes';
 import { displayName, type ImportPlan } from './roster';
-import type { Account, ActiveClass, Class, Destination, DoorSetup, Pass, Student } from './types';
+import type { Account, ActiveClass, Class, Destination, DoorSetup, LineSpot, Pass, Student } from './types';
 
 /**
  * The teacher's whole Account, kept in this browser's local storage. There is
@@ -16,6 +16,9 @@ function blankAccount(): Account {
     classes: [],
     destinations: defaultDestinations(newId),
     passes: [],
+    passLimit: 1,
+    lineEnabled: false,
+    line: [],
     pin: '',
     kiosk: null,
     activeClass: null,
@@ -28,9 +31,10 @@ function blankAccount(): Account {
  * Accounts saved before destinations became one shared list kept a list on
  * each class. Those become the shared list, so nothing the teacher set is lost.
  */
-type SavedAccount = Omit<Account, 'destinations' | 'classes'> & {
+type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'passLimit'> & {
   destinations?: Destination[];
-  classes: (Class & { destinations?: { label: string; minutes: number }[] })[];
+  passLimit?: number;
+  classes: (Class & { destinations?: { label: string; minutes: number }[]; limit?: number })[];
 };
 
 function upgrade(saved: SavedAccount): Account {
@@ -46,14 +50,19 @@ function upgrade(saved: SavedAccount): Account {
         }))
       : defaults;
   }
-  for (const cls of saved.classes) delete cls.destinations;
+  // The Pass Limit used to be set per class; the first class's becomes everyone's.
+  saved.passLimit ??= saved.classes[0]?.limit ?? 1;
+  for (const cls of saved.classes) {
+    delete cls.destinations;
+    delete cls.limit;
+  }
   return saved as Account;
 }
 
 function load(): Account {
   try {
     const saved = localStorage.getItem(storageKey);
-    if (saved) return upgrade({ ...blankAccount(), destinations: undefined, ...JSON.parse(saved) });
+    if (saved) return upgrade({ ...blankAccount(), destinations: undefined, passLimit: undefined, ...JSON.parse(saved) });
   } catch {
     // Storage blocked or unreadable: start empty rather than not at all.
   }
@@ -89,13 +98,10 @@ export function openPasses(classId?: string) {
 // Classes
 // ---------------------------------------------------------------------------
 
-/** A new class copies the Pass Limit of the most recent one. */
 export function createClass(name: string) {
-  const previous = account.classes.at(-1);
   const cls: Class = {
     id: newId(),
     name,
-    limit: previous?.limit ?? 1,
     students: [],
     createdAt: now(),
   };
@@ -105,7 +111,7 @@ export function createClass(name: string) {
   return cls.id;
 }
 
-export function updateClass(id: string, changes: Partial<Pick<Class, 'name' | 'limit'>>) {
+export function updateClass(id: string, changes: Partial<Pick<Class, 'name'>>) {
   const cls = findClass(id);
   if (!cls) return;
   Object.assign(cls, changes);
@@ -120,6 +126,22 @@ export function deleteClass(id: string) {
     const next = account.classes[0];
     account.activeClass = next ? { id: next.id, changedAt: now() } : null;
   }
+  save();
+}
+
+// ---------------------------------------------------------------------------
+// Pass Options and the Line
+// ---------------------------------------------------------------------------
+
+export function setPassOptions(options: { passLimit?: number; lineEnabled?: boolean }) {
+  Object.assign(account, options);
+  if (account.lineEnabled === false) account.line = [];
+  save();
+}
+
+/** The kiosk reports its Line here; the laptop only shows it. */
+export function setLine(line: LineSpot[]) {
+  account.line = line;
   save();
 }
 
@@ -248,6 +270,8 @@ export function setActiveClass(activeClass: ActiveClass) {
     mergeInto(account.passes, openPasses(leaving).map((pass) => endUnseen(pass, 'switch')));
   }
   account.activeClass = activeClass;
+  // The Line belongs to the class at the door; a new class starts with none.
+  if (leaving !== activeClass.id) account.line = [];
   save();
 }
 
@@ -313,12 +337,13 @@ export function doorSetup(): DoorSetup {
     classes: account.classes.map((cls) => ({
       id: cls.id,
       name: cls.name,
-      limit: cls.limit,
       students: cls.students
         .filter((student) => student.status === 'current')
         .map((student) => ({ id: student.id, name: displayName(student) })),
     })),
     destinations: account.destinations,
+    passLimit: account.passLimit,
+    lineEnabled: account.lineEnabled,
     activeClass: account.activeClass,
     pin: account.pin,
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),
@@ -342,8 +367,8 @@ export function exportAccount() {
 export function importAccount(text: string) {
   const parsed = JSON.parse(text);
   if (parsed?.app !== 'hallway' || parsed.version !== 1 || !Array.isArray(parsed.classes)) {
-    throw new Error('That file is not a Hallway export.');
+    throw new Error('That file is not a Hallway backup.');
   }
   delete parsed.app;
-  localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), destinations: undefined, ...parsed })));
+  localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), destinations: undefined, passLimit: undefined, ...parsed })));
 }

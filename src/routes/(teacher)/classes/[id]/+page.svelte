@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { classPasses, findClass, markReturned } from '#lib/account.svelte.ts';
+  import { account, classPasses, findClass, markReturned } from '#lib/account.svelte.ts';
   import CorrectionDialog from '#lib/CorrectionDialog.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import { download, passesToCsv } from '#lib/csv.ts';
@@ -19,6 +19,7 @@
     return () => clearInterval(timer);
   });
 
+  const waiting = $derived(account.line.filter((spot) => spot.classId === cls.id));
   const out = $derived(passes.filter((pass) => !pass.inAt).sort((a, b) => a.outAt.localeCompare(b.outAt)));
   const today = $derived(passes.filter((pass) => dayKey(pass.outAt) === dayKey(new Date())));
   const week = $derived(passes.filter((pass) => pass.outAt >= startOfWeek().toISOString()));
@@ -46,7 +47,7 @@
   <div class="card-head">
     <div>
       <p class="eyebrow">Right now</p>
-      <h2>{out.length ? `${out.length} of ${cls.limit} out` : "Everyone's in class"}</h2>
+      <h2>{out.length ? `${out.length} of ${account.passLimit} out` : "Everyone's in class"}</h2>
     </div>
   </div>
   {#if out.length}
@@ -74,6 +75,21 @@
           {/each}
         </tbody>
       </table>
+    </div>
+  {/if}
+  {#if waiting.length}
+    <div class="stack" style="gap:8px">
+      <p class="eyebrow">In line ({waiting.length})</p>
+      <ol class="line-list">
+        {#each waiting as spot, index (spot.studentId)}
+          <li>
+            <span class="line-position">{index + 1}</span>
+            <strong>{spot.studentName}</strong>
+            <span class="destination-chip muted"><DestinationIcon label={spot.destination} size={22} />{spot.destination}</span>
+            <span class="muted small">since {time(spot.joinedAt)}</span>
+          </li>
+        {/each}
+      </ol>
     </div>
   {/if}
 </section>

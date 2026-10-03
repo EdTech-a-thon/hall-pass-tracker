@@ -49,6 +49,10 @@
       <Icon name="map-pin" />Destinations
     </a>
 
+    <a class="nav-link" class:active={path === '/pass-options'} href="/pass-options">
+      <Icon name="clock" />Pass Options
+    </a>
+
     <a class="nav-link" class:active={path === '/kiosk'} href="/kiosk">
       <Icon name="tablet" />
       <span>Kiosk<span class="nav-meta">{kioskStatus.text}</span></span>

@@ -59,7 +59,7 @@
             <button class="btn btn-small" onclick={showOnKiosk}><Icon name="tablet" size={14} />Show on kiosk</button>
           {/if}
         </div>
-        <p class="muted small">{current} {current === 1 ? 'student' : 'students'} · up to {cls.limit} out at once</p>
+        <p class="muted small">{current} {current === 1 ? 'student' : 'students'}</p>
       </div>
       <div class="row">
         <button class="btn btn-quiet" onclick={() => (settings = true)} aria-label="Class settings" title="Class settings">

@@ -8,6 +8,7 @@ import {
   pairDevice,
   receivePasses,
   setActiveClass,
+  setLine,
   setNetworkBlocked,
 } from './account.svelte';
 import { newId } from './passes';
@@ -127,6 +128,7 @@ function acceptCurrent(connection: DataConnection) {
       send(connection, { type: 'ack', passes: message.passes.map(({ id, updatedAt }) => ({ id, updatedAt })) });
     }
     if (message.type === 'active-class') setActiveClass(message.activeClass);
+    if (message.type === 'line') setLine(message.line);
   });
   connection.on('close', () => {
     if (kioskConnection !== connection) return;

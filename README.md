@@ -10,8 +10,8 @@ Hallway has **no server and no accounts**. It is a SvelteKit app that runs
 entirely in the browser:
 
 - **The teacher's laptop** keeps everything (classes, rosters, passes) in the
-  browser's local storage. **Settings → Export** downloads it all as one file,
-  and **Import** puts it back, which is the only backup.
+  browser's local storage. **Settings → Download backup** saves it all as one
+  file, and **Restore from a backup** puts it back.
 - **The kiosk** is either the laptop itself, locked with the teacher's PIN, or
   a tablet or Chromebook paired with the laptop. Pairing works like signing in
   to Netflix on a TV: the laptop shows a 6-digit code and a QR code, and the

@@ -27,7 +27,7 @@
         <h1>Start with your first class</h1>
         <p class="muted">
           Hallway keeps track of who is out of your room, where they went and for how long. Everything stays on this
-          computer. There's no account to make.
+          computer. There's nothing to sign up for.
         </p>
       </div>
     </header>

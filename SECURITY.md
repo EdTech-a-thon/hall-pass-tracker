@@ -10,7 +10,7 @@ storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`
   needed to tell students apart (at most three). The rest is discarded when the
   roster is pasted (`docs/adr/0001`).
 - **On the teacher's laptop:** everything, in local storage, unencrypted.
-  Anyone who can use that browser profile can read it. The export file is
+  Anyone who can use that browser profile can read it. The backup file is
   ordinary JSON and should be kept like any other class record.
 - **On a paired kiosk:** each class's display names, destinations and Pass
   Limit, the teacher's PIN, and passes that are open or not yet handed to the

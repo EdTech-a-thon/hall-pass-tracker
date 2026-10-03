@@ -9,14 +9,12 @@
   // The dialog edits a copy; nothing changes until Save.
   // svelte-ignore state_referenced_locally
   let name = $state(cls.name);
-  // svelte-ignore state_referenced_locally
-  let limit = $state(cls.limit);
   let confirmingDelete = $state(false);
 
   function save(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    updateClass(cls.id, { name: name.trim(), limit });
+    updateClass(cls.id, { name: name.trim() });
     onClose();
   }
 
@@ -34,8 +32,8 @@
     <div class="dialog">
       <h2 id="settings-title">Delete {cls.name}?</h2>
       <p class="muted">
-        Its {cls.students.length} students and {classPasses(cls.id).length} passes will be gone for good. Export your
-        account first if you might need them.
+        Its {cls.students.length} students and {classPasses(cls.id).length} passes will be gone for good. Download a backup first
+        if you might need them.
       </p>
       <div class="dialog-actions">
         <button class="btn" onclick={() => (confirmingDelete = false)}>Cancel</button>
@@ -46,12 +44,7 @@
     <form class="dialog" onsubmit={save}>
       <h2 id="settings-title">Class settings</h2>
       <label class="field">Class name <input bind:value={name} /></label>
-      <label class="field">
-        How many students may be out at once
-        <select bind:value={limit}>
-          {#each [1, 2, 3, 4, 5, 6] as option (option)}<option value={option}>{option}</option>{/each}
-        </select>
-      </label>
+      <p class="muted small">How many students may be out at once is set for all classes in Pass Options.</p>
       <div class="dialog-actions" style="justify-content:space-between">
         <button type="button" class="btn btn-danger" onclick={() => (confirmingDelete = true)}>
           <Icon name="trash" size={15} />Delete class
