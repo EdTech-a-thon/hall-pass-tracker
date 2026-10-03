@@ -775,8 +775,4 @@
     gap: 12px;
     margin-top: 12px;
   }
-
-  .notice .door-btn {
-    background: #fff;
-  }
 </style>
