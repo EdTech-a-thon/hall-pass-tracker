@@ -1,144 +1,92 @@
-import type { ActiveClass, Pass, PassEvent } from './types';
+import type { Pass } from './types';
 
-export function activePasses(state: ActiveClass) {
-  return state.passes.filter((pass) => !pass.inAt);
+/** A fresh, unguessable id for a class, student, pass or kiosk. */
+export function newId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function now() {
+  return new Date().toISOString();
 }
 
 /**
- * Lays every Correction over the entry it amends. The base entries are never
- * changed -- they cannot be, the database refuses it -- so this is where the
- * corrected view comes from. A Correction can itself be corrected, and because
- * they are applied oldest to newest, the most recent one wins. See
- * docs/adr/0004.
- */
-function applyCorrections(events: PassEvent[]) {
-  const corrections = events.filter((event) => event.kind === 'fix' && event.corrects);
-  const base = events.filter((event) => event.kind !== 'fix');
-  if (!corrections.length) return { entries: base, corrected: new Set<string>() };
-
-  // A Correction may amend another Correction. Follow the chain back to the
-  // base entry so the newest one still wins, rather than being dropped for
-  // pointing at a row that is not in the folded set.
-  const fixIds = new Map(corrections.map((fix) => [fix.id, fix] as const));
-  const rootOf = (fix: PassEvent) => {
-    let target = fix.corrects!;
-    for (let hops = 0; hops < 20 && fixIds.has(target); hops += 1) {
-      target = fixIds.get(target)!.corrects!;
-      if (!target) return '';
-    }
-    return target;
-  };
-
-  const byTarget = new Map<string, PassEvent[]>();
-  for (const fix of corrections) {
-    const target = rootOf(fix);
-    if (!target) continue;
-    const group = byTarget.get(target);
-    if (group) group.push(fix);
-    else byTarget.set(target, [fix]);
-  }
-
-  const corrected = new Set<string>();
-  const entries = base.map((event) => {
-    const fixes = byTarget.get(event.id);
-    if (!fixes) return event;
-    corrected.add(event.id);
-    let next = { ...event };
-    for (const fix of [...fixes].sort((first, second) => first.at.localeCompare(second.at))) {
-      if (fix.newStudent) next = { ...next, student: fix.newStudent, studentName: fix.studentName };
-      if (fix.newAt) next = { ...next, at: fix.newAt };
-    }
-    return next;
-  });
-  return { entries, corrected };
-}
-
-/**
- * Turns the append-only log into round trips. Each "out" opens a pass and the
- * next "in" from the same student closes it, so a student whose latest entry is
- * an exit is still in the hallway.
- */
-export function foldEvents(events: PassEvent[]): Pass[] {
-  const { entries, corrected } = applyCorrections(events);
-  const passes: Pass[] = [];
-  const open = new Map<string, Pass>();
-  for (const event of [...entries].sort((first, second) => first.at.localeCompare(second.at))) {
-    if (event.kind === 'out') {
-      const pass: Pass = {
-        id: event.id,
-        class: event.class,
-        student: event.student,
-        studentName: event.studentName,
-        destination: event.destination,
-        minutes: event.minutes,
-        outAt: event.at,
-        corrected: corrected.has(event.id),
-      };
-      passes.push(pass);
-      open.set(event.student, pass);
-      continue;
-    }
-    const pass = open.get(event.student);
-    if (!pass) continue;
-    pass.inAt = event.at;
-    pass.inId = event.id;
-    pass.endedBy = event.source === 'teacher' ? 'teacher' : event.source === 'switch' ? 'switch' : event.source === 'cancelled' ? 'cancelled' : 'student';
-    if (event.source === 'teacher') pass.signedInBy = event.signedInBy || 'the teacher';
-    if (corrected.has(event.id)) pass.corrected = true;
-    open.delete(event.student);
-  }
-  return passes;
-}
-
-/**
- * A trip whose end we invented rather than observed: the bell rang, or a student
- * undid a mis-tap. Its duration is not a real duration, so it must stay out of
- * averages and out of the overdue count.
+ * A pass whose end we invented rather than observed: the class changed, the
+ * student undid a mis-tap, or they left the roster while out. Its duration is
+ * not a real one, so it stays out of minutes-missed and overdue figures.
  */
 export function hasRealDuration(pass: Pass) {
-  return pass.endedBy !== 'switch' && pass.endedBy !== 'cancelled';
+  return !pass.endedBy || pass.endedBy === 'student' || pass.endedBy === 'teacher';
+}
+
+/** How many minutes a pass has lasted so far (as of `at`), or lasted in total once returned. */
+export function duration(pass: Pass, at = Date.now()) {
+  const end = pass.inAt ? new Date(pass.inAt).getTime() : at;
+  return Math.max(1, Math.round((end - new Date(pass.outAt).getTime()) / 60_000));
 }
 
 /**
- * PocketBase writes timestamps as "2026-08-19 10:03:12.123Z". Some browsers
- * refuse that space, so every reading of a stored time goes through here.
+ * A pass that lasted longer than its destination's expected minutes. There is
+ * no grace period: the teacher set the number. Only the laptop ever says this;
+ * the kiosk never does. See docs/adr/0003.
  */
-function toDate(value: string) {
-  return new Date(value.replace(' ', 'T'));
+export function isOverdue(pass: Pass, at = Date.now()) {
+  return pass.minutes > 0 && hasRealDuration(pass) && duration(pass, at) > pass.minutes;
 }
 
-/** The local calendar day a stored timestamp falls on, as "2026-08-19". */
-export function dayKey(value: string) {
-  const local = toDate(value);
+/** The local calendar day of a timestamp, as "2026-10-02". */
+export function dayKey(value: string | Date) {
+  const local = new Date(value);
   return new Date(local.getTime() - local.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
-/** Formats a stored timestamp as a short local clock time, e.g. "2:05 PM". */
+/** A short local clock time, e.g. "2:05 PM". */
 export function time(value: string) {
-  return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(toDate(value));
+  return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 }
 
-/** How many minutes a pass has lasted so far, or lasted in total once returned. */
-export function duration(pass: Pass) {
-  const end = pass.inAt ? toDate(pass.inAt).getTime() : Date.now();
-  return Math.max(1, Math.round((end - toDate(pass.outAt).getTime()) / 60_000));
-}
-
-/**
- * A Pass that has lasted longer than the minutes frozen onto it when the student
- * left. There is no grace period: the teacher set the number, so the app does
- * not quietly pad it. This is a judgement for the teacher's dashboard only --
- * kiosk mode never shows it. See docs/adr/0003.
- */
-export function isOverdue(pass: Pass) {
-  return pass.minutes > 0 && hasRealDuration(pass) && duration(pass) > pass.minutes;
+/** "Mon, Oct 2" */
+export function shortDate(value: string) {
+  return new Intl.DateTimeFormat([], { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value));
 }
 
 export function dueTime(pass: Pass) {
-  return dueTimeFrom(pass.outAt, pass.minutes);
+  return time(new Date(new Date(pass.outAt).getTime() + pass.minutes * 60_000).toISOString());
 }
 
-/** The same calculation for a pass the kiosk has just been granted. */
-export function dueTimeFrom(outAt: string, minutes: number) {
-  return time(new Date(toDate(outAt).getTime() + minutes * 60_000).toISOString());
+/**
+ * Combines the kiosk's copy of a pass with the laptop's. A teacher's correction
+ * is deliberate, so the latest corrected copy wins outright. Otherwise the copies
+ * agree on everything except perhaps the return, and the earlier return wins:
+ * the student was back from that moment, whichever device heard it first.
+ * See docs/adr/0005.
+ */
+export function mergePass(first: Pass, second: Pass): Pass {
+  const byNewest = [first, second].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const corrected = byNewest.find((pass) => pass.corrected);
+  const base = corrected ?? byNewest[0];
+  if (corrected?.inAt) return base;
+  const ended = byNewest.filter((pass) => pass.inAt).sort((a, b) => a.inAt!.localeCompare(b.inAt!))[0];
+  if (!ended) return base;
+  return { ...base, inAt: ended.inAt, endedBy: ended.endedBy };
+}
+
+/** Folds incoming copies into a list of passes, in place. */
+export function mergeInto(list: Pass[], incoming: Pass[]) {
+  const byId = new Map(list.map((pass, index) => [pass.id, index]));
+  for (const pass of incoming) {
+    const index = byId.get(pass.id);
+    if (index === undefined) {
+      byId.set(pass.id, list.length);
+      list.push(pass);
+    } else {
+      list[index] = mergePass(list[index], pass);
+    }
+  }
+}
+
+/** Ends a pass without anyone seeing the student come back. */
+export function endUnseen(pass: Pass, endedBy: 'switch' | 'cancelled' | 'removed'): Pass {
+  const at = now();
+  return { ...pass, inAt: at, endedBy, updatedAt: at };
 }

@@ -9,31 +9,42 @@ function cell(value: string | number) {
 
 const headings = ['Date', 'Student', 'Destination', 'Left', 'Returned', 'Minutes out', 'Expected', 'Overdue', 'Ended by', 'Corrected'];
 
-function endedBy(pass: Pass) {
-  if (!pass.inAt) return 'still out';
-  if (pass.endedBy === 'switch') return 'class change';
-  if (pass.endedBy === 'cancelled') return 'cancelled at the door';
-  if (pass.endedBy === 'teacher') return `teacher (${pass.signedInBy || 'the teacher'})`;
-  return 'student';
-}
+const endings: Record<string, string> = {
+  student: 'student',
+  teacher: 'teacher',
+  switch: 'class change',
+  cancelled: 'cancelled at the door',
+  removed: 'left the roster',
+};
 
 /**
- * A spreadsheet of the corrected view, so the file a teacher hands to an
- * administrator agrees with what their dashboard shows. Trips whose return was
- * never observed say so rather than reporting a duration nobody measured.
+ * A spreadsheet of a class's passes. Trips whose return nobody saw leave the
+ * duration blank rather than reporting minutes nobody measured.
  */
 export function passesToCsv(passes: Pass[]) {
-  const rows = passes.map((pass) => [
-    dayKey(pass.outAt),
-    pass.studentName,
-    pass.destination,
-    time(pass.outAt),
-    pass.inAt ? time(pass.inAt) : '',
-    pass.inAt && hasRealDuration(pass) ? duration(pass) : '',
-    pass.minutes || '',
-    isOverdue(pass) ? 'yes' : '',
-    endedBy(pass),
-    pass.corrected ? 'yes' : '',
-  ]);
+  const rows = [...passes]
+    .sort((a, b) => a.outAt.localeCompare(b.outAt))
+    .map((pass) => [
+      dayKey(pass.outAt),
+      pass.studentName,
+      pass.destination,
+      time(pass.outAt),
+      pass.inAt ? time(pass.inAt) : '',
+      pass.inAt && hasRealDuration(pass) ? duration(pass) : '',
+      pass.minutes || '',
+      isOverdue(pass) ? 'yes' : '',
+      pass.inAt ? endings[pass.endedBy ?? 'student'] : 'still out',
+      pass.corrected ? 'yes' : '',
+    ]);
   return [headings, ...rows].map((row) => row.map(cell).join(',')).join('\n');
+}
+
+/** Hands the browser a file to save. */
+export function download(filename: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }

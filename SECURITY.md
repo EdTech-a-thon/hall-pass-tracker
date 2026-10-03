@@ -1,40 +1,44 @@
 # Hallway Security Model
 
-This prototype uses a teacher-authenticated browser in a supervised classroom kiosk. Browser code and the kiosk PIN are interface controls, not complete authorization boundaries.
+Hallway is a local-first prototype. There is no server holding student data:
+each teacher's classes, rosters and passes live in their own browser's local
+storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`.
 
-## Required deployment controls
+## What is stored, and where
 
-- Run the kiosk in a managed, unprivileged operating-system kiosk account. Restrict navigation, extensions, downloads, removable media, firmware boot, and browser password storage.
-- Put PocketBase behind HTTPS, restrict CORS, enable HSTS, encrypt PocketBase settings, and restrict superuser access by IP and MFA.
-- Never put a superuser token, teacher token, or teacher password in Vite environment variables or kiosk storage.
-- Keep collections locked. Client writes go through authenticated custom routes with strict body limits.
-- Treat student IDs as identifiers, not proof of identity. Production should use opaque badges or separate PINs if impersonation is not an accepted risk.
-- Fail closed when PocketBase is unavailable. Never report approval until a server transaction succeeds.
+- **Student names** are a first name plus the fewest letters of the last name
+  needed to tell students apart (at most three). The rest is discarded when the
+  roster is pasted (`docs/adr/0001`).
+- **On the teacher's laptop:** everything, in local storage, unencrypted.
+  Anyone who can use that browser profile can read it. The export file is
+  ordinary JSON and should be kept like any other class record.
+- **On a paired kiosk:** each class's display names, destinations and Pass
+  Limit, the teacher's PIN, and passes that are open or not yet handed to the
+  laptop. It never holds the full history.
 
-## Authentication boundary
+## The connection between kiosk and laptop
 
-Teachers use PocketBase email/password authentication. Public registration creates a new teacher record, which is also a new isolated classroom in this one-teacher/one-class prototype. Public registration does not grant access to existing classrooms: every collection rule and custom route scopes records to the authenticated teacher ID.
+- PeerJS's public server (`0.peerjs.com`) brokers the introduction between the
+  two devices. It sees their randomly generated addresses, but no pass data,
+  which travels over WebRTC's encrypted channel directly between the devices.
+- The 6-digit pairing code is a temporary address. It works once and expires
+  after 10 minutes. On a public broker a code could, rarely, be guessed by
+  someone else in those minutes, and their device would become the kiosk.
+  Pairing again replaces it.
+- After pairing, the kiosk proves itself with a long random secret. The laptop
+  ignores connections without the current kiosk's secret, except that a
+  replaced kiosk may hand over passes it still holds, once.
 
-This deployment cannot send email, so email verification, password-reset email, and PocketBase email-OTP MFA are unavailable. PocketBase does not natively support authenticator-app TOTP, and this project does not roll its own. Production authenticator-app MFA requires an audited external identity provider or a separately reviewed PocketBase extension.
+## What the PIN does and doesn't do
 
-Teacher tokens use an in-memory `BaseAuthStore`; refreshing destroys the session and returns the device to teacher sign-in.
+The teacher PIN locks the Hallway interface on the kiosk (switching class,
+unpairing, leaving kiosk mode). It is stored in plain text in local storage on
+both devices, so it does not stop a technically capable person with access to
+the device's browser tools. For real classroom use, run the kiosk device in its
+operating system's managed kiosk or guided-access mode.
 
-## The kiosk boundary
+## Kiosk screen
 
-A teacher signs into their normal account on the device, then enters kiosk mode. The first session requires creating a six-digit exit PIN. PocketBase stores only a salted password hash in a hidden field. The same PIN is reused until the teacher replaces it from Profile.
-
-Kiosk mode reads the Active Class's roster and its current pass state, so that it can greet students by name and show who is in the hallway. It reads nothing further, and it writes nothing directly: student exits and returns go through the authenticated `POST /api/hallway/kiosk/events` route. A test asserts that every collection request the door screen makes is a `GET` against its own roster, its own Class list, and its own Class's log.
-
-An earlier version of this document said the kiosk did not request pass history. That was true when the door screen was a limited link account with no power to read it. Since kiosk mode became the teacher's own session behind a PIN, the restriction was self-imposed rather than enforced, and it cost every student a step while buying no real protection. The reasoning is recorded in `docs/adr/0003-kiosk-mode-shows-who-is-out.md`.
-
-Kiosk mode still shows no timing of any kind -- no elapsed minutes, no countdown, no overdue marker. Whether a student is late is a judgement for the teacher's dashboard.
-
-`pass_events` has no update or delete rule, for anyone, so the log remains append-only. A mistaken check-in is corrected by adding an entry, never by rewriting one; the same is true of the few-second undo at the door, which writes a return marked `cancelled` rather than removing anything. `docs/adr/0004-corrections-are-new-entries-never-edits.md` records why teacher-facing edits must not change this.
-
-The server counts who is out within the Active Class and either records the exit or answers `denied`, telling the kiosk only a count, never another student's name. How long a trip should take is read from the teacher's own Destination list on the server, so a browser cannot claim a trip was meant to last an hour.
-
-**The PIN locks the Hallway interface; it does not remove the teacher session from the browser.** A technically capable person with browser developer tools could access that session. Production use therefore requires the managed operating-system kiosk controls listed above. Exiting through the interface verifies the PIN on the server; refreshing signs the account out entirely.
-
-## What is not protected
-
-An earlier version of this prototype encrypted the classroom in the teacher's browser and stored only ciphertext. That is incompatible with a kiosk that greets students by name, so the roster and the hall pass log are now ordinary PocketBase records, readable by anyone with database or backup access. Protecting them is a deployment responsibility: disk encryption, restricted superuser access, and controlled backups.
+The kiosk shows who is out and where they went, never how long they've been
+gone or whether they are overdue (`docs/adr/0003`). When the Pass Limit is
+reached it says how many are out, never who.

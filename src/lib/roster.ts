@@ -136,7 +136,7 @@ export function planImport(text: string, existing: Student[]): ImportPlan {
     for (const student of current) {
       const rivals = parsed.filter((name) => couldBe(student, name));
       if (rivals.length > 1) {
-        ambiguity = `"${student.name}" is already on this roster, and both "${whole(rivals[0])}" and "${whole(rivals[1])}" could be them. Give one of them a nickname and import again.`;
+        ambiguity = `"${displayName(student)}" is already on this roster, and both "${whole(rivals[0])}" and "${whole(rivals[1])}" could be them. Give one of them a nickname and import again.`;
         break;
       }
     }
@@ -145,12 +145,12 @@ export function planImport(text: string, existing: Student[]): ImportPlan {
   const claimed = new Set<string>();
   const pairs: { parsed: ParsedName; student?: Student }[] = [];
   for (const name of parsed) {
-    const hit = current.find((student) => !claimed.has(student.recordId) && couldBe(student, name));
-    if (hit) claimed.add(hit.recordId);
+    const hit = current.find((student) => !claimed.has(student.id) && couldBe(student, name));
+    if (hit) claimed.add(hit.id);
     pairs.push({ parsed: name, student: hit });
   }
 
-  const missing = current.filter((student) => !claimed.has(student.recordId));
+  const missing = current.filter((student) => !claimed.has(student.id));
 
   // Students being kept but absent from the paste still occupy a name, so they
   // take part in working out the prefixes. All we know of them is the prefix we

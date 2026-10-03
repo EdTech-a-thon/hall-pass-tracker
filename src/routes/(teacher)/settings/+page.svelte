@@ -1,0 +1,101 @@
+<script lang="ts">
+  import { account, exportAccount, importAccount } from '#lib/account.svelte.ts';
+  import ConfirmDialog from '#lib/ConfirmDialog.svelte';
+  import { dayKey, shortDate } from '#lib/passes.ts';
+  import { download } from '#lib/csv.ts';
+  import Icon from '#lib/Icon.svelte';
+
+  let pending = $state('');
+  let error = $state('');
+
+  const daysSinceExport = $derived(
+    account.lastExportedAt ? Math.floor((Date.now() - new Date(account.lastExportedAt).getTime()) / 86_400_000) : null,
+  );
+
+  function exportFile() {
+    download(`hallway-${dayKey(new Date())}.json`, exportAccount(), 'application/json');
+  }
+
+  async function chooseFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    error = '';
+    pending = await file.text();
+  }
+
+  function replaceEverything() {
+    try {
+      importAccount(pending);
+      // Start fresh so the kiosk connection picks up the imported pairing.
+      location.href = '/';
+    } catch (problem) {
+      error = problem instanceof Error ? problem.message : 'That file could not be read.';
+      pending = '';
+    }
+  }
+</script>
+
+<div class="page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">Settings</p>
+      <h1>Your account</h1>
+      <p class="muted">
+        Everything Hallway knows lives in this browser on this computer. If the browser's data is cleared, it's gone,
+        so export a copy now and then.
+      </p>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Export</p>
+        <h2>Download your whole account</h2>
+        <p class="muted small">
+          One file with every class, student, pass, destination and your kiosk pairing.
+          {#if account.lastExportedAt}
+            Last exported {daysSinceExport === 0 ? 'today' : `${shortDate(account.lastExportedAt)}, ${daysSinceExport} ${daysSinceExport === 1 ? 'day' : 'days'} ago`}.
+          {:else}
+            Never exported yet.
+          {/if}
+        </p>
+      </div>
+      <button class="btn btn-primary" onclick={exportFile}><Icon name="download" size={16} />Export account</button>
+    </div>
+    {#if daysSinceExport === null || daysSinceExport > 7}
+      <div class="notice-bar"><Icon name="alert-triangle" />It's been a while. An export is your only backup.</div>
+    {/if}
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">Import</p>
+        <h2>Restore from an export</h2>
+        <p class="muted small">
+          Replaces everything in this browser with the file, including the kiosk pairing, so you're back exactly where
+          you were. Use it on a new computer, or to undo a mistake.
+        </p>
+      </div>
+      <label class="btn">
+        <Icon name="upload" size={16} />Choose file
+        <input class="sr-only" type="file" accept=".json,application/json" onchange={chooseFile} />
+      </label>
+    </div>
+    {#if error}<p class="form-error" role="alert">{error}</p>{/if}
+  </section>
+</div>
+
+{#if pending}
+  <ConfirmDialog
+    title="Replace everything?"
+    message="All the classes, students and passes in this browser will be replaced by the ones in the file. Anything not in the file will be lost."
+    confirmLabel="Replace everything"
+    danger
+    onConfirm={replaceEverything}
+    onCancel={() => (pending = '')}
+  />
+{/if}

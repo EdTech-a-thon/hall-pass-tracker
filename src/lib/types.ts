@@ -3,91 +3,101 @@
  * unrelated Students, deliberately — see docs/adr/0002.
  */
 export type Student = {
-  recordId: string;
+  id: string;
   firstName: string;
   /** As many leading letters of the last name as it takes to be unique. Never the whole name. */
   lastPrefix: string;
+  /** A Former Student has left the class but keeps every trip they took. */
   status: 'current' | 'former';
-  /** "Maya C." — composed, never stored. */
-  name: string;
 };
 
-/**
- * One line in the append-only hall pass log: a student left, or a student came
- * back. Nothing ever edits an entry, so the log is safe for a kiosk to add to.
- */
-export type PassEvent = {
-  id: string;
-  /** The Class this entry belongs to. */
-  class: string;
-  /** The roster row this entry belongs to. */
-  student: string;
-  studentName: string;
-  kind: 'out' | 'in' | 'fix';
-  destination: string;
-  minutes: number;
-  source: 'kiosk' | 'teacher' | 'switch' | 'cancelled';
-  signedInBy: string;
-  at: string;
-  /** On a Correction, the entry it amends. */
-  corrects?: string;
-  /** On a Correction, the Student the trip really belonged to. */
-  newStudent?: string;
-  /** On a Correction, a replacement time for the entry it amends. */
-  newAt?: string;
-};
-
-/** A completed round trip, worked out by pairing each exit with its return. */
-export type Pass = {
-  id: string;
-  class: string;
-  student: string;
-  studentName: string;
-  destination: string;
-  minutes: number;
-  outAt: string;
-  inAt?: string;
-  /** The log entry that closed this trip, so a return time can be corrected too. */
-  inId?: string;
-  signedInBy?: string;
-  /**
-   * How the trip ended. "switch" and "cancelled" mean the end was invented
-   * rather than observed, so the duration is not a real one.
-   */
-  endedBy?: 'student' | 'teacher' | 'switch' | 'cancelled';
-  /** True when a Correction has been laid over this trip. */
-  corrected: boolean;
-};
-
-/**
- * A place a student may go. The teacher owns the list for their whole account,
- * and the expected minutes are frozen onto a Pass when the student leaves.
- */
+/** A place a student may go, with the minutes that trip is expected to take. */
 export type Destination = { label: string; minutes: number };
 
 /** A group of students a teacher sees together during one period. */
-export type Class = { id: string; name: string; position: number; archived: boolean };
-
-export type ActiveClass = { limit: number; students: Student[]; passes: Pass[] };
-
-export type View = 'kiosk' | 'teacher-login' | 'teacher-register' | 'teacher';
-
-export type TeacherTab = 'live' | 'classes' | 'analytics' | 'security';
-
-/** A full-screen message shown on the kiosk after a student action. */
-export type Notice = {
-  kind: 'approved' | 'denied' | 'returned';
-  title: string;
-  message: string;
-  /** Second line, only used by the approval notice. */
-  detail?: string;
-  /** Offers a few seconds to undo a pass given to the wrong student. */
-  undo?: boolean;
+export type Class = {
+  id: string;
+  name: string;
+  /** The Pass Limit: how many students from this class may be out at once. */
+  limit: number;
+  destinations: Destination[];
+  students: Student[];
+  createdAt: string;
 };
 
-/** Whatever dialog is open on top of the current view, if any. */
-export type Modal =
-  | { kind: 'request'; student: Student }
-  | { kind: 'kiosk-pin'; purpose: 'setup' | 'exit' | 'change' | 'switch' }
-  | { kind: 'class-switch' }
-  | { kind: 'correct'; pass: Pass };
+/** How a pass ended. Everything except "student" and "teacher" means nobody saw the return. */
+export type EndedBy = 'student' | 'teacher' | 'switch' | 'cancelled' | 'removed';
+
+/** One round trip: a student left for a destination and has, or has not yet, come back. */
+export type Pass = {
+  id: string;
+  classId: string;
+  studentId: string;
+  /** "Maya C.", frozen when the student left so history reads the same after a rename. */
+  studentName: string;
+  destination: string;
+  /** The destination's expected minutes, frozen when the student left. */
+  minutes: number;
+  outAt: string;
+  inAt?: string;
+  endedBy?: EndedBy;
+  /** Set once a teacher has corrected this pass on the laptop. */
+  corrected?: boolean;
+  /** When this copy last changed, so the kiosk and the laptop can tell which copy is newer. */
+  updatedAt: string;
+};
+
+/** Which class the kiosk is showing, and when someone last deliberately changed it. */
+export type ActiveClass = { id: string; changedAt: string };
+
+/** The teacher's one kiosk: either a paired device, or this computer itself. */
+export type Kiosk =
+  | { kind: 'this-computer'; locked: boolean }
+  | { kind: 'device'; kioskId: string; secret: string; pairedAt: string; lastSeenAt?: string };
+
+/** Everything one teacher's laptop holds. Exporting writes exactly this to a file. */
+export type Account = {
+  version: 1;
+  /** The fixed address a paired kiosk uses to find this laptop again. */
+  laptopPeerId: string;
+  classes: Class[];
+  passes: Pass[];
+  /** The teacher's PIN, needed at the kiosk to change class or unpair. */
+  pin: string;
+  kiosk: Kiosk | null;
+  activeClass: ActiveClass | null;
+  /** Kiosks that were replaced while offline. Their last passes are still welcome. */
+  replacedKiosks: { kioskId: string; secret: string }[];
+  /** Set when a pairing attempt showed that this network blocks device-to-device connections. */
+  networkBlocked: boolean;
+  lastExportedAt?: string;
+};
+
+/** A class as the kiosk sees it: current students only, names already composed. */
+export type DoorClass = {
+  id: string;
+  name: string;
+  limit: number;
+  destinations: Destination[];
+  students: { id: string; name: string }[];
+};
+
+/** Everything the laptop hands the kiosk so it can run the door on its own. */
+export type DoorSetup = {
+  classes: DoorClass[];
+  activeClass: ActiveClass | null;
+  pin: string;
+  /** Passes still open, plus today's, so both sides agree on who is out. */
+  passes: Pass[];
+};
+
+/** Messages that travel between the kiosk and the laptop. */
+export type KioskMessage =
+  | { type: 'passes'; passes: Pass[] }
+  | { type: 'active-class'; activeClass: ActiveClass };
+
+export type LaptopMessage =
+  | { type: 'paired'; laptopPeerId: string; kioskId: string; secret: string; setup: DoorSetup }
+  | { type: 'setup'; setup: DoorSetup }
+  | { type: 'ack'; passes: { id: string; updatedAt: string }[] }
+  | { type: 'replaced' };
