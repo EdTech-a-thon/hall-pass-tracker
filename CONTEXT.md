@@ -1,6 +1,6 @@
-# Hallway
+# Happy Hallways
 
-Hallway records students leaving the classroom and coming back. A kiosk by the
+Happy Hallways records students leaving the classroom and coming back. A kiosk by the
 door signs them out and in; the teacher watches from their own laptop. Everything
 lives on the teacher's own devices; there is no server and no sign-in.
 
@@ -17,7 +17,7 @@ is two unrelated students, and nothing in the product connects them.
 _Avoid_: Pupil, kid, roster entry
 
 **Display Name**:
-The only form of a student's name Hallway keeps — a first name plus as many
+The only form of a student's name Happy Hallways keeps — a first name plus as many
 leading letters of the last name as it takes to tell them apart from everyone
 else in their class ("Maya C.", or "Maya Che." if a Maya Cha. shares the room).
 A full last name is never stored.
@@ -98,6 +98,6 @@ _Avoid_: Archived student, deleted student, inactive student
 A single file holding everything the teacher's laptop knows: classes, students,
 passes, destinations, Pass Options and the kiosk pairing. Restoring it replaces
 everything in that browser and puts the teacher back exactly where they were.
-Hallway has no accounts or sign-in; the backup is the only copy that leaves the
+Happy Hallways has no accounts or sign-in; the backup is the only copy that leaves the
 browser.
 _Avoid_: Account, profile, export file

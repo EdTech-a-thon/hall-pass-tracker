@@ -23,10 +23,10 @@
   <div class="page">
     <header class="page-head">
       <div>
-        <p class="eyebrow">Welcome to Hallway</p>
+        <p class="eyebrow">Welcome to Happy Hallways</p>
         <h1>Start with your first class</h1>
         <p class="muted">
-          Hallway keeps track of who is out of your room, where they went and for how long. Everything stays on this
+          Happy Hallways keeps track of who is out of your room, where they went and for how long. Everything stays on this
           computer. There's nothing to sign up for.
         </p>
       </div>

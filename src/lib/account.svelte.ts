@@ -371,7 +371,7 @@ export function exportAccount() {
 export function importAccount(text: string) {
   const parsed = JSON.parse(text);
   if (parsed?.app !== 'hallway' || parsed.version !== 1 || !Array.isArray(parsed.classes)) {
-    throw new Error('That file is not a Hallway backup.');
+    throw new Error('That file is not a Happy Hallways backup.');
   }
   delete parsed.app;
   localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), destinations: undefined, passLimit: undefined, ...parsed })));

@@ -1,12 +1,12 @@
-# Hallway Pass Tracker
+# Happy Hallways
 
-A classroom hall pass. A kiosk by the door lets students sign themselves out
-and back in; the teacher sees who is out, and how much class time each student
-misses, from their own laptop.
+A classroom hall pass, at [happyhallways.com](https://happyhallways.com). A kiosk
+by the door lets students sign themselves out and back in; the teacher sees who
+is out, and how much class time each student misses, from their own laptop.
 
 ## How the pieces fit together
 
-Hallway has **no server and no accounts**. It is a SvelteKit app that runs
+Happy Hallways has **no server and no accounts**. It is a SvelteKit app that runs
 entirely in the browser:
 
 - **The teacher's laptop** keeps everything (classes, rosters, passes) in the

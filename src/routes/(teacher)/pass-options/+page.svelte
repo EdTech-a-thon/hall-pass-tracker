@@ -52,7 +52,7 @@
   <RequestCard
     title="Need a setting we didn't think of?"
     text="Email us, and we'll add it."
-    subject="Hallway: a pass option idea"
+    subject="Happy Hallways: a pass option idea"
   />
 </div>
 

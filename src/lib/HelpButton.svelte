@@ -22,7 +22,7 @@
       </div>
       <p>
         If you're running into trouble or have suggestions, email us at
-        <a href={supportMailto('Hallway')}>{supportEmail}</a>.
+        <a href={supportMailto('Happy Hallways')}>{supportEmail}</a>.
       </p>
     </section>
   </Modal>

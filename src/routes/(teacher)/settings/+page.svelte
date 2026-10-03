@@ -13,7 +13,7 @@
   );
 
   function exportFile() {
-    download(`hallway-${dayKey(new Date())}.json`, exportAccount(), 'application/json');
+    download(`happy-hallways-${dayKey(new Date())}.json`, exportAccount(), 'application/json');
   }
 
   async function chooseFile(event: Event) {
@@ -43,7 +43,7 @@
       <p class="eyebrow">Settings</p>
       <h1>Your data</h1>
       <p class="muted">
-        Hallway has no sign-in. Everything it knows lives in this browser on this computer, and if the browser's data
+        Happy Hallways has no sign-in. Everything it knows lives in this browser on this computer, and if the browser's data
         is cleared, it's gone. Download a backup now and then.
       </p>
     </div>
