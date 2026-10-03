@@ -9,6 +9,7 @@
   import Icon from '#lib/Icon.svelte';
   import KioskBadge from '#lib/KioskBadge.svelte';
   import { now } from '#lib/passes.ts';
+  import { formatClock } from '#lib/schedule.ts';
 
   let { children } = $props();
 
@@ -59,7 +60,12 @@
             <button class="btn btn-small" onclick={showOnKiosk}><Icon name="tablet" size={14} />Show on kiosk</button>
           {/if}
         </div>
-        <p class="muted small">{current} {current === 1 ? 'student' : 'students'}</p>
+        <p class="muted small">
+          {current} {current === 1 ? 'student' : 'students'}
+          {#if cls.noPassTimes.length}
+            · No passes {cls.noPassTimes.map((time) => `${formatClock(time.start)}–${formatClock(time.end)}`).join(', ')}
+          {/if}
+        </p>
       </div>
       <div class="row">
         <button class="btn btn-quiet" onclick={() => (settings = true)} aria-label="Class settings" title="Class settings">

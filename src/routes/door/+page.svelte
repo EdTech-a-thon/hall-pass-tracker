@@ -17,6 +17,7 @@
     leaveLine,
     line,
     lineSpotFor,
+    noPassNow,
     openPassFor,
     outCount,
     pairWithCode,
@@ -31,13 +32,22 @@
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
   import Modal from '#lib/Modal.svelte';
+  import { formatClock } from '#lib/schedule.ts';
 
   const local = $derived(isLocal());
   const paired = $derived(!!door.device);
   const cls = $derived(activeDoorClass());
   const destinations = $derived(setup()?.destinations ?? []);
+  // No-Pass Times start and end on their own, so look at the clock regularly.
+  let clock = $state(Date.now());
+  onMount(() => {
+    const timer = setInterval(() => (clock = Date.now()), 15_000);
+    return () => clearInterval(timer);
+  });
+
   const waiting = $derived(line());
-  const next = $derived(upNext());
+  const next = $derived(upNext(clock));
+  const blocked = $derived(noPassNow(clock));
 
   let code = $state(page.url.searchParams.get('code') ?? '');
   let choosingFor = $state(null as { id: string; name: string } | null);
@@ -179,6 +189,13 @@
         </p>
       {/if}
     </header>
+
+    {#if cls && blocked}
+      <div class="no-pass" role="status">
+        <Icon name="clock" size={20} />
+        <span><strong>No passes right now.</strong> Passes open at {formatClock(blocked.end)}.</span>
+      </div>
+    {/if}
 
     {#if cls && waiting.length}
       <div class="line-strip" aria-label="The line">
@@ -494,6 +511,19 @@
 
   .next-status {
     color: var(--accent);
+  }
+
+  .no-pass {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 12px 16px;
+    border: 1px solid #ecd3ac;
+    border-radius: 12px;
+    background: var(--warn-wash);
+    color: var(--warn);
+    font-size: 17px;
   }
 
   .line-strip {

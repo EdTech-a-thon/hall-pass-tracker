@@ -2,6 +2,7 @@ import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
+import { formatClock, noPassTimeAt } from './schedule';
 import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass } from './types';
 
 /**
@@ -121,10 +122,15 @@ export function lineSpotFor(studentId: string) {
   return index === -1 ? null : { ...spots[index], position: index + 1 };
 }
 
-/** The first in line, once a spot has opened for them. */
-export function upNext() {
+/** The No-Pass Time the class on the kiosk is in right now, if any. */
+export function noPassNow(at = Date.now()) {
+  return noPassTimeAt(activeDoorClass()?.noPassTimes ?? [], at);
+}
+
+/** The first in line, once a spot has opened for them and passes are allowed. */
+export function upNext(at = Date.now()) {
   const classId = activeClassId();
-  if (!classId || outCount(classId) >= passLimit()) return null;
+  if (!classId || outCount(classId) >= passLimit() || noPassNow(at)) return null;
   return line()[0] ?? null;
 }
 
@@ -204,6 +210,29 @@ export function requestPass(studentId: string, destination: string) {
   const out = outCount(cls.id);
   const limit = passLimit();
   const first = line()[0];
+  const blocked = noPassNow();
+  if (blocked) {
+    const opens = formatClock(blocked.end);
+    // During a No-Pass Time the only thing on offer is a place in the Line.
+    showNotice(
+      setup()?.lineEnabled && !lineSpotFor(studentId)
+        ? {
+            kind: 'denied',
+            eyebrow: 'No-pass time',
+            title: 'Join the line?',
+            message: `Passes open at ${opens}. Join the line to go as soon as they do.`,
+            offerLine: { studentId, destination },
+          }
+        : {
+            kind: 'denied',
+            eyebrow: 'No-pass time',
+            title: 'No passes right now',
+            message: `Passes open again at ${opens}.`,
+          },
+      10,
+    );
+    return;
+  }
   // A free spot is held for whoever is first in line.
   const mayGo = out < limit && (!first || first.studentId === studentId);
   if (!mayGo) {

@@ -26,11 +26,15 @@ export type Destination = {
   icon: DestinationIcon;
 };
 
+/** A stretch of the clock when a class may not start passes, as "HH:MM" (24-hour) times. */
+export type NoPassTime = { start: string; end: string };
+
 /** A group of students a teacher sees together during one period. */
 export type Class = {
   id: string;
   name: string;
   students: Student[];
+  noPassTimes: NoPassTime[];
   createdAt: string;
 };
 
@@ -103,6 +107,7 @@ export type DoorClass = {
   id: string;
   name: string;
   students: { id: string; name: string }[];
+  noPassTimes: NoPassTime[];
 };
 
 /** Everything the laptop hands the kiosk so it can run the door on its own. */

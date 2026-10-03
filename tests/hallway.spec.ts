@@ -147,3 +147,34 @@ test('pop-ups close with Escape or a click outside', async ({ page }) => {
   await page.mouse.click(5, 5);
   await expect(page.getByRole('heading', { name: 'Add students' })).toBeHidden();
 });
+
+test('no-pass times hold everyone back, but students can line up', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-05T09:10:00') });
+  await createClassWithRoster(page, 'Period 1');
+  await page.getByRole('button', { name: 'Class settings' }).click();
+  await page.getByRole('button', { name: 'Add a no-pass time' }).click();
+  await page.getByLabel('No passes from').fill('09:00');
+  await page.getByLabel('No passes until').fill('09:30');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText(/No passes 9:00/)).toBeVisible();
+
+  await page.getByRole('link', { name: 'Pass Options' }).click();
+  await page.getByRole('switch', { name: 'Let students line up' }).check();
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+
+  await expect(page.getByText('No passes right now.')).toBeVisible();
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: 'Restroom' }).click();
+  await expect(page.getByText(/Passes open at 9:30 AM. Join the line/)).toBeVisible();
+  await page.getByRole('button', { name: 'Join the line' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: /Jordan E\..*1st in line/ })).toBeVisible();
+
+  // Once the no-pass time ends, the first in line is called.
+  await page.clock.runFor('21:00');
+  await expect(page.getByText('No passes right now.')).toBeHidden();
+  await page.getByRole('button', { name: /Jordan E\..*Your turn/ }).click();
+  await expect(page.getByText('Jordan E.: Restroom')).toBeVisible();
+});

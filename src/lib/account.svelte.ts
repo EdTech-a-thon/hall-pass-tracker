@@ -56,6 +56,7 @@ function upgrade(saved: SavedAccount): Account {
   for (const cls of saved.classes) {
     delete cls.destinations;
     delete cls.limit;
+    cls.noPassTimes ??= [];
   }
   return saved as Account;
 }
@@ -104,6 +105,7 @@ export function createClass(name: string) {
     id: newId(),
     name,
     students: [],
+    noPassTimes: [],
     createdAt: now(),
   };
   account.classes.push(cls);
@@ -112,7 +114,7 @@ export function createClass(name: string) {
   return cls.id;
 }
 
-export function updateClass(id: string, changes: Partial<Pick<Class, 'name'>>) {
+export function updateClass(id: string, changes: Partial<Pick<Class, 'name' | 'noPassTimes'>>) {
   const cls = findClass(id);
   if (!cls) return;
   Object.assign(cls, changes);
@@ -338,6 +340,7 @@ export function doorSetup(): DoorSetup {
     classes: account.classes.map((cls) => ({
       id: cls.id,
       name: cls.name,
+      noPassTimes: cls.noPassTimes,
       students: cls.students
         .filter((student) => student.status === 'current')
         .map((student) => ({ id: student.id, name: displayName(student) })),

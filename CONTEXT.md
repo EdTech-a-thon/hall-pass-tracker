@@ -40,6 +40,13 @@ The most students who may be out at the same time. One setting for all the
 teacher's classes, in Pass Options.
 _Avoid_: Max out, cap, capacity
 
+**No-Pass Time**:
+A stretch of the clock, set for one class, when that class may not start
+passes, such as the first and last ten minutes of the period. It applies only
+while that class is on the kiosk. Students already out can always come back,
+and if the Line is on, students may join it and go once the No-Pass Time ends.
+_Avoid_: Blackout, lockout, quiet time
+
 **Line**:
 Students waiting at the kiosk once the Pass Limit is reached, in the order they
 joined, each with where they want to go. A teacher turns it on in Pass Options.
