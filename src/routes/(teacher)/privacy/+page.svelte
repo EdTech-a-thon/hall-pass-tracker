@@ -41,8 +41,12 @@
   <section class="card">
     <h2>No tracking</h2>
     <p>
-      Happy Hallways doesn't use analytics, cookies or ads, and we don't share, sell or otherwise transfer any visitor data. The
-      fonts load from Google Fonts, which sees a request from your browser like any website would.
+      Happy Hallways doesn't use cookies or ads, and we don't share, sell or otherwise transfer any visitor data. To see
+      how many people visit, we use
+      <a href="https://www.cloudflare.com/web-analytics/" target="_blank" rel="noopener noreferrer"
+        >Cloudflare Web Analytics</a
+      >, which counts page views without cookies or anything that identifies you, and never sees your class or pass data.
+      The fonts load from Google Fonts, which sees a request from your browser like any website would.
     </p>
     <p>
       Questions or concerns? Email <a href={supportMailto('Happy Hallways privacy')}>{supportEmail}</a>.
