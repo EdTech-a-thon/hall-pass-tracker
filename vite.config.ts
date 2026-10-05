@@ -11,6 +11,9 @@ export default defineConfig({
       adapter: adapter({ fallback: 'index.html' }),
     }),
   ],
+  // CF_BEACON_TOKEN (set in the hosting environment or .env.local) turns on
+  // Cloudflare Web Analytics; without it no analytics script loads.
+  envPrefix: ['VITE_', 'CF_BEACON_TOKEN'],
   server: {
     allowedHosts: ['.exe.xyz', '.edtechathon.com'],
   },
