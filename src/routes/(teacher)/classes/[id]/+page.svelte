@@ -169,6 +169,7 @@
                   …
                 {:else if hasRealDuration(pass)}
                   {#if isOverdue(pass)}<span class="badge warn">Overdue</span>{/if}
+                  {#if pass.extra}<span class="badge">Extra</span>{/if}
                   {duration(pass)}
                 {:else}
                   <span class="muted">unknown</span>

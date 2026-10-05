@@ -1,7 +1,8 @@
+import { defaultAllowance, passCounts, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
-import { endUnseen, mergeInto, newId, now } from './passes';
+import { dayKey, endUnseen, mergeInto, newId, now } from './passes';
 import { displayName, type ImportPlan } from './roster';
-import type { Account, ActiveClass, Class, Destination, DoorSetup, LineSpot, Pass, Student } from './types';
+import type { Account, ActiveClass, Class, Destination, DoorSetup, LineSpot, Pass, PassAllowance, Student } from './types';
 
 /**
  * The teacher's whole Account, kept in this browser's local storage. There is
@@ -19,6 +20,8 @@ function blankAccount(): Account {
     passLimit: 1,
     lineEnabled: false,
     line: [],
+    passAllowance: defaultAllowance(),
+    extraPassGifts: [],
     pin: '',
     kiosk: null,
     activeClass: null,
@@ -53,6 +56,8 @@ function upgrade(saved: SavedAccount): Account {
   for (const destination of saved.destinations) destination.icon = knownIcon(destination.icon);
   // The Pass Limit used to be set per class; the first class's becomes everyone's.
   saved.passLimit ??= saved.classes[0]?.limit ?? 1;
+  saved.passAllowance ??= defaultAllowance();
+  saved.extraPassGifts ??= [];
   for (const cls of saved.classes) {
     delete cls.destinations;
     delete cls.limit;
@@ -142,6 +147,23 @@ export function setPassOptions(options: { passLimit?: number; lineEnabled?: bool
   save();
 }
 
+/**
+ * Changing the number never resets anyone's count. Switching to "until I reset
+ * it" starts counting from now, as pressing Reset does.
+ */
+export function setPassAllowance(changes: Partial<Omit<PassAllowance, 'since'>>) {
+  const startsCounting = changes.per === 'reset' && account.passAllowance.per !== 'reset';
+  Object.assign(account.passAllowance, changes);
+  if (startsCounting) account.passAllowance.since = now();
+  save();
+}
+
+/** Starts a fresh count for every student in every class, say at the start of a quarter. */
+export function resetPassAllowance() {
+  account.passAllowance.since = now();
+  save();
+}
+
 /** The kiosk reports its Line here; the laptop only shows it. */
 export function setLine(line: LineSpot[]) {
   account.line = line;
@@ -214,6 +236,13 @@ export function removeStudent(classId: string, studentId: string) {
   save();
 }
 
+export function setExempt(classId: string, studentId: string, exempt: boolean) {
+  const student = findClass(classId)?.students.find((each) => each.id === studentId);
+  if (!student) return;
+  student.exempt = exempt || undefined;
+  save();
+}
+
 export function restoreStudent(classId: string, studentId: string) {
   const student = findClass(classId)?.students.find((each) => each.id === studentId);
   if (!student) return;
@@ -225,9 +254,25 @@ export function restoreStudent(classId: string, studentId: string) {
 // Passes
 // ---------------------------------------------------------------------------
 
-/** Takes passes from the kiosk (or from this computer's own door screen). */
+/** Takes passes from the kiosk (or from this computer's own door screen). A gift a pass used is spent. */
 export function receivePasses(passes: Pass[]) {
   mergeInto(account.passes, passes);
+  const used = new Set(passes.map((pass) => pass.giftId).filter(Boolean));
+  if (used.size) account.extraPassGifts = account.extraPassGifts.filter((gift) => !used.has(gift.id));
+  save();
+}
+
+/** Extra Passes given from the laptop last only for the day they were given. */
+export function giftsToday() {
+  const today = dayKey(new Date());
+  return account.extraPassGifts.filter((gift) => dayKey(gift.givenAt) === today);
+}
+
+/** Lets a student who has used up their Pass Allowance take one more pass today, at the kiosk. */
+export function giveExtraPass(classId: string, studentId: string) {
+  const gifts = giftsToday();
+  if (gifts.some((gift) => gift.classId === classId && gift.studentId === studentId)) return;
+  account.extraPassGifts = [...gifts, { id: newId(), classId, studentId, givenAt: now() }];
   save();
 }
 
@@ -343,15 +388,25 @@ export function doorSetup(): DoorSetup {
       noPassTimes: cls.noPassTimes,
       students: cls.students
         .filter((student) => student.status === 'current')
-        .map((student) => ({ id: student.id, name: displayName(student) })),
+        .map((student) => ({ id: student.id, name: displayName(student), exempt: student.exempt })),
     })),
     destinations: account.destinations,
     passLimit: account.passLimit,
     lineEnabled: account.lineEnabled,
+    passAllowance: account.passAllowance,
+    countedPasses: account.passAllowance.enabled ? countedPasses() : [],
+    extraPassGifts: giftsToday(),
     activeClass: account.activeClass,
     pin: account.pin,
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),
   });
+}
+
+function countedPasses() {
+  const since = windowStart(account.passAllowance).toISOString();
+  return account.passes
+    .filter((pass) => pass.outAt >= since && passCounts(pass))
+    .map(({ id, classId, studentId, outAt }) => ({ id, classId, studentId, outAt }));
 }
 
 // ---------------------------------------------------------------------------

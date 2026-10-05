@@ -6,6 +6,7 @@
   import { askBeforeLeaving } from '#lib/leaving.ts';
   import { refreshLink } from '#lib/link.svelte.ts';
   import { onboarding } from '#lib/onboarding.svelte.ts';
+  import OverdueReminder from '#lib/OverdueReminder.svelte';
   import Sidebar from '#lib/Sidebar.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
 
@@ -35,6 +36,7 @@
   <div class="shell">
     <Sidebar />
     <main class="main">
+      <OverdueReminder />
       {@render children()}
       <SiteFooter />
     </main>

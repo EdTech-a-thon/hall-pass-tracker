@@ -11,6 +11,8 @@ export type Student = {
   lastPrefix: string;
   /** A Former Student has left the class but keeps every trip they took. */
   status: 'current' | 'former';
+  /** An Exempt Student: the Pass Allowance never applies to them. */
+  exempt?: boolean;
 };
 
 /**
@@ -24,6 +26,30 @@ export type Destination = {
   minutes: number | null;
   color: DestinationColor;
   icon: DestinationIcon;
+  /** Whether a trip here uses up the Pass Allowance. Missing means it does. */
+  countsTowardAllowance?: boolean;
+};
+
+/**
+ * The Pass Allowance: how many passes each student may take in a stretch of
+ * time, counted separately in each class.
+ */
+export type PassAllowance = {
+  enabled: boolean;
+  passes: number;
+  /** "reset" counts from `since`, the last time the teacher pressed Reset. */
+  per: 'day' | 'week' | 'reset';
+  /** What the kiosk does once a student has used them all. */
+  whenUsedUp: 'stop' | 'warn';
+  since: string;
+};
+
+/** An Extra Pass the teacher gave from the laptop, for the student to use at the kiosk today. */
+export type ExtraPassGift = {
+  id: string;
+  classId: string;
+  studentId: string;
+  givenAt: string;
 };
 
 /** A stretch of the clock when a class may not start passes, as "HH:MM" (24-hour) times. */
@@ -51,6 +77,12 @@ export type Pass = {
   destination: string;
   /** The destination's expected minutes, frozen when the student left. 0 means no time limit. */
   minutes: number;
+  /** False when the destination didn't use up the Pass Allowance, frozen when the student left. */
+  counts?: boolean;
+  /** An Extra Pass: taken after the student had used up their Pass Allowance. */
+  extra?: boolean;
+  /** The laptop's gift this pass used, if any. */
+  giftId?: string;
   outAt: string;
   inAt?: string;
   endedBy?: EndedBy;
@@ -67,6 +99,8 @@ export type LineSpot = {
   classId: string;
   destination: string;
   joinedAt: string;
+  /** The teacher let this student go past their Pass Allowance before they joined. */
+  extra?: boolean;
 };
 
 /** Which class the kiosk is showing, and when someone last deliberately changed it. */
@@ -91,6 +125,9 @@ export type Account = {
   lineEnabled: boolean;
   /** The Line as the kiosk last reported it. The kiosk is in charge of it. */
   line: LineSpot[];
+  passAllowance: PassAllowance;
+  /** Extra Passes given from the laptop and not used yet. */
+  extraPassGifts: ExtraPassGift[];
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */
   pin: string;
   kiosk: Kiosk | null;
@@ -106,9 +143,12 @@ export type Account = {
 export type DoorClass = {
   id: string;
   name: string;
-  students: { id: string; name: string }[];
+  students: { id: string; name: string; exempt?: boolean }[];
   noPassTimes: NoPassTime[];
 };
+
+/** Just enough of a past pass for the kiosk to count it against the Pass Allowance. */
+export type CountedPass = { id: string; classId: string; studentId: string; outAt: string };
 
 /** Everything the laptop hands the kiosk so it can run the door on its own. */
 export type DoorSetup = {
@@ -116,6 +156,10 @@ export type DoorSetup = {
   destinations: Destination[];
   passLimit: number;
   lineEnabled: boolean;
+  passAllowance: PassAllowance;
+  /** Every pass that uses up the Pass Allowance in its current window, so the kiosk can count without the laptop. */
+  countedPasses: CountedPass[];
+  extraPassGifts: ExtraPassGift[];
   activeClass: ActiveClass | null;
   pin: string;
   /** Passes still open, plus today's, so both sides agree on who is out. */

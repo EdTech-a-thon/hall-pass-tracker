@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { account, setPassOptions } from '#lib/account.svelte.ts';
+  import { account, resetPassAllowance, setPassAllowance, setPassOptions } from '#lib/account.svelte.ts';
+  import { shortDate } from '#lib/passes.ts';
   import RequestCard from '#lib/RequestCard.svelte';
+
+  const allowance = $derived(account.passAllowance);
 </script>
 
 <div class="page">
@@ -49,6 +52,87 @@
     </div>
   </section>
 
+  <section class="card">
+    <div class="option-row">
+      <div>
+        <h2>Pass Allowance</h2>
+        <p class="muted small">
+          How many passes each student gets in a stretch of time. Each class counts on its own. Students see how many
+          they have left when they tap their name. Untick a destination's "Counts toward the Pass Allowance" box for
+          trips like the Nurse, and mark students with an IEP or 504 plan as exempt on the Students page.
+        </p>
+      </div>
+      <label class="switch">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Pass Allowance"
+          checked={allowance.enabled}
+          onchange={(event) => setPassAllowance({ enabled: event.currentTarget.checked })}
+        />
+        <span aria-hidden="true"></span>
+      </label>
+    </div>
+
+    {#if allowance.enabled}
+      <div class="option-row">
+        <div>
+          <h2>Passes per student</h2>
+        </div>
+        <div class="inline">
+          <select
+            aria-label="Passes per student"
+            value={allowance.passes}
+            onchange={(event) => setPassAllowance({ passes: Number(event.currentTarget.value) })}
+            style="width:80px"
+          >
+            {#each Array.from({ length: 20 }, (_, index) => index + 1) as option (option)}
+              <option value={option}>{option}</option>
+            {/each}
+          </select>
+          <select
+            aria-label="Counted"
+            value={allowance.per}
+            onchange={(event) => setPassAllowance({ per: event.currentTarget.value as 'day' | 'week' | 'reset' })}
+          >
+            <option value="day">per day</option>
+            <option value="week">per week</option>
+            <option value="reset">until I reset it</option>
+          </select>
+        </div>
+      </div>
+
+      {#if allowance.per === 'reset'}
+        <div class="option-row">
+          <div>
+            <h2>Counting since {shortDate(allowance.since)}</h2>
+            <p class="muted small">Reset at the start of each quarter or term to give every student a fresh count.</p>
+          </div>
+          <button class="btn" onclick={resetPassAllowance}>Reset</button>
+        </div>
+      {/if}
+
+      <div class="option-row">
+        <div>
+          <h2>When a student has used them all</h2>
+          <p class="muted small">
+            Either way, you can let them go with your PIN at the kiosk, or give them an Extra Pass from the Students
+            page. Extra Passes are marked so you can see them later.
+          </p>
+        </div>
+        <select
+          aria-label="When a student has used them all"
+          value={allowance.whenUsedUp}
+          onchange={(event) => setPassAllowance({ whenUsedUp: event.currentTarget.value as 'stop' | 'warn' })}
+          style="width:auto"
+        >
+          <option value="stop">Stop them at the kiosk</option>
+          <option value="warn">Warn them, but let them go</option>
+        </select>
+      </div>
+    {/if}
+  </section>
+
   <RequestCard
     title="Need a setting we didn't think of?"
     text="Email us, and we'll add it."
@@ -67,6 +151,11 @@
   .option-row + .option-row {
     padding-top: 16px;
     border-top: 1px solid var(--border);
+  }
+
+  .inline {
+    display: flex;
+    gap: 8px;
   }
 
   .option-row p {
