@@ -82,12 +82,14 @@
     if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
   });
 
-  // After an update, the kiosk refreshes itself the next time nobody is using it,
-  // so it never stays on an older version than the laptop. Unsent passes are
-  // saved on this device and survive the refresh.
+  // After an update, the kiosk refreshes itself once nobody has touched it for
+  // a minute, so it never stays on an older version than the laptop and no
+  // student sees the screen blink. Unsent passes are saved on this device and
+  // survive the refresh.
+  let lastTouch = $state(Date.now());
   $effect(() => {
     const idle = !door.notice && !choosingFor && !waitingFor && teacher === 'closed';
-    if (updated.current && idle) leaveTo(location.href);
+    if (updated.current && idle && clock - lastTouch >= 60_000) leaveTo(location.href);
   });
 
   /** Puts the cursor in a field as soon as it appears, so the teacher can just type. */
@@ -171,6 +173,7 @@
 
 <!-- Closing the kiosk stops students signing out, and may strand passes not yet sent. -->
 <svelte:window onbeforeunload={(event) => askBeforeLeaving(event, local || paired)} />
+<svelte:document onpointerdown={() => (lastTouch = Date.now())} onkeydown={() => (lastTouch = Date.now())} />
 
 <div class="door">
   {#if !local && !paired}
