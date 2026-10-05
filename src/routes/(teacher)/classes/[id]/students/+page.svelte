@@ -1,10 +1,11 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { account, classPasses, findClass, giftsToday, giveExtraPass, removeStudent, restoreStudent } from '#lib/account.svelte.ts';
+  import { account, classPasses, findClass, holdsOn, letStudentGo, removeStudent, restoreStudent } from '#lib/account.svelte.ts';
   import { usedBy } from '#lib/allowance.ts';
   import { link } from '#lib/link.svelte.ts';
   import EditStudentDialog from '#lib/EditStudentDialog.svelte';
   import Icon from '#lib/Icon.svelte';
+  import PassMarks from '#lib/PassMarks.svelte';
   import type { Student } from '#lib/types.ts';
   import { duration, hasRealDuration, isOverdue, shortDate, time } from '#lib/passes.ts';
   import { studentSummaries, type StudentSummary } from '#lib/stats.ts';
@@ -21,7 +22,7 @@
   }
 
   const allowance = $derived(account.passAllowance);
-  // An Extra Pass given here only helps if the kiosk can hear about it today.
+  // Letting a student go from here only helps if the kiosk can hear about it today.
   const kioskReachable = $derived(account.kiosk?.kind === 'this-computer' || link.status === 'live');
 
   const rows = $derived.by(() => {
@@ -30,7 +31,7 @@
       ...summary,
       exempt: !!studentFor(summary.id)?.exempt,
       allowanceUsed: usedBy(allowance, cls.id, summary.id, passes),
-      gift: giftsToday().some((gift) => gift.classId === cls.id && gift.studentId === summary.id),
+      holds: holdsOn(cls.id, summary.id),
     }));
     const key = sortBy;
     if (key === 'name') return summaries.sort((a, b) => a.name.localeCompare(b.name));
@@ -91,14 +92,14 @@
                 {#if summary.former}<span class="badge">Former</span>{/if}
                 {#if allowance.enabled && !summary.exempt && !summary.former && summary.allowanceUsed >= allowance.passes}
                   <span class="badge warn">Out of passes</span>
-                  {#if summary.gift}
+                  {#if summary.holds.find((hold) => hold.kind === 'extra-pass')?.given}
                     <span class="badge ok">Extra Pass given</span>
                   {:else if kioskReachable}
                     <button
                       class="btn btn-small"
-                      onclick={(event) => { event.stopPropagation(); giveExtraPass(cls.id, summary.id); }}
+                      onclick={(event) => { event.stopPropagation(); letStudentGo(cls.id, summary.id); }}
                     >
-                      Give an Extra Pass
+                      Let them go
                     </button>
                   {:else}
                     <span class="muted small">The kiosk is offline, so let them go at the kiosk with your PIN.</span>
@@ -153,7 +154,7 @@
                           <span>
                             {#if !pass.inAt}still out{:else if hasRealDuration(pass)}{duration(pass)} min{:else}return unknown{/if}
                             {#if isOverdue(pass)}<span class="badge warn">Overdue</span>{/if}
-                            {#if pass.extra}<span class="badge">Extra</span>{/if}
+                            <PassMarks {pass} />
                           </span>
                         </li>
                       {/each}

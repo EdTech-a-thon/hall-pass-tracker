@@ -1,0 +1,41 @@
+/**
+ * "What's changed": the news a returning teacher sees once, the first time they
+ * open Happy Hallways after an update. A brand-new account starts having seen
+ * them all, since nothing changed under that teacher. Add new entries at the end.
+ */
+export type UpdateArt = 'destination-limits' | 'let-go' | 'check-destinations';
+
+export type Update = {
+  id: string;
+  items: { title: string; text: string; art: UpdateArt }[];
+};
+
+export const updates: Update[] = [
+  {
+    id: '2026-10-destination-limits',
+    items: [
+      {
+        title: 'Each destination has its own limit',
+        text: 'The Restroom can stay one at a time while the Nurse and the Counselor have no limit. Only destinations with a limit get a line, so nobody waits behind a trip to the Nurse.',
+        art: 'destination-limits',
+      },
+      {
+        title: 'Let a student go with one click',
+        text: 'From the Now tab, let a student past No-Pass Time, a full line or a used-up allowance. Each is marked in their history, so your records stay complete.',
+        art: 'let-go',
+      },
+      {
+        title: 'Check your destinations',
+        text: 'We copied your old limit onto each of your destinations. Set the ones like the Nurse to “No limit”.',
+        art: 'check-destinations',
+      },
+    ],
+  },
+];
+
+export const latestUpdate = updates[updates.length - 1].id;
+
+/** The entries a teacher hasn't seen yet, oldest first. */
+export function unseenUpdates(seen: string | undefined) {
+  return updates.slice(updates.findIndex((update) => update.id === seen) + 1);
+}

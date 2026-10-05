@@ -57,8 +57,9 @@ A pass taken after a student has used up their Pass Allowance, because the
 teacher let them go or because the allowance only warns. The teacher lets a
 student go at the kiosk with their PIN, or gives them one from the laptop for
 the student to use at the kiosk before the day ends. An Extra Pass lifts only
-the allowance: the student still waits for the Pass Limit, the Line and any
-No-Pass Time. It is recorded and counted like any other pass, and marked as
+the allowance; No-Pass Time and a full destination each need their own
+permission, a No-Pass Exception or a Line Skip. When the teacher lets a student
+go, they get whichever of the three they need, each recorded on its own. It is recorded and counted like any other pass, and marked as
 extra so the teacher can see it later. A pass cancelled at the door is never
 extra, because it never counts.
 _Avoid_: Override, excused pass, bonus pass

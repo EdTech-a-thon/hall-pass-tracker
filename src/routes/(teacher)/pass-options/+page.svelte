@@ -18,25 +18,12 @@
   <section class="card">
     <div class="option-row">
       <div>
-        <h2>Most students out at once</h2>
-        <p class="muted small">When this many are out, the kiosk asks the next student to wait.</p>
-      </div>
-      <select
-        aria-label="Most students out at once"
-        value={account.passLimit}
-        onchange={(event) => setPassOptions({ passLimit: Number(event.currentTarget.value) })}
-        style="width:90px"
-      >
-        {#each [1, 2, 3, 4, 5, 6] as option (option)}<option value={option}>{option}</option>{/each}
-      </select>
-    </div>
-
-    <div class="option-row">
-      <div>
         <h2>Let students line up</h2>
         <p class="muted small">
-          When everyone allowed is out, students can join a line at the kiosk instead of being turned away. The next
-          free spot is held for the first in line, and their name turns green when it's their turn.
+          When a destination is full, students can join its line at the kiosk instead of being turned away. Each
+          destination has its own line. The next free spot is held for the first in line, and their name turns green
+          when it's their turn. Set how many students can be at each destination on the
+          <a href="/destinations">Destinations</a> page; one with no limit never has a line.
         </p>
       </div>
       <label class="switch">

@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { assignPrefixes, displayName } from '../src/lib/roster';
+import { latestUpdate } from '../src/lib/updates';
 import type { Account, Class, Destination, EndedBy, Pass, Student } from '../src/lib/types';
 
 /** The same file every time for the same day, so a re-run doesn't reshuffle the story. */
@@ -23,12 +24,12 @@ function pick<T>(items: { value: T; weight: number }[]): T {
 }
 
 const destinations: Destination[] = [
-  { id: randomUUID(), label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet' },
-  { id: randomUUID(), label: 'Water', minutes: 3, color: 'teal', icon: 'droplet' },
-  { id: randomUUID(), label: 'Nurse', minutes: 15, color: 'pink', icon: 'stethoscope' },
-  { id: randomUUID(), label: 'Office', minutes: 10, color: 'orange', icon: 'building' },
-  { id: randomUUID(), label: 'Library', minutes: 10, color: 'purple', icon: 'library' },
-  { id: randomUUID(), label: 'Counselor', minutes: null, color: 'green', icon: 'heart-handshake' },
+  { id: randomUUID(), label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet', limit: 1 },
+  { id: randomUUID(), label: 'Water', minutes: 3, color: 'teal', icon: 'droplet', limit: 1 },
+  { id: randomUUID(), label: 'Nurse', minutes: 15, color: 'pink', icon: 'stethoscope', limit: null },
+  { id: randomUUID(), label: 'Office', minutes: 10, color: 'orange', icon: 'building', limit: null },
+  { id: randomUUID(), label: 'Library', minutes: 10, color: 'purple', icon: 'library', limit: 2 },
+  { id: randomUUID(), label: 'Counselor', minutes: null, color: 'green', icon: 'heart-handshake', limit: null },
 ];
 const destinationOdds = [55, 18, 7, 8, 8, 4].map((weight, i) => ({ value: destinations[i], weight }));
 
@@ -183,9 +184,10 @@ const account: Account = {
   classes,
   destinations,
   passes: passes.sort((a, b) => a.outAt.localeCompare(b.outAt)),
-  passLimit: 1,
   lineEnabled: true,
   line: [],
+  permissions: [],
+  seenUpdate: latestUpdate,
   pin: '1234',
   kiosk: null,
   activeClass: null,

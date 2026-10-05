@@ -32,8 +32,13 @@ export function knownIcon(name: string): DestinationIcon {
 /** Every new account starts with these, so students can sign out on day one. */
 export function defaultDestinations(newId: () => string): Destination[] {
   return [
-    { id: newId(), label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet' },
+    { id: newId(), label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet', limit: 1 },
   ];
+}
+
+/** "1 at a time", or "No limit" for a destination any number of students may go to at once. */
+export function limitText(destination: Destination) {
+  return destination.limit === null ? 'No limit' : `${destination.limit} at a time`;
 }
 
 /**

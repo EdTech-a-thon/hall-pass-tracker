@@ -9,6 +9,7 @@
   import OverdueReminder from '#lib/OverdueReminder.svelte';
   import Sidebar from '#lib/Sidebar.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
+  import WhatsChanged from '#lib/WhatsChanged.svelte';
 
   let { children } = $props();
 
@@ -42,4 +43,5 @@
     </main>
   </div>
   {#if onboarding.showChecklist}<GettingStarted />{/if}
+  <WhatsChanged />
 {/if}

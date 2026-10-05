@@ -22,6 +22,10 @@
   let icon = $state<DestinationIcon>(destination?.icon ?? 'map-pin');
   // svelte-ignore state_referenced_locally
   let counts = $state(destination?.countsTowardAllowance !== false);
+  // A new destination starts at one at a time; the teacher opens it up for places like the Nurse.
+  // svelte-ignore state_referenced_locally
+  let studentLimit = $state<number | null>(destination ? destination.limit : 1);
+  const limitChoices = $derived([...new Set([1, 2, 3, 4, 5, 6, ...(studentLimit ? [studentLimit] : [])])].sort((a, b) => a - b));
   let error = $state('');
 
   const colorNames = Object.keys(destinationColors) as DestinationColor[];
@@ -53,7 +57,7 @@
       error = 'Minutes should be between 1 and 120, or left empty for no time limit.';
       return;
     }
-    const saved: Destination = { id: destination?.id ?? newId(), label: name, minutes: limit, color, icon };
+    const saved: Destination = { id: destination?.id ?? newId(), label: name, minutes: limit, color, icon, limit: studentLimit };
     if (!counts) saved.countsTowardAllowance = false;
     saveDestination(saved);
     onClose();
@@ -87,6 +91,22 @@
       Minutes the trip should take (optional)
       <input type="number" min="1" max="120" bind:value={minutes} placeholder="No time limit" style="max-width:160px" />
       <span class="muted small" style="font-weight:500">Leave it empty if this trip has no time limit. It'll never show as overdue.</span>
+    </label>
+
+    <label class="field">
+      Students here at once
+      <select
+        value={studentLimit === null ? '' : String(studentLimit)}
+        onchange={(event) => (studentLimit = event.currentTarget.value ? Number(event.currentTarget.value) : null)}
+        style="max-width:160px"
+      >
+        <option value="">No limit</option>
+        {#each limitChoices as option (option)}<option value={String(option)}>{option} at a time</option>{/each}
+      </select>
+      <span class="muted small" style="font-weight:500">
+        Once it's full, the next student waits, or joins this destination's line if lines are on in Pass Options.
+        Choose “No limit” for places like the Nurse, so nobody has to wait.
+      </span>
     </label>
 
     <label class="check">

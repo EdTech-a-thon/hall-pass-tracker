@@ -5,6 +5,8 @@
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import { download, passesToCsv } from '#lib/csv.ts';
   import Icon from '#lib/Icon.svelte';
+  import LetStudentGoDialog from '#lib/LetStudentGoDialog.svelte';
+  import PassMarks from '#lib/PassMarks.svelte';
   import { dayKey, duration, hasRealDuration, isOverdue, shortDate, time } from '#lib/passes.ts';
   import { destinationShares, minutesOut, passesByDay, startOfWeek } from '#lib/stats.ts';
   import type { Pass } from '#lib/types.ts';
@@ -20,6 +22,13 @@
   });
 
   const waiting = $derived(account.line.filter((spot) => spot.classId === cls.id));
+  /** Each destination has its own line. */
+  const lines = $derived(
+    [...new Set(waiting.map((spot) => spot.destination))].map((destination) => ({
+      destination,
+      spots: waiting.filter((spot) => spot.destination === destination),
+    })),
+  );
   const out = $derived(passes.filter((pass) => !pass.inAt).sort((a, b) => a.outAt.localeCompare(b.outAt)));
   const today = $derived(passes.filter((pass) => dayKey(pass.outAt) === dayKey(new Date())));
   const week = $derived(passes.filter((pass) => pass.outAt >= startOfWeek().toISOString()));
@@ -28,6 +37,7 @@
   const history = $derived([...passes].sort((a, b) => b.outAt.localeCompare(a.outAt)));
 
   let showAll = $state(false);
+  let lettingGo = $state(false);
   let correcting = $state(null as Pass | null);
 
   function ending(pass: Pass) {
@@ -47,8 +57,11 @@
   <div class="card-head">
     <div>
       <p class="eyebrow">Right now</p>
-      <h2>{out.length ? `${out.length} of ${account.passLimit} out` : "Everyone's in class"}</h2>
+      <h2>
+        {out.length ? `${out.length} out` : "Everyone's in class"}{waiting.length ? ` · ${waiting.length} in line` : ''}
+      </h2>
     </div>
+    <button class="btn" onclick={() => (lettingGo = true)}><Icon name="unlock" size={16} />Let a student go</button>
   </div>
   {#if out.length}
     <div class="table-wrap">
@@ -59,7 +72,7 @@
         <tbody>
           {#each out as pass (pass.id)}
             <tr>
-              <td><strong>{pass.studentName}</strong></td>
+              <td><strong>{pass.studentName}</strong> <PassMarks {pass} /></td>
               <td><span class="destination-chip"><DestinationIcon label={pass.destination} size={24} />{pass.destination}</span></td>
               <td>{time(pass.outAt)}</td>
               <td class="num">
@@ -77,11 +90,11 @@
       </table>
     </div>
   {/if}
-  {#if waiting.length}
+  {#each lines as each (each.destination)}
     <div class="stack" style="gap:8px">
-      <p class="eyebrow">In line ({waiting.length})</p>
+      <p class="eyebrow">In line for {each.destination} ({each.spots.length})</p>
       <ol class="line-list">
-        {#each waiting as spot, index (spot.studentId)}
+        {#each each.spots as spot, index (spot.studentId)}
           <li>
             <span class="line-position">{index + 1}</span>
             <strong>{spot.studentName}</strong>
@@ -91,7 +104,7 @@
         {/each}
       </ol>
     </div>
-  {/if}
+  {/each}
 </section>
 
 <section class="stats" aria-label="Summary">
@@ -162,14 +175,13 @@
             {@const end = ending(pass)}
             <tr>
               <td>{shortDate(pass.outAt)}, {time(pass.outAt)}</td>
-              <td><strong>{pass.studentName}</strong></td>
+              <td><strong>{pass.studentName}</strong> <PassMarks {pass} /></td>
               <td><span class="destination-chip"><DestinationIcon label={pass.destination} size={22} />{pass.destination}</span></td>
               <td class="num">
                 {#if !pass.inAt}
                   …
                 {:else if hasRealDuration(pass)}
                   {#if isOverdue(pass)}<span class="badge warn">Overdue</span>{/if}
-                  {#if pass.extra}<span class="badge">Extra</span>{/if}
                   {duration(pass)}
                 {:else}
                   <span class="muted">unknown</span>
@@ -201,6 +213,10 @@
     </div>
   {/if}
 </section>
+
+{#if lettingGo}
+  <LetStudentGoDialog {cls} onClose={() => (lettingGo = false)} />
+{/if}
 
 {#if correcting}
   <CorrectionDialog pass={correcting} students={cls.students} onClose={() => (correcting = null)} />
