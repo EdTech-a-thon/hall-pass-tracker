@@ -5,8 +5,7 @@ async function createClassWithRoster(page: Page, name: string) {
   await page.getByLabel('Class name').fill(name);
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Maya Chen\nMaya Carter\nJordan Ellis');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save students' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add students' }).click();
   await expect(page.getByText(/3 students/)).toBeVisible();
 }
 
@@ -206,8 +205,7 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await page.getByLabel('Class name').fill('Period 5');
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Elliot Roe\nDuncan Johnson');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save students' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add students' }).click();
   await expect(checklist).toContainText('1 of 3');
   await checklist.getByRole('link', { name: 'Set your destinations' }).click();
   await expect(checklist).toContainText('2 of 3');
