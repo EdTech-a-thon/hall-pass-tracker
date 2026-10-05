@@ -231,3 +231,36 @@ test('a destination can have a time limit', async ({ page }) => {
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('heading', { name: 'Edit Nurse' })).toBeHidden();
 });
+
+test('the teacher is reminded when a student is overdue', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-05T10:00:00') });
+  await createClassWithRoster(page, 'Period 1');
+  await setPin(page);
+  await expect(page.getByText(/won't get overdue reminders/)).toBeVisible();
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  await page.getByRole('button', { name: 'Teacher' }).click();
+  await page.getByLabel('PIN').fill('2468');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await page.getByRole('button', { name: 'Exit kiosk' }).click();
+  await expect(page).toHaveURL(/\/kiosk$/);
+
+  // Bathroom expects 5 minutes; nothing is said until the pass runs over.
+  const reminder = page.locator('.overdue-reminder');
+  await expect(reminder).toBeHidden();
+  await page.clock.runFor('06:00');
+  await expect(reminder).toContainText('Jordan E. has been at the Bathroom for 6 min (expected 5)');
+  await expect(page).toHaveTitle(/^\(1\) Overdue · /);
+
+  // It follows the teacher to every page, and goes once the student is marked back.
+  await page.getByRole('link', { name: 'Pass Options' }).click();
+  await expect(reminder).toBeVisible();
+  await reminder.getByRole('button', { name: 'Mark back' }).click();
+  await expect(reminder).toBeHidden();
+  await expect(page).not.toHaveTitle(/Overdue/);
+});

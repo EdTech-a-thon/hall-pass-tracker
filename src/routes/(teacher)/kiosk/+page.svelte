@@ -196,6 +196,10 @@
           <span class="icon-tile"><Icon name="monitor" /></span>
           <h2>Use this computer</h2>
           <p class="muted small">No second device needed. This screen locks into kiosk mode until you enter your PIN.</p>
+          <p class="muted small">
+            You won't get overdue reminders while this screen is the kiosk. You can still see overdue passes in each
+            class's history.
+          </p>
           <div><button class="btn" onclick={thisComputer}>Use this computer</button></div>
         </section>
       </div>
