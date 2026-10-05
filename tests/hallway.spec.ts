@@ -190,7 +190,7 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await page.goto('/');
   await expect(page).toHaveURL(/\/welcome$/);
   await expect(page.getByRole('heading', { name: /Know who’s out/ })).toBeVisible();
-  await page.getByRole('link', { name: /Get started, it’s free/ }).click();
+  await page.getByRole('link', { name: 'Get started' }).first().click();
 
   await expect(page.getByRole('heading', { name: 'Add your class' })).toBeVisible();
   await page.getByRole('button', { name: 'Next' }).click();

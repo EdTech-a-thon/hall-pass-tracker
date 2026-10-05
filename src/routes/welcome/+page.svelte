@@ -30,7 +30,7 @@
           Students sign themselves out and back in at a kiosk by the door. You see who’s out, where they went, and how
           much class each student misses, without stopping your lesson.
         </p>
-        <a class="cta" href="/welcome/tour">Get started, it’s free <Icon name="arrow-right" size={18} /></a>
+        <a class="cta" href="/welcome/tour">Get started <Icon name="arrow-right" size={18} /></a>
         <p class="fineprint">Runs in your browser. Nothing to install, no account to make.</p>
       </div>
       <StepArt step="kiosk" />
