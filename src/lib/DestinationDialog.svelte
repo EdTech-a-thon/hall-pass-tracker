@@ -20,6 +20,8 @@
   let color = $state<DestinationColor>(destination?.color ?? 'green');
   // svelte-ignore state_referenced_locally
   let icon = $state<DestinationIcon>(destination?.icon ?? 'map-pin');
+  // svelte-ignore state_referenced_locally
+  let counts = $state(destination?.countsTowardAllowance !== false);
   let error = $state('');
 
   const colorNames = Object.keys(destinationColors) as DestinationColor[];
@@ -51,7 +53,9 @@
       error = 'Minutes should be between 1 and 120, or left empty for no time limit.';
       return;
     }
-    saveDestination({ id: destination?.id ?? newId(), label: name, minutes: limit, color, icon });
+    const saved: Destination = { id: destination?.id ?? newId(), label: name, minutes: limit, color, icon };
+    if (!counts) saved.countsTowardAllowance = false;
+    saveDestination(saved);
     onClose();
   }
 
@@ -62,7 +66,7 @@
 </script>
 
 <Modal onClose={onClose} labelledby="destination-title">
-  <form class="dialog" style="width:min(560px,100%)" onsubmit={save}>
+  <form class="dialog destination-dialog" style="width:min(560px,100%)" onsubmit={save}>
     <div class="dialog-head">
       <h2 id="destination-title">{destination ? `Edit ${destination.label}` : 'New destination'}</h2>
       <span
@@ -85,6 +89,14 @@
       <span class="muted small" style="font-weight:500">Leave it empty if this trip has no time limit. It'll never show as overdue.</span>
     </label>
 
+    <label class="check">
+      <input type="checkbox" bind:checked={counts} />
+      <span>
+        Counts toward the Pass Allowance
+        <span class="muted small">Untick for trips that shouldn't use up a student's passes, like the Nurse.</span>
+      </span>
+    </label>
+
     <div class="field">
       <span>Color</span>
       <div class="swatches" role="group" aria-label="Color">
@@ -101,7 +113,7 @@
       </div>
     </div>
 
-    <div class="field">
+    <div class="field icon-field">
       <span>Icon</span>
       <input type="search" placeholder="Search icons, e.g. water, book, bus" bind:value={iconSearch} aria-label="Search icons" />
       <div class="icon-groups">

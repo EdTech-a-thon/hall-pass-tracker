@@ -40,6 +40,33 @@ The most students who may be out at the same time. One setting for all the
 teacher's classes, in Pass Options.
 _Avoid_: Max out, cap, capacity
 
+**Pass Allowance**:
+How many passes each student may take in a stretch of time: per day, per week,
+or since the teacher last reset it (for a quarter or a term). One setting for
+all the teacher's classes, in Pass Options, counted separately for each student
+in each class. Only destinations marked as counting use it up; a trip to the
+Nurse, for example, need not. When a student has used it all, the kiosk either
+stops them or warns them and lets them go, as the teacher chooses. Off unless
+the teacher turns it on.
+_Avoid_: Pass Limit (that is how many may be out at once), quota, budget, cap
+
+**Extra Pass**:
+A pass taken after a student has used up their Pass Allowance, because the
+teacher let them go or because the allowance only warns. The teacher lets a
+student go at the kiosk with their PIN, or gives them one from the laptop for
+the student to use at the kiosk before the day ends. An Extra Pass lifts only
+the allowance: the student still waits for the Pass Limit, the Line and any
+No-Pass Time. It is recorded and counted like any other pass, and marked as
+extra so the teacher can see it later. A pass cancelled at the door is never
+extra, because it never counts.
+_Avoid_: Override, excused pass, bonus pass
+
+**Exempt Student**:
+A student the Pass Allowance does not apply to, such as one with a medical
+need written into an IEP or 504 plan. They never run out, every trip is still
+recorded, and the kiosk never shows that they are exempt.
+_Avoid_: Unlimited student, special student, accommodation
+
 **No-Pass Time**:
 A stretch of the clock, set for one class, when that class may not start
 passes, such as the first and last ten minutes of the period. It applies only

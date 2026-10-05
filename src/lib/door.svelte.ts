@@ -1,5 +1,6 @@
 import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
+import { destinationCounts, passesLeftText, usedBy, usedUpText } from './allowance';
 import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
 import { formatClock, noPassTimeAt } from './schedule';
@@ -27,6 +28,8 @@ type PairedDevice = {
   outbox: string[];
   /** The Line. The kiosk is in charge of it and tells the laptop. */
   line?: LineSpot[];
+  /** Extra Passes from the laptop already used here, until the laptop hears and stops offering them. */
+  usedGifts?: string[];
 };
 
 export type DoorNotice = {
@@ -38,7 +41,9 @@ export type DoorNotice = {
   /** A pass that a mis-tap can still undo, for a few seconds. */
   undoPassId?: string;
   /** Offered when the Pass Limit is reached and the Line is on. */
-  offerLine?: { studentId: string; destination: string };
+  offerLine?: { studentId: string; destination: string; extra?: boolean };
+  /** Offered when a student has used up their Pass Allowance: the teacher may let them go with the PIN. */
+  offerTeacher?: { studentId: string; destination: string };
 };
 
 const storageKey = 'hallway.door';
@@ -134,6 +139,32 @@ export function upNext(at = Date.now()) {
   return line()[0] ?? null;
 }
 
+/**
+ * Where one student stands with the Pass Allowance, or null when it doesn't
+ * apply to them (it's off, or they're an Exempt Student). The kiosk counts the
+ * laptop's list plus its own passes, so it stays right while the laptop is closed.
+ */
+export function allowanceFor(studentId: string) {
+  const current = setup();
+  const cls = activeDoorClass();
+  const allowance = current?.passAllowance;
+  const student = cls?.students.find((each) => each.id === studentId);
+  if (!current || !cls || !allowance?.enabled || !student || student.exempt) return null;
+  const used = usedBy(allowance, cls.id, studentId, [...(current.countedPasses ?? []), ...allPasses()]);
+  const spent = new Set([...(door.device?.usedGifts ?? []), ...allPasses().map((pass) => pass.giftId)]);
+  const gift = (current.extraPassGifts ?? []).find(
+    (each) => each.classId === cls.id && each.studentId === studentId && !spent.has(each.id),
+  );
+  const left = Math.max(0, allowance.passes - used);
+  return {
+    left,
+    usedUp: left === 0,
+    gift,
+    text: left ? passesLeftText(allowance, left) : usedUpText(allowance),
+    whenUsedUp: allowance.whenUsedUp,
+  };
+}
+
 export function checkPin(pin: string) {
   return pin === setup()?.pin;
 }
@@ -201,8 +232,13 @@ function saveLine(next: LineSpot[]) {
  * Grants a pass if there is a spot free and nobody ahead in the Line. When the
  * class is at its Pass Limit, the student may join the Line instead (if the
  * teacher turned it on). A refusal gives a count, never who is out.
+ *
+ * A student who has used up their Pass Allowance is stopped first, unless the
+ * teacher let them go (`teacherLetGo`, after the PIN), gave them an Extra Pass
+ * from the laptop, or set the allowance only to warn. Each of those leaves an
+ * Extra Pass, which still waits for the Pass Limit, the Line and No-Pass Times.
  */
-export function requestPass(studentId: string, destination: string) {
+export function requestPass(studentId: string, destination: string, teacherLetGo = false) {
   const cls = activeDoorClass();
   const student = cls?.students.find((each) => each.id === studentId);
   const place = setup()?.destinations.find((each) => each.label === destination);
@@ -210,6 +246,29 @@ export function requestPass(studentId: string, destination: string) {
   const out = outCount(cls.id);
   const limit = passLimit();
   const first = line()[0];
+  const counts = destinationCounts(place);
+  const allowance = counts ? allowanceFor(studentId) : null;
+  const spot = lineSpotFor(studentId);
+  const usedUp = !!allowance?.usedUp;
+  // The teacher let them go now, or before they joined the Line.
+  const letGo = teacherLetGo || !!spot?.extra;
+  const gift = usedUp && !letGo ? allowance?.gift : undefined;
+  const onlyWarned = usedUp && !letGo && !gift && allowance?.whenUsedUp === 'warn';
+  // A student already in line was checked when they joined, so is never stopped here.
+  if (usedUp && !letGo && !gift && !onlyWarned && !spot) {
+    showNotice(
+      {
+        kind: 'denied',
+        eyebrow: 'Out of passes',
+        title: allowance!.text,
+        message: 'Ask your teacher.',
+        offerTeacher: { studentId, destination },
+      },
+      15,
+    );
+    return;
+  }
+  const isExtra = usedUp || letGo;
   const blocked = noPassNow();
   if (blocked) {
     const opens = formatClock(blocked.end);
@@ -221,7 +280,7 @@ export function requestPass(studentId: string, destination: string) {
             eyebrow: 'No-pass time',
             title: 'Join the line?',
             message: `Passes open at ${opens}. Join the line to go as soon as they do.`,
-            offerLine: { studentId, destination },
+            offerLine: { studentId, destination, extra: letGo },
           }
         : {
             kind: 'denied',
@@ -246,7 +305,7 @@ export function requestPass(studentId: string, destination: string) {
               out >= limit
                 ? `${out} of ${limit} ${limit === 1 ? 'student is' : 'students are'} out${waiting ? `, and ${waiting} ${waiting === 1 ? 'is' : 'are'} waiting` : ''}.`
                 : `${waiting} ${waiting === 1 ? 'student is' : 'students are'} already waiting.`,
-            offerLine: { studentId, destination },
+            offerLine: { studentId, destination, extra: letGo },
           }
         : {
             kind: 'denied',
@@ -269,26 +328,37 @@ export function requestPass(studentId: string, destination: string) {
     outAt: at,
     updatedAt: at,
   };
+  if (!counts) pass.counts = false;
+  if (isExtra) pass.extra = true;
+  if (gift) {
+    pass.giftId = gift.id;
+    if (door.device) door.device.usedGifts = [...(door.device.usedGifts ?? []), gift.id];
+  }
   record([pass]);
+  const back = pass.minutes ? `Back by ${dueTime(pass)}.` : 'Come straight back to class.';
   showNotice(
     {
       kind: 'approved',
       title: `${student.name}: ${destination}`,
-      message: pass.minutes ? `Back by ${dueTime(pass)}` : 'Come straight back to class.',
+      message:
+        onlyWarned
+          ? `${allowance!.text} You can still go, and your teacher will see it was an extra pass. ${back}`
+          : pass.minutes
+            ? `Back by ${dueTime(pass)}`
+            : back,
       undoPassId: pass.id,
     },
     8,
   );
 }
 
-export function joinLine(studentId: string, destination: string) {
+export function joinLine(studentId: string, destination: string, extra = false) {
   const cls = activeDoorClass();
   const student = cls?.students.find((each) => each.id === studentId);
   if (!cls || !student || lineSpotFor(studentId)) return;
-  saveLine([
-    ...line(),
-    { studentId, studentName: student.name, classId: cls.id, destination, joinedAt: now() },
-  ]);
+  const spot: LineSpot = { studentId, studentName: student.name, classId: cls.id, destination, joinedAt: now() };
+  if (extra) spot.extra = true;
+  saveLine([...line(), spot]);
   const position = line().length;
   showNotice(
     {
@@ -384,6 +454,9 @@ function receive(message: LaptopMessage) {
   if (message.type === 'setup') {
     device.setup = message.setup;
     mergeInto(device.passes, message.setup.passes);
+    // A used gift the laptop no longer offers needs no remembering.
+    const offered = new Set((message.setup.extraPassGifts ?? []).map((gift) => gift.id));
+    device.usedGifts = (device.usedGifts ?? []).filter((id) => offered.has(id));
     const theirs = message.setup.activeClass;
     if (theirs && (!device.activeClass || theirs.changedAt > device.activeClass.changedAt)) adoptActiveClass(theirs);
     prune(device);

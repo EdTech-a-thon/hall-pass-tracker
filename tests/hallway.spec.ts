@@ -5,8 +5,7 @@ async function createClassWithRoster(page: Page, name: string) {
   await page.getByLabel('Class name').fill(name);
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Maya Chen\nMaya Carter\nJordan Ellis');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save students' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add students' }).click();
   await expect(page.getByText(/3 students/)).toBeVisible();
 }
 
@@ -190,7 +189,7 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await page.goto('/');
   await expect(page).toHaveURL(/\/welcome$/);
   await expect(page.getByRole('heading', { name: /Know who’s out/ })).toBeVisible();
-  await page.getByRole('link', { name: /Get started, it’s free/ }).click();
+  await page.getByRole('link', { name: 'Get started' }).first().click();
 
   await expect(page.getByRole('heading', { name: 'Add your class' })).toBeVisible();
   await page.getByRole('button', { name: 'Next' }).click();
@@ -206,8 +205,7 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await page.getByLabel('Class name').fill('Period 5');
   await page.getByRole('button', { name: 'Create class' }).click();
   await page.getByLabel('One student per line').fill('Elliot Roe\nDuncan Johnson');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save students' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add students' }).click();
   await expect(checklist).toContainText('1 of 3');
   await checklist.getByRole('link', { name: 'Set your destinations' }).click();
   await expect(checklist).toContainText('2 of 3');
@@ -230,6 +228,136 @@ test('a destination can have a time limit', async ({ page }) => {
   await page.getByLabel(/Minutes the trip should take/).fill('');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('heading', { name: 'Edit Nurse' })).toBeHidden();
+});
+
+test('the pass allowance stops a student, and the teacher can let them go', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 7');
+  await page.getByRole('link', { name: 'Pass Options' }).click();
+  await page.getByRole('switch', { name: 'Pass Allowance' }).check();
+  await page.getByLabel('Passes per student').selectOption('1');
+  await page.getByLabel('Counted').selectOption('day');
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+
+  // Jordan's one pass for today.
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await expect(page.getByText('1 pass left today')).toBeVisible();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // Used up: stopped, until the teacher enters the PIN.
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await expect(page.getByText("You've used all your passes today.")).toBeVisible();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await expect(page.getByText('Out of passes')).toBeVisible();
+  await page.getByRole('button', { name: 'Teacher: let them go' }).click();
+  await page.getByLabel('PIN').fill('2468');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // From the laptop, the teacher gives an Extra Pass for later.
+  await page.getByRole('button', { name: 'Teacher' }).click();
+  await page.getByLabel('PIN').fill('2468');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await page.getByRole('button', { name: 'Exit kiosk' }).click();
+  await page.getByRole('link', { name: /^Period 7/ }).click();
+  await page.getByRole('link', { name: 'Students' }).click();
+  await expect(page).toHaveURL(/\/students$/);
+  const row = page.getByRole('row', { name: /Jordan E\./ });
+  await expect(row).toContainText('2 of 1');
+  await expect(row).toContainText('Out of passes');
+  await row.getByRole('button', { name: 'Give an Extra Pass' }).click();
+  await expect(row).toContainText('Extra Pass given');
+
+  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await expect(page.getByText('Your teacher gave you an extra pass.')).toBeVisible();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
+});
+
+test('a warn-only allowance, an exempt student and a destination that does not count', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 8');
+  await page.getByRole('link', { name: 'Students' }).click();
+  await page.getByRole('button', { name: 'Edit Maya Ca.' }).click();
+  await page.getByLabel(/Exempt from the Pass Allowance/).check();
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await page.getByRole('link', { name: 'Destinations' }).click();
+  await page.getByRole('button', { name: 'Add destination' }).first().click();
+  await page.getByLabel('Name').fill('Nurse');
+  await page.getByLabel(/Counts toward the Pass Allowance/).uncheck();
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await page.getByRole('link', { name: 'Pass Options' }).click();
+  await page.getByRole('switch', { name: 'Pass Allowance' }).check();
+  await page.getByLabel('Passes per student').selectOption('1');
+  await page.getByLabel('When a student has used them all').selectOption('warn');
+  await page.getByRole('switch', { name: 'Let students line up' }).check();
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+
+  // The Nurse doesn't use up Jordan's one pass.
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: 'Nurse', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await expect(page.getByText('1 pass left this week')).toBeVisible();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // Used up, but only warned.
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await expect(page.getByText(/You can still go, and your teacher will see it was an extra pass/)).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // An exempt student never hears about it.
+  await page.getByRole('button', { name: /Maya Ca\./ }).click();
+  await expect(page.getByText(/passes left|used all your passes/)).toBeHidden();
+});
+
+test('a paired kiosk keeps counting passes the laptop already has', async ({ browser }) => {
+  const laptop = await (await browser.newContext()).newPage();
+  const tablet = await (await browser.newContext()).newPage();
+
+  await createClassWithRoster(laptop, 'Period 9');
+  await laptop.getByRole('link', { name: 'Pass Options' }).click();
+  await laptop.getByRole('switch', { name: 'Pass Allowance' }).check();
+  await laptop.getByLabel('Passes per student').selectOption('1');
+  await setPin(laptop);
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  const code = (await laptop.locator('.pair-code').textContent())!.trim();
+  await tablet.goto(`/door?code=${code}`);
+  await expect(tablet.getByRole('heading', { name: 'Tap your name' })).toBeVisible({ timeout: 30_000 });
+  await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 30_000 });
+
+  await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
+  await tablet.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+  await tablet.getByRole('button', { name: /Maya Ca\..*Out/ }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+  // Wait until the laptop has the trip, so the tablet has let go of its own copy.
+  await laptop.getByRole('link', { name: /^Period 9/ }).click();
+  await expect(laptop.getByText('Signed back in')).toBeVisible({ timeout: 15_000 });
+
+  await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
+  await expect(tablet.getByText("You've used all your passes this week.")).toBeVisible();
 });
 
 test('the teacher is reminded when a student is overdue', async ({ page }) => {
