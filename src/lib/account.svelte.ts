@@ -1,8 +1,22 @@
-import { defaultAllowance, passCounts, windowStart } from './allowance';
+import { defaultAllowance, passCounts, usedBy, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
-import { dayKey, endUnseen, mergeInto, newId, now } from './passes';
+import { endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { displayName, type ImportPlan } from './roster';
-import type { Account, ActiveClass, Class, Destination, DoorSetup, LineSpot, Pass, PassAllowance, Student } from './types';
+import { noPassTimeAt } from './schedule';
+import type {
+  Account,
+  ActiveClass,
+  Class,
+  Destination,
+  DoorSetup,
+  LineSpot,
+  Pass,
+  PassAllowance,
+  Permission,
+  PermissionKind,
+  Student,
+} from './types';
+import { latestUpdate } from './updates';
 
 /**
  * The teacher's whole Account, kept in this browser's local storage. There is
@@ -17,11 +31,12 @@ function blankAccount(): Account {
     classes: [],
     destinations: defaultDestinations(newId),
     passes: [],
-    passLimit: 1,
     lineEnabled: false,
     line: [],
     passAllowance: defaultAllowance(),
-    extraPassGifts: [],
+    permissions: [],
+    // Nothing changed under a brand-new teacher, so there is no news to show them.
+    seenUpdate: latestUpdate,
     pin: '',
     kiosk: null,
     activeClass: null,
@@ -31,16 +46,23 @@ function blankAccount(): Account {
 }
 
 /**
- * Accounts saved before destinations became one shared list kept a list on
- * each class. Those become the shared list, so nothing the teacher set is lost.
+ * Accounts saved by older versions are shaped differently, and are brought up
+ * to date here so nothing the teacher set is lost:
+ * - Destinations used to be a list on each class; they became one shared list.
+ * - The Pass Limit used to be one number for every destination (and before
+ *   that, one per class); each destination now has its own. See docs/adr/0007.
+ * - Extra Passes given from the laptop became one kind of Permission.
  */
-type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'passLimit'> & {
-  destinations?: Destination[];
+type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'permissions'> & {
+  destinations?: (Omit<Destination, 'limit'> & { limit?: number | null })[];
   passLimit?: number;
+  permissions?: Permission[];
+  extraPassGifts?: { id: string; classId: string; studentId: string; givenAt: string }[];
   classes: (Class & { destinations?: { label: string; minutes: number }[]; limit?: number })[];
 };
 
 function upgrade(saved: SavedAccount): Account {
+  const oldLimit = saved.passLimit ?? saved.classes[0]?.limit ?? 1;
   if (!saved.destinations) {
     const old = saved.classes.find((cls) => cls.destinations?.length)?.destinations;
     const defaults = defaultDestinations(newId);
@@ -50,14 +72,22 @@ function upgrade(saved: SavedAccount): Account {
           id: newId(),
           label: each.label,
           minutes: each.minutes || null,
+          limit: oldLimit,
         }))
       : defaults;
   }
-  for (const destination of saved.destinations) destination.icon = knownIcon(destination.icon);
-  // The Pass Limit used to be set per class; the first class's becomes everyone's.
-  saved.passLimit ??= saved.classes[0]?.limit ?? 1;
+  for (const destination of saved.destinations) {
+    destination.icon = knownIcon(destination.icon);
+    if (destination.limit === undefined) destination.limit = oldLimit;
+  }
+  delete saved.passLimit;
   saved.passAllowance ??= defaultAllowance();
-  saved.extraPassGifts ??= [];
+  saved.permissions ??= (saved.extraPassGifts ?? []).map((gift) => ({
+    ...gift,
+    kind: 'extra-pass',
+    expiresAt: endOfDay(gift.givenAt),
+  }));
+  delete saved.extraPassGifts;
   for (const cls of saved.classes) {
     delete cls.destinations;
     delete cls.limit;
@@ -66,10 +96,13 @@ function upgrade(saved: SavedAccount): Account {
   return saved as Account;
 }
 
+/** Fields a saved account must not borrow from a blank one, so upgrade() can tell an older account by their absence. */
+const fromOlderVersions = { destinations: undefined, permissions: undefined, seenUpdate: undefined };
+
 function load(): Account {
   try {
     const saved = localStorage.getItem(storageKey);
-    if (saved) return upgrade({ ...blankAccount(), destinations: undefined, passLimit: undefined, ...JSON.parse(saved) });
+    if (saved) return upgrade({ ...blankAccount(), ...fromOlderVersions, ...JSON.parse(saved) });
   } catch {
     // Storage blocked or unreadable: start empty rather than not at all.
   }
@@ -162,7 +195,7 @@ export function deleteClass(id: string) {
 // Pass Options and the Line
 // ---------------------------------------------------------------------------
 
-export function setPassOptions(options: { passLimit?: number; lineEnabled?: boolean }) {
+export function setPassOptions(options: { lineEnabled?: boolean }) {
   Object.assign(account, options);
   if (account.lineEnabled === false) account.line = [];
   save();
@@ -275,26 +308,101 @@ export function restoreStudent(classId: string, studentId: string) {
 // Passes
 // ---------------------------------------------------------------------------
 
-/** Takes passes from the kiosk (or from this computer's own door screen). A gift a pass used is spent. */
+/** Takes passes from the kiosk (or from this computer's own door screen). A Permission a pass used is spent. */
 export function receivePasses(passes: Pass[]) {
   mergeInto(account.passes, passes);
-  const used = new Set(passes.map((pass) => pass.giftId).filter(Boolean));
-  if (used.size) account.extraPassGifts = account.extraPassGifts.filter((gift) => !used.has(gift.id));
+  const used = new Set(passes.flatMap(permissionsUsedBy));
+  if (used.size) account.permissions = account.permissions.filter((permission) => !used.has(permission.id));
   save();
 }
 
-/** Extra Passes given from the laptop last only for the day they were given. */
-export function giftsToday() {
-  const today = dayKey(new Date());
-  return account.extraPassGifts.filter((gift) => dayKey(gift.givenAt) === today);
+// ---------------------------------------------------------------------------
+// Letting a student go
+// ---------------------------------------------------------------------------
+
+/** Today at an "HH:MM" clock time, as an ISO time. */
+function todayAt(clock: string) {
+  const [hours, minutes] = clock.split(':').map(Number);
+  const at = new Date();
+  at.setHours(hours, minutes, 0, 0);
+  return at.toISOString();
 }
 
-/** Lets a student who has used up their Pass Allowance take one more pass today, at the kiosk. */
-export function giveExtraPass(classId: string, studentId: string) {
-  const gifts = giftsToday();
-  if (gifts.some((gift) => gift.classId === classId && gift.studentId === studentId)) return;
-  account.extraPassGifts = [...gifts, { id: newId(), classId, studentId, givenAt: now() }];
+/** Permissions given from the laptop that are not used and not yet expired. */
+export function activePermissions() {
+  const at = now();
+  return account.permissions.filter((permission) => permission.expiresAt > at);
+}
+
+export type Hold = { kind: PermissionKind; text: string; given: boolean };
+
+/**
+ * Everything stopping a student from leaving right now, as the laptop sees it,
+ * each with whether the teacher has already lifted it. A student who is out
+ * already has nothing to be let past.
+ */
+export function holdsOn(classId: string, studentId: string): Hold[] {
+  const cls = findClass(classId);
+  const student = cls?.students.find((each) => each.id === studentId);
+  if (!cls || !student || student.status !== 'current') return [];
+  if (account.passes.some((pass) => pass.studentId === studentId && pass.classId === classId && !pass.inAt)) return [];
+  const given = (kind: PermissionKind) =>
+    activePermissions().some(
+      (permission) => permission.kind === kind && permission.classId === classId && permission.studentId === studentId,
+    );
+  const holds: Hold[] = [];
+  const allowance = account.passAllowance;
+  if (allowance.enabled && !student.exempt && usedBy(allowance, classId, studentId, account.passes) >= allowance.passes) {
+    holds.push({ kind: 'extra-pass', text: 'Out of passes', given: given('extra-pass') });
+  }
+  if (noPassTimeAt(cls.noPassTimes)) {
+    holds.push({ kind: 'no-pass-exception', text: 'No-pass time', given: given('no-pass-exception') });
+  }
+  const waiting = account.line.filter((spot) => spot.classId === classId);
+  const spot = waiting.find((each) => each.studentId === studentId);
+  if (spot) {
+    const position = waiting.filter((each) => each.destination === spot.destination).indexOf(spot) + 1;
+    holds.push({
+      kind: 'line-skip',
+      text: `Waiting for ${spot.destination} (${ordinal(position)})`,
+      given: given('line-skip'),
+    });
+  }
+  return holds;
+}
+
+/**
+ * "Let them go": one click gives a student every Permission they need right
+ * now, each recorded on its own. They use them at the kiosk: an Extra Pass and
+ * a Line Skip by the end of today, a No-Pass Exception by the end of the
+ * No-Pass Time it was given in.
+ */
+export function letStudentGo(classId: string, studentId: string) {
+  const cls = findClass(classId);
+  if (!cls) return;
+  const needed = holdsOn(classId, studentId).filter((hold) => !hold.given);
+  if (!needed.length) return;
+  const givenAt = now();
+  const noPassTime = noPassTimeAt(cls.noPassTimes);
+  account.permissions = [
+    ...activePermissions(),
+    ...needed.map((hold) => ({
+      id: newId(),
+      kind: hold.kind,
+      classId,
+      studentId,
+      givenAt,
+      expiresAt: hold.kind === 'no-pass-exception' && noPassTime ? todayAt(noPassTime.end) : endOfDay(givenAt),
+    })),
+  ];
   save();
+}
+
+function ordinal(position: number) {
+  if (position === 1) return '1st';
+  if (position === 2) return '2nd';
+  if (position === 3) return '3rd';
+  return `${position}th`;
 }
 
 export function markReturned(passId: string) {
@@ -412,15 +520,31 @@ export function doorSetup(): DoorSetup {
         .map((student) => ({ id: student.id, name: displayName(student), exempt: student.exempt })),
     })),
     destinations: account.destinations,
-    passLimit: account.passLimit,
     lineEnabled: account.lineEnabled,
     passAllowance: account.passAllowance,
     countedPasses: account.passAllowance.enabled ? countedPasses() : [],
-    extraPassGifts: giftsToday(),
+    permissions: activePermissions(),
     activeClass: account.activeClass,
     pin: account.pin,
+    ...forOlderKiosks(),
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),
   });
+}
+
+/**
+ * A kiosk still on the version before per-destination limits enforces one
+ * limit on everyone out at once. The largest destination limit keeps it working
+ * as it did before the update, until the teacher changes a destination or the
+ * kiosk refreshes.
+ */
+function forOlderKiosks() {
+  const limits = account.destinations.flatMap((destination) => (destination.limit === null ? [] : [destination.limit]));
+  return {
+    passLimit: limits.length ? Math.max(...limits) : 99,
+    extraPassGifts: activePermissions()
+      .filter((permission) => permission.kind === 'extra-pass')
+      .map(({ id, classId, studentId, givenAt }) => ({ id, classId, studentId, givenAt })),
+  };
 }
 
 function countedPasses() {
@@ -428,6 +552,12 @@ function countedPasses() {
   return account.passes
     .filter((pass) => pass.outAt >= since && passCounts(pass))
     .map(({ id, classId, studentId, outAt }) => ({ id, classId, studentId, outAt }));
+}
+
+/** The teacher has read "What's changed", so it won't show again. */
+export function markUpdatesSeen() {
+  account.seenUpdate = latestUpdate;
+  save();
 }
 
 // ---------------------------------------------------------------------------
@@ -450,5 +580,5 @@ export function importAccount(text: string) {
     throw new Error('That file is not a Happy Hallways backup.');
   }
   delete parsed.app;
-  localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), destinations: undefined, passLimit: undefined, ...parsed })));
+  localStorage.setItem(storageKey, JSON.stringify(upgrade({ ...blankAccount(), ...fromOlderVersions, ...parsed })));
 }

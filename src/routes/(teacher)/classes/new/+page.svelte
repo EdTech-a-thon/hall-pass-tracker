@@ -1,9 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { account, createClass } from '#lib/account.svelte.ts';
+  import { createClass } from '#lib/account.svelte.ts';
 
   let name = $state('');
-  const previous = $derived(account.classes.at(-1));
 
   function create(event: SubmitEvent) {
     event.preventDefault();
@@ -18,11 +17,7 @@
       <p class="eyebrow">Classes</p>
       <h1>New class</h1>
       <p class="muted">
-        {#if previous}
-          It starts with the same pass limit as {previous.name}. You can change it in the class settings.
-        {:else}
-          Next you'll add its students.
-        {/if}
+        Next you'll add its students.
       </p>
     </div>
   </header>

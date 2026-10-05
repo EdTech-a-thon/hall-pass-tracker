@@ -470,42 +470,48 @@
       "label": "Bathroom",
       "minutes": 5,
       "color": "blue",
-      "icon": "toilet"
+      "icon": "toilet",
+      "limit": 1
     },
     {
       "id": "c25c56bb-308b-4d10-9192-4fe993b882a3",
       "label": "Water",
       "minutes": 3,
       "color": "teal",
-      "icon": "droplet"
+      "icon": "droplet",
+      "limit": 1
     },
     {
       "id": "b49dbee7-9d79-4dc7-926f-d7afaa7fd416",
       "label": "Nurse",
       "minutes": 15,
       "color": "pink",
-      "icon": "stethoscope"
+      "icon": "stethoscope",
+      "limit": null
     },
     {
       "id": "e7335423-6078-4f7d-bac5-736d2a7c1955",
       "label": "Office",
       "minutes": 10,
       "color": "orange",
-      "icon": "building"
+      "icon": "building",
+      "limit": null
     },
     {
       "id": "78057989-09ac-4a42-bc40-e9a9222b2bd6",
       "label": "Library",
       "minutes": 10,
       "color": "purple",
-      "icon": "library"
+      "icon": "library",
+      "limit": 2
     },
     {
       "id": "02bad230-e27d-4643-97db-38b0f57970f2",
       "label": "Counselor",
       "minutes": null,
       "color": "green",
-      "icon": "heart-handshake"
+      "icon": "heart-handshake",
+      "limit": null
     }
   ],
   "passes": [
@@ -2871,9 +2877,10 @@
       "updatedAt": "2026-10-02T15:40:11.000Z"
     }
   ],
-  "passLimit": 1,
   "lineEnabled": true,
   "line": [],
+  "permissions": [],
+  "seenUpdate": "2026-10-destination-limits",
   "pin": "1234",
   "kiosk": null,
   "activeClass": null,

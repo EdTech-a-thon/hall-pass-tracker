@@ -28,6 +28,8 @@ export type Destination = {
   icon: DestinationIcon;
   /** Whether a trip here uses up the Pass Allowance. Missing means it does. */
   countsTowardAllowance?: boolean;
+  /** The Pass Limit: the most students here at once, or null for no limit (and so no Line). */
+  limit: number | null;
 };
 
 /**
@@ -44,13 +46,23 @@ export type PassAllowance = {
   since: string;
 };
 
-/** An Extra Pass the teacher gave from the laptop, for the student to use at the kiosk today. */
-export type ExtraPassGift = {
+/**
+ * The teacher's go-ahead from the laptop, for one student's next pass at the
+ * kiosk. Each kind lifts one rule and is recorded on its own: an Extra Pass
+ * lifts the Pass Allowance, a No-Pass Exception the No-Pass Time, and a Line
+ * Skip a destination's Pass Limit and Line.
+ */
+export type Permission = {
   id: string;
+  kind: 'extra-pass' | 'no-pass-exception' | 'line-skip';
   classId: string;
   studentId: string;
   givenAt: string;
+  /** Unused, it stops working at this time: the end of the day, or of the No-Pass Time it was for. */
+  expiresAt: string;
 };
+
+export type PermissionKind = Permission['kind'];
 
 /** A stretch of the clock when a class may not start passes, as "HH:MM" (24-hour) times. */
 export type NoPassTime = { start: string; end: string };
@@ -81,7 +93,13 @@ export type Pass = {
   counts?: boolean;
   /** An Extra Pass: taken after the student had used up their Pass Allowance. */
   extra?: boolean;
-  /** The laptop's gift this pass used, if any. */
+  /** Taken during No-Pass Time, with the teacher's permission. */
+  noPassException?: boolean;
+  /** Taken while the destination was full, ahead of its Line, with the teacher's permission. */
+  lineSkip?: boolean;
+  /** The laptop's Permissions this pass used up, if any. */
+  permissionIds?: string[];
+  /** The one Extra Pass an older kiosk recorded using, from before there were Permissions. */
   giftId?: string;
   outAt: string;
   inAt?: string;
@@ -92,15 +110,13 @@ export type Pass = {
   updatedAt: string;
 };
 
-/** One student waiting in the Line at the kiosk, with where they want to go. */
+/** One student waiting in a destination's Line at the kiosk. Each destination's line is the spots that name it. */
 export type LineSpot = {
   studentId: string;
   studentName: string;
   classId: string;
   destination: string;
   joinedAt: string;
-  /** The teacher let this student go past their Pass Allowance before they joined. */
-  extra?: boolean;
 };
 
 /** Which class the kiosk is showing, and when someone last deliberately changed it. */
@@ -119,15 +135,15 @@ export type Account = {
   classes: Class[];
   destinations: Destination[];
   passes: Pass[];
-  /** The Pass Limit: how many students may be out at once, in every class. */
-  passLimit: number;
-  /** Whether students may join a Line once the Pass Limit is reached. */
+  /** Whether students may join a destination's Line once its Pass Limit is reached. */
   lineEnabled: boolean;
-  /** The Line as the kiosk last reported it. The kiosk is in charge of it. */
+  /** Every destination's Line as the kiosk last reported it. The kiosk is in charge of them. */
   line: LineSpot[];
   passAllowance: PassAllowance;
-  /** Extra Passes given from the laptop and not used yet. */
-  extraPassGifts: ExtraPassGift[];
+  /** Permissions given from the laptop and not used yet. */
+  permissions: Permission[];
+  /** The newest "What's changed" entry this teacher has seen. Missing on accounts from before there was one. */
+  seenUpdate?: string;
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */
   pin: string;
   kiosk: Kiosk | null;
@@ -154,14 +170,21 @@ export type CountedPass = { id: string; classId: string; studentId: string; outA
 export type DoorSetup = {
   classes: DoorClass[];
   destinations: Destination[];
-  passLimit: number;
   lineEnabled: boolean;
   passAllowance: PassAllowance;
   /** Every pass that uses up the Pass Allowance in its current window, so the kiosk can count without the laptop. */
   countedPasses: CountedPass[];
-  extraPassGifts: ExtraPassGift[];
+  permissions: Permission[];
   activeClass: ActiveClass | null;
   pin: string;
+  /**
+   * What a kiosk still running the version before per-destination limits
+   * reads, until it refreshes: one Pass Limit for every destination, and the
+   * Extra Passes. A laptop on that version sends these instead of `limit` and
+   * `permissions`.
+   */
+  passLimit?: number;
+  extraPassGifts?: { id: string; classId: string; studentId: string; givenAt: string }[];
   /** Passes still open, plus today's, so both sides agree on who is out. */
   passes: Pass[];
 };

@@ -1,10 +1,10 @@
 import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { destinationCounts, passesLeftText, usedBy, usedUpText } from './allowance';
-import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
+import { dueTime, endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
 import { formatClock, noPassTimeAt } from './schedule';
-import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass } from './types';
+import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass, PermissionKind } from './types';
 
 /**
  * The kiosk: the student-facing screen by the door. It runs either on a paired
@@ -28,8 +28,8 @@ type PairedDevice = {
   outbox: string[];
   /** The Line. The kiosk is in charge of it and tells the laptop. */
   line?: LineSpot[];
-  /** Extra Passes from the laptop already used here, until the laptop hears and stops offering them. */
-  usedGifts?: string[];
+  /** Permissions from the laptop already used here, until the laptop hears and stops offering them. */
+  usedPermissions?: string[];
 };
 
 export type DoorNotice = {
@@ -40,9 +40,9 @@ export type DoorNotice = {
   message: string;
   /** A pass that a mis-tap can still undo, for a few seconds. */
   undoPassId?: string;
-  /** Offered when the Pass Limit is reached and the Line is on. */
-  offerLine?: { studentId: string; destination: string; extra?: boolean };
-  /** Offered when a student has used up their Pass Allowance: the teacher may let them go with the PIN. */
+  /** Offered when the destination is full (or it's No-Pass Time) and lines are on. */
+  offerLine?: { studentId: string; destination: string };
+  /** Offered whenever a rule stops a student: the teacher may let them go with the PIN. */
   offerTeacher?: { studentId: string; destination: string };
 };
 
@@ -51,10 +51,31 @@ const storageKey = 'hallway.door';
 function loadDevice(): PairedDevice | null {
   try {
     const saved = localStorage.getItem(storageKey);
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const device: PairedDevice = JSON.parse(saved);
+    device.setup = fromOlderLaptop(device.setup);
+    return device;
   } catch {
     return null;
   }
+}
+
+/**
+ * A laptop still on the version before per-destination limits (until it
+ * refreshes) sends one Pass Limit for every destination and a list of Extra
+ * Passes. Read them the new way, so the door keeps its old limits rather than
+ * having none.
+ */
+function fromOlderLaptop(setup: DoorSetup): DoorSetup {
+  for (const destination of setup.destinations) {
+    if (destination.limit === undefined) destination.limit = setup.passLimit ?? 1;
+  }
+  setup.permissions ??= (setup.extraPassGifts ?? []).map((gift) => ({
+    ...gift,
+    kind: 'extra-pass',
+    expiresAt: endOfDay(gift.givenAt),
+  }));
+  return setup;
 }
 
 export const door = $state({
@@ -110,21 +131,37 @@ export function outCount(classId: string) {
   return allPasses().filter((pass) => pass.classId === classId && !pass.inAt).length;
 }
 
-export function passLimit() {
-  return setup()?.passLimit ?? 1;
+export function destinationNamed(label: string) {
+  return setup()?.destinations.find((each) => each.label === label);
 }
 
-/** The Line for the class on the kiosk, first in line first. */
-export function line(): LineSpot[] {
+/** How many students from the class on the kiosk are at one destination right now. */
+export function outAt(destination: string) {
+  const classId = activeClassId();
+  return allPasses().filter((pass) => pass.classId === classId && pass.destination === destination && !pass.inAt).length;
+}
+
+/** Whether a destination has reached its Pass Limit. One with no limit is never full. */
+export function isFull(destination: string) {
+  const limit = destinationNamed(destination)?.limit;
+  return limit != null && outAt(destination) >= limit;
+}
+
+/**
+ * The Lines for the class on the kiosk, first in line first. Each destination
+ * has its own: pass a destination to get just its line.
+ */
+export function line(destination?: string): LineSpot[] {
   const classId = activeClassId();
   const all = isLocal() ? account.line : (door.device?.line ?? []);
-  return all.filter((spot) => spot.classId === classId);
+  return all.filter((spot) => spot.classId === classId && (!destination || spot.destination === destination));
 }
 
+/** Where a student is waiting, if anywhere, with their place in that destination's line. */
 export function lineSpotFor(studentId: string) {
-  const spots = line();
-  const index = spots.findIndex((spot) => spot.studentId === studentId);
-  return index === -1 ? null : { ...spots[index], position: index + 1 };
+  const spot = line().find((each) => each.studentId === studentId);
+  if (!spot) return null;
+  return { ...spot, position: line(spot.destination).indexOf(spot) + 1 };
 }
 
 /** The No-Pass Time the class on the kiosk is in right now, if any. */
@@ -132,11 +169,46 @@ export function noPassNow(at = Date.now()) {
   return noPassTimeAt(activeDoorClass()?.noPassTimes ?? [], at);
 }
 
-/** The first in line, once a spot has opened for them and passes are allowed. */
-export function upNext(at = Date.now()) {
+/** A Permission from the laptop that the student may still use here, if they have one of that kind. */
+export function permissionFor(studentId: string, kind: PermissionKind, at = Date.now()) {
   const classId = activeClassId();
-  if (!classId || outCount(classId) >= passLimit() || noPassNow(at)) return null;
-  return line()[0] ?? null;
+  const spent = new Set([...(door.device?.usedPermissions ?? []), ...allPasses().flatMap(permissionsUsedBy)]);
+  const time = new Date(at).toISOString();
+  return (setup()?.permissions ?? []).find(
+    (each) =>
+      each.kind === kind &&
+      each.classId === classId &&
+      each.studentId === studentId &&
+      each.expiresAt > time &&
+      !spent.has(each.id),
+  );
+}
+
+/**
+ * Whether a student may go to a destination without waiting: it has no limit,
+ * or there is a spot free once those ahead of them in its line have theirs.
+ */
+function hasRoom(studentId: string, destination: string) {
+  const limit = destinationNamed(destination)?.limit;
+  if (limit == null) return true;
+  const waiting = line(destination);
+  const place = waiting.findIndex((spot) => spot.studentId === studentId);
+  const ahead = place === -1 ? waiting.length : place;
+  return outAt(destination) + ahead < limit;
+}
+
+/**
+ * Students in line who may go now, and are **Up Next**: a spot has opened for
+ * them at their destination, or the teacher let them skip the line, and
+ * passes are allowed (or the teacher let them past the No-Pass Time).
+ */
+export function upNext(at = Date.now()): LineSpot[] {
+  const blocked = !!noPassNow(at);
+  return line().filter(
+    (spot) =>
+      (!blocked || permissionFor(spot.studentId, 'no-pass-exception', at)) &&
+      (hasRoom(spot.studentId, spot.destination) || permissionFor(spot.studentId, 'line-skip', at)),
+  );
 }
 
 /**
@@ -151,15 +223,11 @@ export function allowanceFor(studentId: string) {
   const student = cls?.students.find((each) => each.id === studentId);
   if (!current || !cls || !allowance?.enabled || !student || student.exempt) return null;
   const used = usedBy(allowance, cls.id, studentId, [...(current.countedPasses ?? []), ...allPasses()]);
-  const spent = new Set([...(door.device?.usedGifts ?? []), ...allPasses().map((pass) => pass.giftId)]);
-  const gift = (current.extraPassGifts ?? []).find(
-    (each) => each.classId === cls.id && each.studentId === studentId && !spent.has(each.id),
-  );
   const left = Math.max(0, allowance.passes - used);
   return {
     left,
     usedUp: left === 0,
-    gift,
+    gift: permissionFor(studentId, 'extra-pass'),
     text: left ? passesLeftText(allowance, left) : usedUpText(allowance),
     whenUsedUp: allowance.whenUsedUp,
   };
@@ -204,7 +272,8 @@ export function signBackIn(studentId: string) {
   if (!pass) return;
   const at = now();
   record([{ ...$state.snapshot(pass), inAt: at, endedBy: 'student', updatedAt: at }]);
-  const next = upNext();
+  // The spot they leave is held for whoever is first in that destination's line.
+  const next = upNext().find((spot) => spot.destination === pass.destination);
   showNotice(
     {
       kind: 'returned',
@@ -229,94 +298,97 @@ function saveLine(next: LineSpot[]) {
 }
 
 /**
- * Grants a pass if there is a spot free and nobody ahead in the Line. When the
- * class is at its Pass Limit, the student may join the Line instead (if the
- * teacher turned it on). A refusal gives a count, never who is out.
- *
- * A student who has used up their Pass Allowance is stopped first, unless the
- * teacher let them go (`teacherLetGo`, after the PIN), gave them an Extra Pass
- * from the laptop, or set the allowance only to warn. Each of those leaves an
- * Extra Pass, which still waits for the Pass Limit, the Line and No-Pass Times.
+ * Grants a pass if the destination has room, or turns the student away with
+ * the reason. Three rules can stop a student, each lifted on its own:
+ * - a used-up Pass Allowance, by an Extra Pass (or an allowance that only warns)
+ * - No-Pass Time, by a No-Pass Exception
+ * - a full destination, or others ahead in its Line, by a Line Skip
+ * The teacher gives those from the laptop ahead of time. `teacherLetGo` (after
+ * the PIN at the kiosk) lifts all three at once. Either way, each rule lifted
+ * is marked on the pass. A refusal gives a count, never who is out.
  */
 export function requestPass(studentId: string, destination: string, teacherLetGo = false) {
   const cls = activeDoorClass();
   const student = cls?.students.find((each) => each.id === studentId);
-  const place = setup()?.destinations.find((each) => each.label === destination);
+  const place = destinationNamed(destination);
   if (!cls || !student || !place) return;
-  const out = outCount(cls.id);
-  const limit = passLimit();
-  const first = line()[0];
+  const spot = lineSpotFor(studentId);
+  const inThisLine = spot?.destination === destination;
+  const offerTeacher = { studentId, destination };
+
   const counts = destinationCounts(place);
   const allowance = counts ? allowanceFor(studentId) : null;
-  const spot = lineSpotFor(studentId);
   const usedUp = !!allowance?.usedUp;
-  // The teacher let them go now, or before they joined the Line.
-  const letGo = teacherLetGo || !!spot?.extra;
-  const gift = usedUp && !letGo ? allowance?.gift : undefined;
-  const onlyWarned = usedUp && !letGo && !gift && allowance?.whenUsedUp === 'warn';
-  // A student already in line was checked when they joined, so is never stopped here.
-  if (usedUp && !letGo && !gift && !onlyWarned && !spot) {
+  const extraPass = usedUp && !teacherLetGo ? allowance?.gift : undefined;
+  const onlyWarned = usedUp && !teacherLetGo && !extraPass && allowance?.whenUsedUp === 'warn';
+  // A student already in this line was checked when they joined, so is never stopped here.
+  if (usedUp && !teacherLetGo && !extraPass && !onlyWarned && !inThisLine) {
     showNotice(
-      {
-        kind: 'denied',
-        eyebrow: 'Out of passes',
-        title: allowance!.text,
-        message: 'Ask your teacher.',
-        offerTeacher: { studentId, destination },
-      },
+      { kind: 'denied', eyebrow: 'Out of passes', title: allowance!.text, message: 'Ask your teacher.', offerTeacher },
       15,
     );
     return;
   }
-  const isExtra = usedUp || letGo;
+
   const blocked = noPassNow();
-  if (blocked) {
+  const exception = blocked && !teacherLetGo ? permissionFor(studentId, 'no-pass-exception') : undefined;
+  if (blocked && !teacherLetGo && !exception) {
     const opens = formatClock(blocked.end);
-    // During a No-Pass Time the only thing on offer is a place in the Line.
+    // During a No-Pass Time, a destination with a limit offers a place in its line.
+    const mayLineUp = setup()?.lineEnabled && place.limit !== null && !inThisLine;
     showNotice(
-      setup()?.lineEnabled && !lineSpotFor(studentId)
+      mayLineUp
         ? {
             kind: 'denied',
             eyebrow: 'No-pass time',
             title: 'Join the line?',
             message: `Passes open at ${opens}. Join the line to go as soon as they do.`,
-            offerLine: { studentId, destination, extra: letGo },
+            offerLine: { studentId, destination },
+            offerTeacher,
           }
         : {
             kind: 'denied',
             eyebrow: 'No-pass time',
             title: 'No passes right now',
             message: `Passes open again at ${opens}.`,
+            offerTeacher,
           },
       10,
     );
     return;
   }
-  // A free spot is held for whoever is first in line.
-  const mayGo = out < limit && (!first || first.studentId === studentId);
-  if (!mayGo) {
-    const waiting = line().length;
+
+  // A free spot is held for whoever is first in that destination's line.
+  const full = !hasRoom(studentId, destination);
+  const lineSkip = full && !teacherLetGo ? permissionFor(studentId, 'line-skip') : undefined;
+  if (full && !teacherLetGo && !lineSkip) {
+    const out = outAt(destination);
+    const waiting = line(destination).length;
+    const someone = (count: number) => `${count} ${count === 1 ? 'student is' : 'students are'}`;
     showNotice(
-      setup()?.lineEnabled
+      setup()?.lineEnabled && !inThisLine
         ? {
             kind: 'denied',
             title: 'Join the line?',
-            message:
-              out >= limit
-                ? `${out} of ${limit} ${limit === 1 ? 'student is' : 'students are'} out${waiting ? `, and ${waiting} ${waiting === 1 ? 'is' : 'are'} waiting` : ''}.`
-                : `${waiting} ${waiting === 1 ? 'student is' : 'students are'} already waiting.`,
-            offerLine: { studentId, destination, extra: letGo },
+            message: isFull(destination)
+              ? `${destination} is full${waiting ? `, and ${waiting} ${waiting === 1 ? 'is' : 'are'} waiting` : ''}.`
+              : `${someone(waiting)} already waiting for ${destination}.`,
+            offerLine: { studentId, destination },
+            offerTeacher,
           }
         : {
             kind: 'denied',
             title: 'Please wait in class',
-            message: `${out} of ${limit} ${limit === 1 ? 'student is' : 'students are'} already out. Try again when someone comes back.`,
+            message: `${someone(out)} already at ${destination}. Try again when someone comes back.`,
+            offerTeacher,
           },
       10,
     );
     return;
   }
-  if (first?.studentId === studentId) saveLine(line().slice(1));
+
+  // A student can only be in one place: starting a pass takes them out of any line.
+  if (spot) saveLine(line().filter((each) => each.studentId !== studentId));
   const at = now();
   const pass: Pass = {
     id: newId(),
@@ -329,10 +401,13 @@ export function requestPass(studentId: string, destination: string, teacherLetGo
     updatedAt: at,
   };
   if (!counts) pass.counts = false;
-  if (isExtra) pass.extra = true;
-  if (gift) {
-    pass.giftId = gift.id;
-    if (door.device) door.device.usedGifts = [...(door.device.usedGifts ?? []), gift.id];
+  if (usedUp) pass.extra = true;
+  if (blocked) pass.noPassException = true;
+  if (full) pass.lineSkip = true;
+  const used = [extraPass, exception, lineSkip].flatMap((permission) => (permission ? [permission.id] : []));
+  if (used.length) {
+    pass.permissionIds = used;
+    if (door.device) door.device.usedPermissions = [...(door.device.usedPermissions ?? []), ...used];
   }
   record([pass]);
   const back = pass.minutes ? `Back by ${dueTime(pass)}.` : 'Come straight back to class.';
@@ -352,19 +427,19 @@ export function requestPass(studentId: string, destination: string, teacherLetGo
   );
 }
 
-export function joinLine(studentId: string, destination: string, extra = false) {
+/** Joins a destination's line. A student waits in one line at a time, so joining another leaves the first. */
+export function joinLine(studentId: string, destination: string) {
   const cls = activeDoorClass();
   const student = cls?.students.find((each) => each.id === studentId);
-  if (!cls || !student || lineSpotFor(studentId)) return;
+  if (!cls || !student || lineSpotFor(studentId)?.destination === destination) return;
   const spot: LineSpot = { studentId, studentName: student.name, classId: cls.id, destination, joinedAt: now() };
-  if (extra) spot.extra = true;
-  saveLine([...line(), spot]);
-  const position = line().length;
+  saveLine([...line().filter((each) => each.studentId !== studentId), spot]);
+  const position = line(destination).length;
   showNotice(
     {
       kind: 'returned',
       eyebrow: 'In line',
-      title: `You're ${ordinal(position)} in line`,
+      title: `You're ${ordinal(position)} in line for ${destination}`,
       message: 'Watch for your name. When it turns green, tap it to go.',
     },
     5,
@@ -452,11 +527,11 @@ function receive(message: LaptopMessage) {
   const device = door.device;
   if (!device) return;
   if (message.type === 'setup') {
-    device.setup = message.setup;
+    device.setup = fromOlderLaptop(message.setup);
     mergeInto(device.passes, message.setup.passes);
-    // A used gift the laptop no longer offers needs no remembering.
-    const offered = new Set((message.setup.extraPassGifts ?? []).map((gift) => gift.id));
-    device.usedGifts = (device.usedGifts ?? []).filter((id) => offered.has(id));
+    // A used Permission the laptop no longer offers needs no remembering.
+    const offered = new Set((message.setup.permissions ?? []).map((permission) => permission.id));
+    device.usedPermissions = (device.usedPermissions ?? []).filter((id) => offered.has(id));
     const theirs = message.setup.activeClass;
     if (theirs && (!device.activeClass || theirs.changedAt > device.activeClass.changedAt)) adoptActiveClass(theirs);
     prune(device);
@@ -575,7 +650,7 @@ export async function pairWithCode(code: string) {
         laptopPeerId: message.laptopPeerId,
         kioskId: message.kioskId,
         secret: message.secret,
-        setup: message.setup,
+        setup: fromOlderLaptop(message.setup),
         activeClass: message.setup.activeClass,
         passes: message.setup.passes.filter((pass) => !pass.inAt),
         outbox: [],

@@ -2,6 +2,7 @@
   import { account } from '#lib/account.svelte.ts';
   import DestinationDialog from '#lib/DestinationDialog.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
+  import { limitText } from '#lib/destinations.ts';
   import Icon from '#lib/Icon.svelte';
   import { updateOnboarding } from '#lib/onboarding.svelte.ts';
   import type { Destination } from '#lib/types.ts';
@@ -31,7 +32,9 @@
         <DestinationIcon label={destination.label} size={44} />
         <div>
           <strong>{destination.label}</strong>
-          <p class="muted small">{destination.minutes ? `${destination.minutes} minutes` : 'No time limit'}</p>
+          <p class="muted small">
+            {destination.minutes ? `${destination.minutes} minutes` : 'No time limit'} · {limitText(destination)}
+          </p>
         </div>
       </button>
     {/each}

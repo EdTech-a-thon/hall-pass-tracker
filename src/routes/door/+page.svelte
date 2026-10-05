@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
-  import { page } from '$app/state';
+  import { page, updated } from '$app/state';
   import { onMount } from 'svelte';
   import { setDoorLocked } from '#lib/account.svelte.ts';
   import {
@@ -13,6 +13,7 @@
     dismissNotice,
     door,
     forgetDevice,
+    isFull,
     isLocal,
     joinLine,
     leaveLine,
@@ -22,7 +23,6 @@
     openPassFor,
     outCount,
     pairWithCode,
-    passLimit,
     requestPass,
     setup,
     signBackIn,
@@ -33,7 +33,7 @@
   import BrandMark from '#lib/BrandMark.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
-  import { askBeforeLeaving } from '#lib/leaving.ts';
+  import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
   import Modal from '#lib/Modal.svelte';
   import { formatClock } from '#lib/schedule.ts';
 
@@ -49,7 +49,14 @@
   });
 
   const waiting = $derived(line());
-  const next = $derived(upNext(clock));
+  /** Each destination's line, in the order the destinations are listed. */
+  const lines = $derived(
+    destinations
+      .map((destination) => ({ destination: destination.label, spots: line(destination.label) }))
+      .filter((each) => each.spots.length),
+  );
+  const ready = $derived(upNext(clock));
+  const isUpNext = (studentId: string) => ready.some((spot) => spot.studentId === studentId);
   const blocked = $derived(noPassNow(clock));
 
   let code = $state(page.url.searchParams.get('code') ?? '');
@@ -58,7 +65,7 @@
   let waitingFor = $state(null as { id: string; name: string } | null);
   /** The teacher menu: closed, asking for the PIN, or open. */
   let teacher = $state('closed' as 'closed' | 'pin' | 'menu');
-  /** Set while the PIN is asked for to let a student past their Pass Allowance. */
+  /** Set while the PIN is asked for to let a student go past whatever is stopping them. */
   let lettingGo = $state(null as { studentId: string; destination: string } | null);
   let pin = $state('');
   let pinError = $state('');
@@ -73,6 +80,16 @@
     if (page.url.searchParams.has('code')) replaceState('/door', {});
     else return;
     if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
+  });
+
+  // After an update, the kiosk refreshes itself once nobody has touched it for
+  // a minute, so it never stays on an older version than the laptop and no
+  // student sees the screen blink. Unsent passes are saved on this device and
+  // survive the refresh.
+  let lastTouch = $state(Date.now());
+  $effect(() => {
+    const idle = !door.notice && !choosingFor && !waitingFor && teacher === 'closed';
+    if (updated.current && idle && clock - lastTouch >= 60_000) leaveTo(location.href);
   });
 
   /** Puts the cursor in a field as soon as it appears, so the teacher can just type. */
@@ -93,7 +110,7 @@
     const spot = lineSpotFor(student.id);
     if (!spot) choosingFor = student;
     // Their turn: go straight to where they lined up for.
-    else if (next?.studentId === student.id) requestPass(student.id, spot.destination);
+    else if (isUpNext(student.id)) requestPass(student.id, spot.destination);
     else waitingFor = student;
   }
 
@@ -129,7 +146,7 @@
     }
   }
 
-  /** "Teacher: let them go" on the out-of-passes notice. */
+  /** "Teacher: let them go", wherever a rule has stopped a student. */
   function askToLetGo(offer: { studentId: string; destination: string }) {
     dismissNotice();
     openTeacher();
@@ -156,6 +173,7 @@
 
 <!-- Closing the kiosk stops students signing out, and may strand passes not yet sent. -->
 <svelte:window onbeforeunload={(event) => askBeforeLeaving(event, local || paired)} />
+<svelte:document onpointerdown={() => (lastTouch = Date.now())} onkeydown={() => (lastTouch = Date.now())} />
 
 <div class="door">
   {#if !local && !paired}
@@ -217,16 +235,20 @@
       </div>
     {/if}
 
-    {#if cls && waiting.length}
-      <div class="line-strip" aria-label="The line">
-        <strong>Line</strong>
-        {#each waiting as spot, index (spot.studentId)}
-          <span class="line-spot" class:next={next?.studentId === spot.studentId}>
-            <span class="line-number">{index + 1}</span>{spot.studentName}
-            {#if next?.studentId === spot.studentId}· your turn!{/if}
-          </span>
-        {/each}
-      </div>
+    {#if cls}
+      {#each lines as each (each.destination)}
+        <div class="line-strip" aria-label="The line for {each.destination}">
+          <strong class="line-name">
+            <DestinationIcon label={each.destination} list={destinations} size={22} />{each.destination} line
+          </strong>
+          {#each each.spots as spot, index (spot.studentId)}
+            <span class="line-spot" class:next={isUpNext(spot.studentId)}>
+              <span class="line-number">{index + 1}</span>{spot.studentName}
+              {#if isUpNext(spot.studentId)}· your turn!{/if}
+            </span>
+          {/each}
+        </div>
+      {/each}
     {/if}
 
     {#if cls}
@@ -237,7 +259,7 @@
         {#each cls.students as student (student.id)}
           {@const pass = openPassFor(student.id)}
           {@const spot = pass ? null : lineSpotFor(student.id)}
-          {@const isNext = next?.studentId === student.id}
+          {@const isNext = isUpNext(student.id)}
           <!-- Where they went, never how long: the door carries no clock. See docs/adr/0003. -->
           <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} onclick={() => tap(student)}>
             <span class="name-text">{student.name}</span>
@@ -262,7 +284,7 @@
         {/each}
       </main>
       <p class="count">
-        {outCount(cls.id)} of {passLimit()} out{waiting.length ? ` · ${waiting.length} in line` : ''}
+        {outCount(cls.id)} out{waiting.length ? ` · ${waiting.length} in line` : ''}
       </p>
     {:else}
       <main class="pairing">
@@ -287,9 +309,17 @@
         {/if}
         <div class="choices">
           {#each destinations as destination (destination.id)}
+            {@const lineLength = line(destination.label).length}
             <button class="door-btn choice" onclick={() => choose(destination.label)}>
               <DestinationIcon label={destination.label} list={destinations} size={40} />
-              {destination.label}
+              <span class="choice-text">
+                {destination.label}
+                {#if isFull(destination.label)}
+                  <span class="choice-status">Full{lineLength ? ` · ${lineLength} waiting` : ''}</span>
+                {:else if lineLength}
+                  <span class="choice-status">{lineLength} waiting</span>
+                {/if}
+              </span>
             </button>
           {/each}
         </div>
@@ -314,11 +344,27 @@
           <button
             class="door-btn"
             onclick={() => {
+              choosingFor = waitingFor;
+              waitingFor = null;
+            }}>Go somewhere else</button
+          >
+          <button
+            class="door-btn"
+            onclick={() => {
               if (waitingFor) leaveLine(waitingFor.id);
               waitingFor = null;
             }}>Leave the line</button
           >
         </div>
+        {#if spot}
+          <button
+            class="quiet-link"
+            onclick={() => {
+              waitingFor = null;
+              askToLetGo({ studentId: spot.studentId, destination: spot.destination });
+            }}><Icon name="lock" size={14} /> Teacher: let them go now</button
+          >
+        {/if}
       </div>
     </Modal>
   {/if}
@@ -338,14 +384,14 @@
         {/if}
         {#if door.notice.offerLine}
           {@const offer = door.notice.offerLine}
-          <button class="door-btn primary" onclick={() => joinLine(offer.studentId, offer.destination, offer.extra)}>Join the line</button>
+          <button class="door-btn primary" onclick={() => joinLine(offer.studentId, offer.destination)}>Join the line</button>
           <button class="door-btn" onclick={dismissNotice}>Not now</button>
-        {:else if door.notice.offerTeacher}
-          {@const offer = door.notice.offerTeacher}
-          <button class="door-btn primary" onclick={dismissNotice}>OK</button>
-          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher: let them go</button>
         {:else}
-          <button class="door-btn" onclick={dismissNotice}>Done</button>
+          <button class="door-btn" class:primary={door.notice.offerTeacher} onclick={dismissNotice}>Done</button>
+        {/if}
+        {#if door.notice.offerTeacher}
+          {@const offer = door.notice.offerTeacher}
+          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher: let them go</button>
         {/if}
       </div>
     </div>
@@ -356,7 +402,7 @@
       <div class="sheet">
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
-          {#if lettingGo}<p class="lede small">This student will get an extra pass.</p>{/if}
+          {#if lettingGo}<p class="lede small">Enter your PIN to let this student go now. Their pass will show you let them go.</p>{/if}
           <form onsubmit={submitPin}>
             <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} {@attach focusOnShow} />
             <button class="door-btn primary">Unlock</button>
@@ -581,6 +627,16 @@
     font-size: 16px;
   }
 
+  .line-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .line-strip + .line-strip {
+    margin-top: -8px;
+  }
+
   .line-spot {
     display: inline-flex;
     align-items: center;
@@ -761,6 +817,21 @@
     gap: 14px;
     min-height: 72px;
     font-size: 20px;
+  }
+
+  .choice-text {
+    display: grid;
+    text-align: left;
+  }
+
+  .choice-status {
+    color: var(--door-out);
+    font-size: 14px;
+  }
+
+  .notice-actions {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   .notice {
