@@ -18,7 +18,7 @@ entirely in the browser:
   door device enters or scans it once.
 - A paired kiosk talks **directly** to the laptop using
   [PeerJS](https://peerjs.com) (WebRTC). Our matchmaking server,
-  `peer.teacher.dev`, only introduces the two devices. On networks that block
+  `peer.happyhallways.com` (or `peer.teacher.dev` where that is blocked), only introduces the two devices. On networks that block
   direct connections, the encrypted data is relayed through PeerJS's public
   relay for now (see SECURITY.md).
 - The kiosk is in charge of the door. It decides who may leave, and it keeps
@@ -49,7 +49,8 @@ tests.
 
 ### Testing pairing against a local matchmaking server
 
-Pairing uses `peer.teacher.dev` by default. To test against a matchmaking
+Pairing uses `peer.happyhallways.com` by default, falling back to
+`peer.teacher.dev` (the same server) if a school filter blocks it. To test against a matchmaking
 server on your own machine instead:
 
 ```bash
