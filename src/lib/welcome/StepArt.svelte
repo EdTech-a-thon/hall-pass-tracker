@@ -22,7 +22,8 @@
 <div class="art" role="img" aria-label={labels[step]}>
   <svg viewBox="0 0 600 480">
     <defs>
-      <filter id="art-shadow-{step}" x="-15%" y="-15%" width="130%" height="140%">
+      <!-- Measured in drawing units, not shape percentages, so small chips get as much shadow room as big panels. -->
+      <filter id="art-shadow-{step}" filterUnits="userSpaceOnUse" x="-100" y="-100" width="800" height="700">
         <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#5a4320" flood-opacity=".12" />
       </filter>
     </defs>
@@ -110,6 +111,8 @@
     display: block;
     width: 100%;
     height: auto;
+    /* Let the shadows of chips near the bottom edge spill past the drawing instead of being cut off. */
+    overflow: visible;
     font-family: var(--sans);
   }
 

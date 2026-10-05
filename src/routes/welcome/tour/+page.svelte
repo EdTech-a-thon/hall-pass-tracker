@@ -48,18 +48,12 @@
         <p class="lede">{step.text}</p>
       {/key}
 
-      {#if last}
-        <div class="keep-open" role="note">
-          <Icon name="alert-triangle" size={20} />
-          <p><strong>{keepOpen.title}.</strong> {keepOpen.text}</p>
-        </div>
-      {/if}
-
       <div class="actions">
-        {#if index > 0}
-          <button class="btn back" onclick={() => index--}><Icon name="arrow-left" size={16} />Back</button>
-        {/if}
-        <button class="cta" onclick={next}>
+        <!-- Back is always here, just invisible on step 1, so Next never slides sideways. -->
+        <button class="btn back" class:hidden={index === 0} disabled={index === 0} onclick={() => index--}>
+          <Icon name="arrow-left" size={16} />Back
+        </button>
+        <button class="cta next" onclick={next}>
           {last ? 'Add your class' : 'Next'}
           <Icon name="arrow-right" size={17} />
         </button>
@@ -75,6 +69,12 @@
             onclick={() => (index = i)}
           ></button>
         {/each}
+      </div>
+
+      <!-- Below the buttons, and holding its space on every step, so it never pushes them around. -->
+      <div class="keep-open" class:hidden={!last} role="note">
+        <Icon name="alert-triangle" size={20} />
+        <p><strong>{keepOpen.title}.</strong> {keepOpen.text}</p>
       </div>
     </div>
 
@@ -141,7 +141,7 @@
     display: flex;
     gap: 12px;
     max-width: 500px;
-    margin-bottom: 24px;
+    margin-top: 28px;
     padding: 14px 16px;
     border: 1px solid #ecd3ac;
     border-radius: 12px;
@@ -161,6 +161,15 @@
   .actions {
     display: flex;
     gap: 10px;
+  }
+
+  /* Same width for "Next" and "Add your class", so the button doesn't grow on the last step. */
+  .next {
+    min-width: 200px;
+  }
+
+  .hidden {
+    visibility: hidden;
   }
 
   .back {
