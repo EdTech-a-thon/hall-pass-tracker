@@ -5,13 +5,15 @@ export const pairingPrefix = 'hallway-pair-';
 
 /**
  * Happy Hallways' own matchmaking server (a standard PeerJS server). It only
- * introduces devices to each other; it stores nothing. Set VITE_PEER_HOST (and
- * VITE_PEER_PORT, VITE_PEER_PATH, VITE_PEER_SECURE) in .env.local to point at
- * another one, e.g. a local `peerjs` server while testing.
+ * introduces devices to each other; it stores nothing. Both names point at the
+ * same server, so a kiosk and a laptop that reach it by different names still
+ * find each other. Some school filters block teacher.dev, so it is the fallback.
+ * Set VITE_PEER_HOST (and VITE_PEER_PORT, VITE_PEER_PATH, VITE_PEER_SECURE) in
+ * .env.local to point at another one, e.g. a local `peerjs` server while testing.
  */
 const env = import.meta.env;
+const hosts = env.VITE_PEER_HOST ? [env.VITE_PEER_HOST as string] : ['peer.happyhallways.com', 'peer.teacher.dev'];
 const server = {
-  host: (env.VITE_PEER_HOST as string) || 'peer.teacher.dev',
   port: Number(env.VITE_PEER_PORT || 443),
   path: (env.VITE_PEER_PATH as string) || '/peerjs',
   secure: env.VITE_PEER_SECURE !== 'false',
@@ -32,6 +34,29 @@ const server = {
     ],
   },
 };
+
+/**
+ * Finds the first matchmaking server name this device can reach, by asking it
+ * for a spare address the way PeerJS itself would. Once one works, this page
+ * keeps using it. If none answer, PeerJS tries the last one and reports why.
+ */
+let reachableHost: string | null = null;
+
+async function pickHost(): Promise<string> {
+  if (reachableHost) return reachableHost;
+  if (hosts.length === 1) return hosts[0];
+  for (const host of hosts) {
+    const address = `${server.secure ? 'https' : 'http'}://${host}:${server.port}${server.path}/peerjs/id`;
+    try {
+      const response = await fetch(address, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+      // A filter's block page can also answer "OK", so check it really sent an address.
+      if (response.ok && /^[\w-]{8,}$/.test((await response.text()).trim())) return (reachableHost = host);
+    } catch {
+      // Blocked or offline; try the next name.
+    }
+  }
+  return hosts[hosts.length - 1];
+}
 
 /** Every connection this page opened, so they can all be closed when it goes away. */
 const live = new Set<Peer>();
@@ -57,7 +82,8 @@ import.meta.hot?.dispose(releaseAll);
  */
 export async function createPeer(id?: string): Promise<Peer> {
   const { Peer } = await import('peerjs');
-  const peer = id ? new Peer(id, server) : new Peer(server);
+  const options = { ...server, host: await pickHost() };
+  const peer = id ? new Peer(id, options) : new Peer(options);
   live.add(peer);
 
   let delay = 3000;
