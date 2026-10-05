@@ -1,7 +1,7 @@
 import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { destinationCounts, passesLeftText, usedBy, usedUpText } from './allowance';
-import { dueTime, endUnseen, mergeInto, newId, now } from './passes';
+import { dueTime, endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
 import { formatClock, noPassTimeAt } from './schedule';
 import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass, PermissionKind } from './types';
@@ -51,10 +51,31 @@ const storageKey = 'hallway.door';
 function loadDevice(): PairedDevice | null {
   try {
     const saved = localStorage.getItem(storageKey);
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const device: PairedDevice = JSON.parse(saved);
+    device.setup = fromOlderLaptop(device.setup);
+    return device;
   } catch {
     return null;
   }
+}
+
+/**
+ * A laptop still on the version before per-destination limits (until it
+ * refreshes) sends one Pass Limit for every destination and a list of Extra
+ * Passes. Read them the new way, so the door keeps its old limits rather than
+ * having none.
+ */
+function fromOlderLaptop(setup: DoorSetup): DoorSetup {
+  for (const destination of setup.destinations) {
+    if (destination.limit === undefined) destination.limit = setup.passLimit ?? 1;
+  }
+  setup.permissions ??= (setup.extraPassGifts ?? []).map((gift) => ({
+    ...gift,
+    kind: 'extra-pass',
+    expiresAt: endOfDay(gift.givenAt),
+  }));
+  return setup;
 }
 
 export const door = $state({
@@ -151,7 +172,7 @@ export function noPassNow(at = Date.now()) {
 /** A Permission from the laptop that the student may still use here, if they have one of that kind. */
 export function permissionFor(studentId: string, kind: PermissionKind, at = Date.now()) {
   const classId = activeClassId();
-  const spent = new Set([...(door.device?.usedPermissions ?? []), ...allPasses().flatMap((pass) => pass.permissionIds ?? [])]);
+  const spent = new Set([...(door.device?.usedPermissions ?? []), ...allPasses().flatMap(permissionsUsedBy)]);
   const time = new Date(at).toISOString();
   return (setup()?.permissions ?? []).find(
     (each) =>
@@ -506,7 +527,7 @@ function receive(message: LaptopMessage) {
   const device = door.device;
   if (!device) return;
   if (message.type === 'setup') {
-    device.setup = message.setup;
+    device.setup = fromOlderLaptop(message.setup);
     mergeInto(device.passes, message.setup.passes);
     // A used Permission the laptop no longer offers needs no remembering.
     const offered = new Set((message.setup.permissions ?? []).map((permission) => permission.id));
@@ -629,7 +650,7 @@ export async function pairWithCode(code: string) {
         laptopPeerId: message.laptopPeerId,
         kioskId: message.kioskId,
         secret: message.secret,
-        setup: message.setup,
+        setup: fromOlderLaptop(message.setup),
         activeClass: message.setup.activeClass,
         passes: message.setup.passes.filter((pass) => !pass.inAt),
         outbox: [],

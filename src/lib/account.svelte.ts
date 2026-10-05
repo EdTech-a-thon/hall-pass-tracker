@@ -1,6 +1,6 @@
 import { defaultAllowance, passCounts, usedBy, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
-import { endUnseen, mergeInto, newId, now } from './passes';
+import { endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { displayName, type ImportPlan } from './roster';
 import { noPassTimeAt } from './schedule';
 import type {
@@ -311,7 +311,7 @@ export function restoreStudent(classId: string, studentId: string) {
 /** Takes passes from the kiosk (or from this computer's own door screen). A Permission a pass used is spent. */
 export function receivePasses(passes: Pass[]) {
   mergeInto(account.passes, passes);
-  const used = new Set(passes.flatMap((pass) => pass.permissionIds ?? []));
+  const used = new Set(passes.flatMap(permissionsUsedBy));
   if (used.size) account.permissions = account.permissions.filter((permission) => !used.has(permission.id));
   save();
 }
@@ -319,13 +319,6 @@ export function receivePasses(passes: Pass[]) {
 // ---------------------------------------------------------------------------
 // Letting a student go
 // ---------------------------------------------------------------------------
-
-/** One second before the next midnight after `at`, as an ISO time. */
-function endOfDay(at: string | Date) {
-  const end = new Date(at);
-  end.setHours(23, 59, 59, 999);
-  return end.toISOString();
-}
 
 /** Today at an "HH:MM" clock time, as an ISO time. */
 function todayAt(clock: string) {
@@ -533,8 +526,25 @@ export function doorSetup(): DoorSetup {
     permissions: activePermissions(),
     activeClass: account.activeClass,
     pin: account.pin,
+    ...forOlderKiosks(),
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),
   });
+}
+
+/**
+ * A kiosk still on the version before per-destination limits enforces one
+ * limit on everyone out at once. The largest destination limit keeps it working
+ * as it did before the update, until the teacher changes a destination or the
+ * kiosk refreshes.
+ */
+function forOlderKiosks() {
+  const limits = account.destinations.flatMap((destination) => (destination.limit === null ? [] : [destination.limit]));
+  return {
+    passLimit: limits.length ? Math.max(...limits) : 99,
+    extraPassGifts: activePermissions()
+      .filter((permission) => permission.kind === 'extra-pass')
+      .map(({ id, classId, studentId, givenAt }) => ({ id, classId, studentId, givenAt })),
+  };
 }
 
 function countedPasses() {

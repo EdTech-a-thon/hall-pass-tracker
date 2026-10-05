@@ -567,3 +567,48 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await expect(page.getByRole('heading', { name: 'Where students can go' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeHidden();
 });
+
+test('a kiosk holding settings from the older version keeps its old limit', async ({ page }) => {
+  // A paired kiosk whose last word from the laptop came before per-destination limits.
+  await page.goto('/door');
+  await page.evaluate(() => {
+    const classId = 'period-1';
+    const setup = {
+      classes: [
+        {
+          id: classId,
+          name: 'Period 1',
+          noPassTimes: [],
+          students: [
+            { id: 'jordan', name: 'Jordan E.' },
+            { id: 'maya', name: 'Maya C.' },
+          ],
+        },
+      ],
+      destinations: [
+        { id: 'bathroom', label: 'Bathroom', minutes: 5, color: 'blue', icon: 'toilet' },
+        { id: 'nurse', label: 'Nurse', minutes: 15, color: 'pink', icon: 'stethoscope' },
+      ],
+      passLimit: 1,
+      lineEnabled: false,
+      passAllowance: { enabled: false, passes: 3, per: 'week', whenUsedUp: 'stop', since: new Date().toISOString() },
+      countedPasses: [],
+      extraPassGifts: [],
+      activeClass: { id: classId, changedAt: new Date().toISOString() },
+      pin: '2468',
+      passes: [],
+    };
+    localStorage.setItem(
+      'hallway.door',
+      JSON.stringify({ laptopPeerId: 'old-laptop', kioskId: 'k', secret: 's', setup, activeClass: setup.activeClass, passes: [], outbox: [] }),
+    );
+  });
+  await page.reload();
+
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: /^Bathroom/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: /Maya C\./ }).click();
+  await page.getByRole('button', { name: /^Bathroom/ }).click();
+  await expect(page.getByText('Please wait in class')).toBeVisible();
+});

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
-  import { page } from '$app/state';
+  import { page, updated } from '$app/state';
   import { onMount } from 'svelte';
   import { setDoorLocked } from '#lib/account.svelte.ts';
   import {
@@ -33,7 +33,7 @@
   import BrandMark from '#lib/BrandMark.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
-  import { askBeforeLeaving } from '#lib/leaving.ts';
+  import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
   import Modal from '#lib/Modal.svelte';
   import { formatClock } from '#lib/schedule.ts';
 
@@ -80,6 +80,14 @@
     if (page.url.searchParams.has('code')) replaceState('/door', {});
     else return;
     if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
+  });
+
+  // After an update, the kiosk refreshes itself the next time nobody is using it,
+  // so it never stays on an older version than the laptop. Unsent passes are
+  // saved on this device and survive the refresh.
+  $effect(() => {
+    const idle = !door.notice && !choosingFor && !waitingFor && teacher === 'closed';
+    if (updated.current && idle) leaveTo(location.href);
   });
 
   /** Puts the cursor in a field as soon as it appears, so the teacher can just type. */

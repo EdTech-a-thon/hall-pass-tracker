@@ -10,6 +10,18 @@ export function now() {
   return new Date().toISOString();
 }
 
+/** The last moment of the day `at` falls on, as an ISO time. */
+export function endOfDay(at: string | Date) {
+  const end = new Date(at);
+  end.setHours(23, 59, 59, 999);
+  return end.toISOString();
+}
+
+/** The laptop's Permissions a pass used up, including an older kiosk's Extra Pass. */
+export function permissionsUsedBy(pass: Pass) {
+  return [...(pass.permissionIds ?? []), ...(pass.giftId ? [pass.giftId] : [])];
+}
+
 /**
  * A pass whose end we invented rather than observed: the class changed, the
  * student undid a mis-tap, or they left the roster while out. Its duration is

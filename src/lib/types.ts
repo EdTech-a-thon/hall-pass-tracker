@@ -99,6 +99,8 @@ export type Pass = {
   lineSkip?: boolean;
   /** The laptop's Permissions this pass used up, if any. */
   permissionIds?: string[];
+  /** The one Extra Pass an older kiosk recorded using, from before there were Permissions. */
+  giftId?: string;
   outAt: string;
   inAt?: string;
   endedBy?: EndedBy;
@@ -175,6 +177,14 @@ export type DoorSetup = {
   permissions: Permission[];
   activeClass: ActiveClass | null;
   pin: string;
+  /**
+   * What a kiosk still running the version before per-destination limits
+   * reads, until it refreshes: one Pass Limit for every destination, and the
+   * Extra Passes. A laptop on that version sends these instead of `limit` and
+   * `permissions`.
+   */
+  passLimit?: number;
+  extraPassGifts?: { id: string; classId: string; studentId: string; givenAt: string }[];
   /** Passes still open, plus today's, so both sides agree on who is out. */
   passes: Pass[];
 };
