@@ -108,6 +108,40 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
   await expect(tablet.getByRole('button', { name: /Maya Ca\..*In class/ })).toBeVisible({ timeout: 15_000 });
 });
 
+test('a device paired from a second tab connects to the tab already holding the laptop address', async ({ browser }) => {
+  const laptop = await browser.newContext();
+  const olderTab = await laptop.newPage();
+  const firstTablet = await (await browser.newContext()).newPage();
+  const newTablet = await (await browser.newContext()).newPage();
+
+  await createClassWithRoster(olderTab, 'Period 5');
+  await setPin(olderTab);
+  await olderTab.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(olderTab.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  await firstTablet.goto(`/door?code=${(await olderTab.locator('.pair-code').textContent())!.trim()}`);
+  await expect(olderTab.getByText('Paired device · Live')).toBeVisible({ timeout: 30_000 });
+  await olderTab.getByRole('button', { name: 'Close' }).click();
+
+  // A second tab can't claim the address the older tab holds, but can still pair.
+  const newerTab = await laptop.newPage();
+  await newerTab.goto('/kiosk');
+  await expect(newerTab.getByText(/open in another tab/)).toBeVisible({ timeout: 20_000 });
+  await newerTab.getByRole('button', { name: 'Pair a different device' }).click();
+  await expect(newerTab.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  await newTablet.goto(`/door?code=${(await newerTab.locator('.pair-code').textContent())!.trim()}`);
+
+  // The older tab heard about the new pairing, so it lets the new device in.
+  await expect(newTablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(olderTab.getByText('Paired device · Live')).toBeVisible({ timeout: 10_000 });
+
+  // A pass reaches the older tab, and through it the newer one.
+  await newTablet.getByRole('button', { name: /Maya Ca\./ }).click();
+  await newTablet.getByRole('button', { name: 'Bathroom', exact: true }).click();
+  await expect(newTablet.getByText('Pass approved', { exact: true })).toBeVisible();
+  await newerTab.getByRole('link', { name: /^Period 5/ }).click();
+  await expect(newerTab.getByText('1 of 1 out')).toBeVisible({ timeout: 15_000 });
+});
+
 test('students line up when the pass limit is reached', async ({ page }) => {
   await createClassWithRoster(page, 'Period 4');
   await page.getByRole('link', { name: 'Pass Options' }).click();

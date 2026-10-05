@@ -89,6 +89,27 @@ function save() {
   afterSave();
 }
 
+/**
+ * Teachers often have Happy Hallways open in more than one tab. Each save
+ * writes the whole Account, so a tab working from an old copy would undo the
+ * others' changes, and only one tab can hold the laptop's address for the
+ * kiosk. So when another tab saves, this one takes its copy straight away.
+ */
+let afterReload = () => {};
+export function onReload(listener: () => void) {
+  afterReload = listener;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== storageKey || event.newValue === null) return;
+    const fresh = load();
+    for (const key of Object.keys(account)) if (!(key in fresh)) delete account[key as keyof Account];
+    Object.assign(account, fresh);
+    afterReload();
+  });
+}
+
 export function findClass(id: string) {
   return account.classes.find((cls) => cls.id === id);
 }

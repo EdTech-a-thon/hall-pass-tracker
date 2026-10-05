@@ -4,6 +4,7 @@ import {
   doorSetup,
   forgetReplacedKiosk,
   markKioskSeen,
+  onReload,
   onSave,
   pairDevice,
   receivePasses,
@@ -44,9 +45,27 @@ function send(connection: DataConnection | null, message: LaptopMessage) {
 
 /** Keeps the kiosk's copy current whenever the teacher changes anything. */
 let pushTimer = 0;
-onSave(() => {
+function pushSetup() {
   clearTimeout(pushTimer);
   pushTimer = window.setTimeout(() => send(kioskConnection, { type: 'setup', setup: doorSetup() }), 150);
+}
+onSave(pushSetup);
+
+/**
+ * Another tab changed the Account. If this tab is the one holding the
+ * laptop's address, it must now accept the kiosk that tab paired (and let go
+ * of one it stopped or replaced), and pass that tab's edits on to the door.
+ */
+onReload(() => {
+  const kiosk = account.kiosk;
+  const connectedTo = (kioskConnection?.metadata as { kioskId?: string } | undefined)?.kioskId;
+  if (kioskConnection && (kiosk?.kind !== 'device' || kiosk.kioskId !== connectedTo)) {
+    kioskConnection.close();
+    kioskConnection = null;
+    link.status = 'offline';
+  }
+  if (peer || starting) refreshLink();
+  pushSetup();
 });
 
 /**
@@ -66,6 +85,9 @@ export async function refreshLink() {
     link.status = 'off';
     return;
   }
+  // Another tab holds the address. Pages call this whenever anything changes,
+  // so wait for the retry below rather than knocking again straight away.
+  if (link.status === 'taken') return;
   if (link.status !== 'live') link.status = paired ? 'offline' : 'off';
   // Several screens call this at once; only the first may claim the address.
   if (peer || starting) return;
@@ -80,7 +102,11 @@ export async function refreshLink() {
         link.status = 'taken';
         created.destroy();
         peer = null;
-        setTimeout(refreshLink, 30_000);
+        setTimeout(() => {
+          if (link.status !== 'taken') return;
+          link.status = 'offline';
+          refreshLink();
+        }, 30_000);
       }
     });
     // Wait until the address is registered, so a kiosk that dials straight
