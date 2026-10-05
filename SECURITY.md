@@ -18,7 +18,8 @@ storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`
 
 ## The connection between kiosk and laptop
 
-- Hallway's matchmaking server (`peer.teacher.dev`, a standard PeerJS server)
+- Hallway's matchmaking server (`peer.happyhallways.com`, also reachable as
+  `peer.teacher.dev`; a standard PeerJS server)
   introduces the two devices. It sees their randomly generated addresses but
   stores nothing and never receives pass data.
 - Pass data travels over WebRTC's encrypted channel, directly between the
