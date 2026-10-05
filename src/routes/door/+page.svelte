@@ -5,6 +5,7 @@
   import { setDoorLocked } from '#lib/account.svelte.ts';
   import {
     activeDoorClass,
+    allowanceFor,
     changeClass,
     checkPin,
     clearLine,
@@ -57,6 +58,8 @@
   let waitingFor = $state(null as { id: string; name: string } | null);
   /** The teacher menu: closed, asking for the PIN, or open. */
   let teacher = $state('closed' as 'closed' | 'pin' | 'menu');
+  /** Set while the PIN is asked for to let a student past their Pass Allowance. */
+  let lettingGo = $state(null as { studentId: string; destination: string } | null);
   let pin = $state('');
   let pinError = $state('');
   let confirmForget = $state(false);
@@ -105,6 +108,7 @@
   }
 
   function openTeacher() {
+    lettingGo = null;
     teacher = 'pin';
     pin = '';
     pinError = '';
@@ -113,12 +117,23 @@
 
   function submitPin(event: SubmitEvent) {
     event.preventDefault();
-    if (checkPin(pin)) {
+    if (checkPin(pin) && lettingGo) {
+      requestPass(lettingGo.studentId, lettingGo.destination, true);
+      lettingGo = null;
+      teacher = 'closed';
+    } else if (checkPin(pin)) {
       teacher = 'menu';
     } else {
       pinError = "That PIN isn't right.";
       pin = '';
     }
+  }
+
+  /** "Teacher: let them go" on the out-of-passes notice. */
+  function askToLetGo(offer: { studentId: string; destination: string }) {
+    dismissNotice();
+    openTeacher();
+    lettingGo = offer;
   }
 
   function switchTo(classId: string) {
@@ -264,6 +279,12 @@
         <p class="door-eyebrow">Pass for</p>
         <h2 id="choose-title">{choosingFor.name}</h2>
         <p class="lede">Where are you going?</p>
+        {#if allowanceFor(choosingFor.id)}
+          {@const allowance = allowanceFor(choosingFor.id)!}
+          <p class="allowance" class:used-up={allowance.usedUp && !allowance.gift}>
+            {allowance.usedUp && allowance.gift ? 'Your teacher gave you an extra pass.' : allowance.text}
+          </p>
+        {/if}
         <div class="choices">
           {#each destinations as destination (destination.id)}
             <button class="door-btn choice" onclick={() => choose(destination.label)}>
@@ -317,8 +338,12 @@
         {/if}
         {#if door.notice.offerLine}
           {@const offer = door.notice.offerLine}
-          <button class="door-btn primary" onclick={() => joinLine(offer.studentId, offer.destination)}>Join the line</button>
+          <button class="door-btn primary" onclick={() => joinLine(offer.studentId, offer.destination, offer.extra)}>Join the line</button>
           <button class="door-btn" onclick={dismissNotice}>Not now</button>
+        {:else if door.notice.offerTeacher}
+          {@const offer = door.notice.offerTeacher}
+          <button class="door-btn primary" onclick={dismissNotice}>OK</button>
+          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher: let them go</button>
         {:else}
           <button class="door-btn" onclick={dismissNotice}>Done</button>
         {/if}
@@ -331,6 +356,7 @@
       <div class="sheet">
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
+          {#if lettingGo}<p class="lede small">This student will get an extra pass.</p>{/if}
           <form onsubmit={submitPin}>
             <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} {@attach focusOnShow} />
             <button class="door-btn primary">Unlock</button>
@@ -417,6 +443,17 @@
 
   .small {
     font-size: 14px;
+  }
+
+  .allowance {
+    margin-top: 6px;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--door-accent);
+  }
+
+  .allowance.used-up {
+    color: var(--door-out);
   }
 
   .door-head {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { classPasses, findClass, removeStudent, restoreStudent } from '#lib/account.svelte.ts';
+  import { account, classPasses, findClass, giftsToday, giveExtraPass, removeStudent, restoreStudent } from '#lib/account.svelte.ts';
+  import { usedBy } from '#lib/allowance.ts';
+  import { link } from '#lib/link.svelte.ts';
   import EditStudentDialog from '#lib/EditStudentDialog.svelte';
   import Icon from '#lib/Icon.svelte';
   import type { Student } from '#lib/types.ts';
@@ -9,7 +11,7 @@
 
   const cls = $derived(findClass(page.params.id ?? '')!);
 
-  type SortKey = 'minutesWeek' | 'week' | 'today' | 'total' | 'minutesTotal' | 'overdue' | 'name';
+  type SortKey = 'minutesWeek' | 'week' | 'today' | 'total' | 'minutesTotal' | 'overdue' | 'allowanceUsed' | 'name';
   let sortBy = $state<SortKey>('minutesWeek');
   let open = $state('');
   let editing = $state(null as Student | null);
@@ -18,8 +20,18 @@
     return cls.students.find((student) => student.id === id);
   }
 
+  const allowance = $derived(account.passAllowance);
+  // An Extra Pass given here only helps if the kiosk can hear about it today.
+  const kioskReachable = $derived(account.kiosk?.kind === 'this-computer' || link.status === 'live');
+
   const rows = $derived.by(() => {
-    const summaries = studentSummaries(cls, classPasses(cls.id));
+    const passes = classPasses(cls.id);
+    const summaries = studentSummaries(cls, passes).map((summary) => ({
+      ...summary,
+      exempt: !!studentFor(summary.id)?.exempt,
+      allowanceUsed: usedBy(allowance, cls.id, summary.id, passes),
+      gift: giftsToday().some((gift) => gift.classId === cls.id && gift.studentId === summary.id),
+    }));
     const key = sortBy;
     if (key === 'name') return summaries.sort((a, b) => a.name.localeCompare(b.name));
     return summaries.sort((a, b) => b[key] - a[key] || a.name.localeCompare(b.name));
@@ -33,6 +45,9 @@
     { key: 'minutesTotal', label: 'Min. all time' },
     { key: 'overdue', label: 'Overdue' },
   ];
+  const allColumns = $derived(
+    allowance.enabled ? [{ key: 'allowanceUsed' as SortKey, label: 'Passes used' }, ...columns] : columns,
+  );
 
   function toggle(summary: StudentSummary) {
     open = open === summary.id ? '' : summary.id;
@@ -58,7 +73,7 @@
             <th aria-sort={sortBy === 'name' ? 'ascending' : 'none'}>
               <button class="btn btn-small btn-quiet" onclick={() => (sortBy = 'name')}>Student</button>
             </th>
-            {#each columns as column (column.key)}
+            {#each allColumns as column (column.key)}
               <th class="num" aria-sort={sortBy === column.key ? 'descending' : 'none'}>
                 <button class="btn btn-small btn-quiet" style:color={sortBy === column.key ? 'var(--accent)' : ''} onclick={() => (sortBy = column.key)}>
                   {column.label}
@@ -74,7 +89,31 @@
               <td>
                 <strong>{summary.name}</strong>
                 {#if summary.former}<span class="badge">Former</span>{/if}
+                {#if allowance.enabled && !summary.exempt && !summary.former && summary.allowanceUsed >= allowance.passes}
+                  <span class="badge warn">Out of passes</span>
+                  {#if summary.gift}
+                    <span class="badge ok">Extra Pass given</span>
+                  {:else if kioskReachable}
+                    <button
+                      class="btn btn-small"
+                      onclick={(event) => { event.stopPropagation(); giveExtraPass(cls.id, summary.id); }}
+                    >
+                      Give an Extra Pass
+                    </button>
+                  {:else}
+                    <span class="muted small">The kiosk is offline, so let them go at the kiosk with your PIN.</span>
+                  {/if}
+                {/if}
               </td>
+              {#if allowance.enabled}
+                <td class="num">
+                  {#if summary.exempt}
+                    <span class="badge">Exempt</span>
+                  {:else}
+                    {summary.allowanceUsed} of {allowance.passes}
+                  {/if}
+                </td>
+              {/if}
               <td class="num">{summary.today}</td>
               <td class="num">{summary.week}</td>
               <td class="num"><strong>{summary.minutesWeek}</strong></td>
@@ -104,7 +143,7 @@
             </tr>
             {#if open === summary.id}
               <tr class="detail">
-                <td colspan="8">
+                <td colspan={allColumns.length + 2}>
                   {#if summary.passes.length}
                     <ul class="trips">
                       {#each summary.passes.slice(0, 15) as pass (pass.id)}
@@ -114,6 +153,7 @@
                           <span>
                             {#if !pass.inAt}still out{:else if hasRealDuration(pass)}{duration(pass)} min{:else}return unknown{/if}
                             {#if isOverdue(pass)}<span class="badge warn">Overdue</span>{/if}
+                            {#if pass.extra}<span class="badge">Extra</span>{/if}
                           </span>
                         </li>
                       {/each}

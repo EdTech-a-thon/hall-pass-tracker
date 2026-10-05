@@ -20,6 +20,8 @@
   let color = $state<DestinationColor>(destination?.color ?? 'green');
   // svelte-ignore state_referenced_locally
   let icon = $state<DestinationIcon>(destination?.icon ?? 'map-pin');
+  // svelte-ignore state_referenced_locally
+  let counts = $state(destination?.countsTowardAllowance !== false);
   let error = $state('');
 
   const colorNames = Object.keys(destinationColors) as DestinationColor[];
@@ -51,7 +53,9 @@
       error = 'Minutes should be between 1 and 120, or left empty for no time limit.';
       return;
     }
-    saveDestination({ id: destination?.id ?? newId(), label: name, minutes: limit, color, icon });
+    const saved: Destination = { id: destination?.id ?? newId(), label: name, minutes: limit, color, icon };
+    if (!counts) saved.countsTowardAllowance = false;
+    saveDestination(saved);
     onClose();
   }
 
@@ -83,6 +87,14 @@
       Minutes the trip should take (optional)
       <input type="number" min="1" max="120" bind:value={minutes} placeholder="No time limit" style="max-width:160px" />
       <span class="muted small" style="font-weight:500">Leave it empty if this trip has no time limit. It'll never show as overdue.</span>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={counts} />
+      <span>
+        Counts toward the Pass Allowance
+        <span class="muted small">Untick for trips that shouldn't use up a student's passes, like the Nurse.</span>
+      </span>
     </label>
 
     <div class="field">

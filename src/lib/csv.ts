@@ -7,7 +7,7 @@ function cell(value: string | number) {
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-const headings = ['Date', 'Student', 'Destination', 'Left', 'Returned', 'Minutes out', 'Expected', 'Overdue', 'Ended by', 'Corrected'];
+const headings = ['Date', 'Student', 'Destination', 'Left', 'Returned', 'Minutes out', 'Expected', 'Overdue', 'Extra', 'Ended by', 'Corrected'];
 
 const endings: Record<string, string> = {
   student: 'student',
@@ -33,6 +33,7 @@ export function passesToCsv(passes: Pass[]) {
       pass.inAt && hasRealDuration(pass) ? duration(pass) : '',
       pass.minutes || '',
       isOverdue(pass) ? 'yes' : '',
+      pass.extra ? 'yes' : '',
       pass.inAt ? endings[pass.endedBy ?? 'student'] : 'still out',
       pass.corrected ? 'yes' : '',
     ]);

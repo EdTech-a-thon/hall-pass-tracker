@@ -175,6 +175,24 @@ textarea {
   font-size: 13px;
 }
 
+/* A checkbox with a label and a quieter explanation under it. */
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.check input {
+  margin-top: 2px;
+}
+
+.check .muted {
+  display: block;
+  font-weight: 500;
+}
+
 .field {
   display: grid;
   gap: 6px;
