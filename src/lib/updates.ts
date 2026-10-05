@@ -21,7 +21,7 @@ export const updates: Update[] = [
       },
       {
         title: 'Let a student go with one click',
-        text: 'From the Now tab, let a student past No-Pass Time, a full line or a used-up allowance. Each is marked in their history, so your records stay complete.',
+        text: 'Sometimes a student really needs to go when they normally couldn’t: during the times you’ve blocked passes (like the first and last ten minutes of class), when their destination is full, or after they’ve used up their passes. From the Now tab, let them go in one click. It’s marked in their history, so your records stay complete.',
         art: 'let-go',
       },
       {
