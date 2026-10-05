@@ -82,6 +82,15 @@ A pass that has lasted longer than its destination's expected minutes. Only the
 teacher's dashboard says a pass is overdue; kiosk mode never does.
 _Avoid_: Late, over time, flagged
 
+**Overdue Reminder**:
+The teacher's laptop drawing the teacher's attention to a pass the moment it
+becomes Overdue, naming the student, where they went and how long they have been
+gone. It lasts until the student is back, whether they signed in or the teacher
+marked them back; it cannot be waved away while they are still out. It never
+appears on the kiosk, so when the teacher's own computer is the kiosk there is
+no reminder, and overdue passes are reviewed afterwards in the class's history.
+_Avoid_: Alert, alarm, notification, flag
+
 **Correction**:
 A teacher's after-the-fact change to a pass — giving it to the student it really
 belonged to, or adjusting when it started or ended. The pass is changed in place
