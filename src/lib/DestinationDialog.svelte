@@ -66,7 +66,7 @@
 </script>
 
 <Modal onClose={onClose} labelledby="destination-title">
-  <form class="dialog" style="width:min(560px,100%)" onsubmit={save}>
+  <form class="dialog destination-dialog" style="width:min(560px,100%)" onsubmit={save}>
     <div class="dialog-head">
       <h2 id="destination-title">{destination ? `Edit ${destination.label}` : 'New destination'}</h2>
       <span
@@ -113,7 +113,7 @@
       </div>
     </div>
 
-    <div class="field">
+    <div class="field icon-field">
       <span>Icon</span>
       <input type="search" placeholder="Search icons, e.g. water, book, bus" bind:value={iconSearch} aria-label="Search icons" />
       <div class="icon-groups">

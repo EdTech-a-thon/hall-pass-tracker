@@ -876,6 +876,28 @@ tr.detail td {
   padding: 2px;
 }
 
+/* The destination dialog never scrolls as a whole; only its icon list does, shrinking to fit the screen. */
+.destination-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.destination-dialog > * {
+  flex: none;
+}
+
+.destination-dialog > .icon-field {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.icon-field .icon-groups {
+  min-height: 0;
+}
+
 .swatch {
   width: 30px;
   height: 30px;
