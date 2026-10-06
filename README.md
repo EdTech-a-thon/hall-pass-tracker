@@ -79,6 +79,18 @@ To try a laptop and a kiosk in one browser, open them at two different
 addresses, e.g. `http://127.0.0.1:8000` and `http://192.168.0.29:8000`. Each
 address keeps its own saved data, just like two separate devices.
 
+### Guides
+
+The how-to guides at `/guides` are built into finished pages (not run only in
+the browser like the app), so search engines can read them. To add one:
+
+1. Add it to `src/lib/guides.ts` and write its page in `src/routes/guides/<slug>/`.
+2. Write a script in `scripts/guides/<slug>.spec.ts` that clicks through the
+   steps in the real app, circling what to click with `circle()` and saving
+   each picture with `snap()`.
+3. Run `bun run guides:screenshots`. It retakes every guide's pictures, so run
+   it again whenever the app's look changes.
+
 ## Learn more
 
 - The project's vocabulary is in [CONTEXT.md](CONTEXT.md).

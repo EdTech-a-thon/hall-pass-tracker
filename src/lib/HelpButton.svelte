@@ -21,6 +21,9 @@
         </button>
       </div>
       <p>
+        Step-by-step help is in the <a href="/guides">Guides</a>.
+      </p>
+      <p>
         If you're running into trouble or have suggestions, email us at
         <a href={supportMailto('Happy Hallways')}>{supportEmail}</a>.
       </p>

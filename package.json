@@ -23,7 +23,8 @@
     "format": "prettier --write .",
     "test": "playwright test",
     "icons": "node scripts/generate-icons.mjs",
-    "demo": "bun scripts/make-demo.ts"
+    "demo": "bun scripts/make-demo.ts",
+    "guides:screenshots": "playwright test -c playwright.guides.config.ts"
   },
   "type": "module",
   "dependencies": {
