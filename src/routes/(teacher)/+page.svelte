@@ -30,7 +30,7 @@
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
   import MenuSelect from '#lib/MenuSelect.svelte';
-  import { answerRequest, canAnswer, cancelPairing, kioskState, link, refreshLink } from '#lib/link.svelte.ts';
+  import { answerRequest, canAnswer, cancelPairing, kioskOnline, kioskState, reconnectNow, refreshLink } from '#lib/link.svelte.ts';
   import PairingDialog from '#lib/PairingDialog.svelte';
   import PassMarks from '#lib/PassMarks.svelte';
   import QuietScene from '#lib/QuietScene.svelte';
@@ -171,6 +171,27 @@
 
   const kiosk = $derived(kioskState());
   let pairing = $state(false);
+
+  /**
+   * Reconnect: try now, and say so for 20 seconds. If the kiosk still hasn't
+   * answered, list what to check, with pairing again as the last resort.
+   */
+  let reconnect = $state<'idle' | 'trying' | 'stuck'>('idle');
+  let reconnectTimer = 0;
+  function reconnectKiosk() {
+    reconnectNow();
+    reconnect = 'trying';
+    clearTimeout(reconnectTimer);
+    reconnectTimer = window.setTimeout(() => {
+      if (!kioskOnline()) reconnect = 'stuck';
+    }, 20_000);
+  }
+  $effect(() => {
+    if (kioskOnline()) {
+      clearTimeout(reconnectTimer);
+      reconnect = 'idle';
+    }
+  });
 
   function thisComputer() {
     pairing = false;
@@ -369,14 +390,33 @@
           <button class="btn btn-small" onclick={() => (pairing = true)}>Pair a device instead</button>
           <button class="btn btn-small btn-quiet" onclick={disconnect}>Stop using it</button>
         </div>
-      {:else}
-        {#if link.status !== 'live' && account.kiosk.lastSeenAt}
-          <p class="muted small">Last connected at {time(account.kiosk.lastSeenAt)}. It keeps working on its own.</p>
-        {/if}
+      {:else if kioskOnline()}
         <div class="kiosk-actions">
-          <button class="btn btn-small" onclick={() => (pairing = true)}>Pair a different device</button>
           <button class="btn btn-small btn-quiet" onclick={disconnect}>Disconnect</button>
         </div>
+      {:else}
+        <p class="muted small">
+          {account.kiosk.lastSeenAt ? `Last connected at ${time(account.kiosk.lastSeenAt)}. ` : ''}It keeps working on its
+          own, and sends its passes once it's back.
+        </p>
+        {#if reconnect === 'trying'}
+          <p class="trying" role="status"><span class="status-dot warn"></span>Trying to reach the kiosk…</p>
+        {:else}
+          <div class="kiosk-actions">
+            <button class="btn btn-small btn-primary" onclick={reconnectKiosk}>Reconnect</button>
+            <button class="btn btn-small btn-quiet" onclick={disconnect}>Disconnect</button>
+          </div>
+        {/if}
+        {#if reconnect === 'stuck'}
+          <div class="stuck">
+            <strong>Still can't reach it. Check that:</strong>
+            <ul>
+              <li>Happy Hallways is open on the kiosk. You can tap <em>Reconnect</em> there too.</li>
+              <li>The kiosk is on Wi-Fi.</li>
+            </ul>
+            <button class="link-button" onclick={() => (pairing = true)}>Still stuck? Pair it again</button>
+          </div>
+        {/if}
       {/if}
     </section>
 
@@ -394,9 +434,7 @@
         {#if !canAnswer() && requests.length}
           <div class="notice-bar" role="status">
             <Icon name="alert-triangle" />
-            {link.status === 'taken'
-              ? 'Happy Hallways is open in another tab, so answer there.'
-              : 'The kiosk is offline, so it can’t hear your answer. Let students go at the kiosk with your PIN.'}
+            The kiosk is offline, so it can’t hear your answer. Let students go at the kiosk with your PIN.
           </div>
         {/if}
         {#if requests.length}
@@ -596,6 +634,40 @@
     color: var(--muted);
     font-size: 13px;
     font-weight: 700;
+  }
+
+  .trying {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+
+  .stuck {
+    display: grid;
+    gap: 6px;
+    font-size: 13.5px;
+  }
+
+  .stuck ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+  }
+
+  .link-button {
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
   }
 
   .kiosk-actions {

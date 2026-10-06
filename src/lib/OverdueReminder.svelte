@@ -2,7 +2,7 @@
   import { afterNavigate } from '$app/navigation';
   import { account, markReturned, openPasses } from './account.svelte';
   import Icon from './Icon.svelte';
-  import { link } from './link.svelte';
+  import { kioskOnline } from './link.svelte';
   import { duration, isOverdue } from './passes';
   import Toast from './Toast.svelte';
 
@@ -26,7 +26,7 @@
   );
 
   /** A paired kiosk that can't reach this tab may already have signed these students back in. */
-  const mayBeOutOfDate = $derived(account.kiosk?.kind === 'device' && link.status !== 'live');
+  const mayBeOutOfDate = $derived(account.kiosk?.kind === 'device' && !kioskOnline());
 
   // Put the count at the front of the tab's title, so a teacher in another tab still sees it.
   const titlePrefix = /\(\d+\) Overdue · /;

@@ -571,10 +571,20 @@ export function waitingRequests() {
  * The teacher answered. The kiosk does what was decided; the laptop drops the
  * Request straight away rather than waiting to hear back, and keeps a "no".
  */
-export function answered(request: PassRequest, approve: boolean) {
+export function answered(request: PassRequest, approve: boolean, relay = false) {
   account.requests = account.requests.filter((each) => each.id !== request.id);
   if (!approve) account.deniedRequests.push({ ...$state.snapshot(request), deniedAt: now() });
+  if (relay) account.relayedAnswers = [...(account.relayedAnswers ?? []), { requestId: request.id, approve }];
   save();
+}
+
+/** The tab connected to the kiosk takes the answers other tabs left for it. */
+export function takeRelayedAnswers() {
+  const answers = account.relayedAnswers ?? [];
+  if (!answers.length) return [];
+  account.relayedAnswers = [];
+  save();
+  return answers;
 }
 
 export function markReturned(passId: string) {

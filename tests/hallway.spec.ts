@@ -194,7 +194,8 @@ test('a device paired from a second tab connects to the tab already holding the 
   const newerTab = await laptop.newPage();
   await skipTips(newerTab);
   await newerTab.goto('/kiosk');
-  await expect(newerTab.locator('.status-box')).toContainText('Open in another tab', { timeout: 20_000 });
+  // Another tab holds the connection, but the kiosk is still online as far as this tab can tell.
+  await expect(newerTab.locator('.status-box')).toContainText('Kiosk online', { timeout: 20_000 });
   await newerTab.getByRole('button', { name: 'Pair a different device' }).click();
   await expect(newerTab.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
   await newTablet.goto(`/door?code=${(await newerTab.locator('.pair-code').textContent())!.trim()}`);
@@ -209,6 +210,15 @@ test('a device paired from a second tab connects to the tab already holding the 
   await expect(newTablet.getByText('Pass approved', { exact: true })).toBeVisible();
   await goHome(newerTab);
   await expect(newerTab.locator('.stat', { hasText: 'Out of class now' })).toContainText('1', { timeout: 15_000 });
+
+  // A request approved in the newer tab reaches the kiosk through the older one.
+  await newTablet.getByRole('button', { name: /Jordan E\./ }).click();
+  await newTablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await newTablet.getByRole('button', { name: 'Ask my teacher' }).click();
+  await newTablet.getByRole('button', { name: 'Done' }).click();
+  const request = newerTab.locator('.requests li', { hasText: 'Jordan E.' });
+  await request.getByRole('button', { name: 'Approve' }).click({ timeout: 15_000 });
+  await expect(newTablet.getByRole('button', { name: /Jordan E\..*Out · Bathroom/ })).toBeVisible({ timeout: 15_000 });
 });
 
 test('students line up when the pass limit is reached', async ({ page }) => {
@@ -867,4 +877,46 @@ test("a schedule's old first and last minutes rules move onto its periods", asyn
   await expect(page.getByLabel('No passes, first')).toHaveValue('10');
   await expect(page.getByLabel('No passes, last')).toHaveValue('5');
   await expect(page.locator('.grid .band')).toHaveCount(2);
+});
+
+test('an offline kiosk can reconnect, or pair again without losing passes it has saved', async ({ browser }) => {
+  const laptopContext = await browser.newContext();
+  const laptop = await laptopContext.newPage();
+  const tablet = await (await browser.newContext()).newPage();
+  await skipTips(laptop);
+
+  await createClassWithRoster(laptop, 'Period 4');
+  await setPin(laptop);
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  await tablet.goto(`/door?code=${(await laptop.locator('.pair-code').textContent())!.trim()}`);
+  await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // The laptop goes away. The kiosk says so, offers to reconnect, and keeps working.
+  await laptop.close();
+  await expect(tablet.getByRole('button', { name: 'Reconnect' })).toBeVisible({ timeout: 30_000 });
+  await tablet.getByRole('button', { name: /Jordan E\./ }).click();
+  await tablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+
+  // Back on the laptop, the teacher pairs it again; the tablet takes the new code from its teacher menu.
+  const again = await laptopContext.newPage();
+  await skipTips(again);
+  await again.goto('/kiosk');
+  await again.getByRole('button', { name: 'Pair a different device' }).click();
+  await expect(again.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  const code = (await again.locator('.pair-code').textContent())!.trim();
+  await tablet.getByRole('button', { name: 'Teacher' }).click();
+  await tablet.getByLabel('PIN').fill('2468');
+  await tablet.getByRole('button', { name: 'Unlock' }).click();
+  await tablet.getByRole('button', { name: 'Pair again with a code' }).click();
+  await tablet.getByLabel('Pairing code').fill(code);
+  await tablet.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(tablet.getByRole('button', { name: /Jordan E\..*Out/ })).toBeVisible();
+
+  // The pass made while offline reached the laptop.
+  await expect(again.getByRole('dialog')).toBeHidden({ timeout: 10_000 });
+  await again.getByRole('link', { name: 'History', exact: true }).click();
+  await expect(again.getByRole('row', { name: /Jordan E\./ })).toContainText('Still out', { timeout: 15_000 });
 });

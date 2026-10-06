@@ -195,6 +195,8 @@ export type Account = {
   /** Every waiting Request as the kiosk last reported it. The kiosk is in charge of them. */
   requests: PassRequest[];
   deniedRequests: DeniedRequest[];
+  /** Answers given in a tab that isn't the one connected to the kiosk, for that tab to pass on. */
+  relayedAnswers?: { requestId: string; approve: boolean }[];
   /** Each Popup this teacher has closed, and when. */
   seenPopups: Record<string, string>;
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */

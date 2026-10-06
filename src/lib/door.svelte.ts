@@ -699,6 +699,33 @@ export async function connectToLaptop() {
   }, 4000);
 }
 
+/**
+ * "Reconnect": try the laptop right now. The kiosk keeps trying on its own,
+ * but after a long outage it waits up to a minute between tries; this skips
+ * the wait. It changes nothing else, so it needs no PIN.
+ */
+export function reconnectNow() {
+  if (!door.device || door.status === 'live') return;
+  if (!peer || peer.destroyed) {
+    peer = null;
+    connectToLaptop();
+  } else if (peer.disconnected) {
+    // Once the matchmaking server answers, 'open' dials the laptop.
+    peer.reconnect();
+  } else {
+    dial();
+  }
+}
+
+/** Closes the connection to the laptop, keeping everything this device holds. */
+function hangUp() {
+  clearInterval(retryTimer);
+  connection?.close();
+  connection = null;
+  peer?.destroy();
+  peer = null;
+}
+
 /** Stops being a kiosk. Anything not yet handed over is lost, so the page warns first. */
 export function forgetDevice() {
   clearInterval(retryTimer);
@@ -716,11 +743,13 @@ export function forgetDevice() {
  * and only the teacher's own computer can be the kiosk.
  */
 export async function pairWithCode(code: string) {
+  /** A device pairing again, from the teacher menu, stays the kiosk until the new pairing works. */
+  const previous = door.device ? $state.snapshot(door.device) : null;
   door.pairing = { state: 'connecting', message: '', slow: false, problem: null };
   // A wrong code is only reported once the matchmaking server gives up on it,
   // which can take a while; meanwhile, suggest checking the code.
   const slowTimer = setTimeout(() => (door.pairing.slow = true), 6000);
-  door.status = 'offline';
+  if (!previous) door.status = 'offline';
   const temporary = await createPeer();
   let done = false;
   let attempt: DataConnection | null = null;
@@ -767,14 +796,19 @@ export async function pairWithCode(code: string) {
       done = true;
       clearTimeout(timer);
       clearTimeout(slowTimer);
+      // Pairing again keeps whatever this device hasn't handed over yet.
+      const unsent = previous ? previous.passes.filter((pass) => previous.outbox.includes(pass.id)) : [];
+      const passes = message.setup.passes.filter((pass) => !pass.inAt);
+      mergeInto(passes, unsent);
+      if (previous) hangUp();
       door.device = {
         laptopPeerId: message.laptopPeerId,
         kioskId: message.kioskId,
         secret: message.secret,
         setup: fromOlderLaptop(message.setup),
         activeClass: message.setup.activeClass,
-        passes: message.setup.passes.filter((pass) => !pass.inAt),
-        outbox: [],
+        passes,
+        outbox: unsent.map((pass) => pass.id),
       };
       saveDevice();
       door.pairing = { state: 'idle', message: '', slow: false, problem: null };

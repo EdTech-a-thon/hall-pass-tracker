@@ -29,6 +29,7 @@
     openPassFor,
     outCount,
     pairWithCode,
+    reconnectNow,
     requestFor,
     requestPass,
     settleRequests,
@@ -102,6 +103,36 @@
   let pin = $state('');
   let pinError = $state('');
   let confirmForget = $state(false);
+  /** Pairing this device again from the teacher menu, with a new code from the laptop. */
+  let repairing = $state(false);
+  let repairCode = $state('');
+  let repairedFrom = '';
+  // Once the new pairing takes, the menu's job is done.
+  $effect(() => {
+    if (repairing && door.device && door.device.kioskId !== repairedFrom) {
+      repairing = false;
+      teacher = 'closed';
+    }
+  });
+
+  /** "Reconnect" shows it's trying for a few seconds, so a tap never looks ignored. */
+  let reconnecting = $state(false);
+  function reconnect() {
+    reconnectNow();
+    reconnecting = true;
+    setTimeout(() => (reconnecting = false), 8000);
+  }
+
+  function startRepair() {
+    repairing = true;
+    repairCode = '';
+    repairedFrom = door.device?.kioskId ?? '';
+  }
+
+  function submitRepair(event: SubmitEvent) {
+    event.preventDefault();
+    if (/^\d{6}$/.test(repairCode)) pairWithCode(repairCode);
+  }
 
   onMount(() => {
     // Opening the door screen locks it (on the laptop) or connects it (on a paired device).
@@ -167,6 +198,7 @@
     pin = '';
     pinError = '';
     confirmForget = false;
+    repairing = false;
   }
 
   function submitPin(event: SubmitEvent) {
@@ -265,17 +297,18 @@
         <p class="door-eyebrow">{cls?.name ?? 'Happy Hallways'}</p>
         <h1>{cls || !following ? 'Tap your name' : 'No class right now'}</h1>
       </div>
-      {#if paired}
-        <p class="connection" class:live={door.status === 'live'}>
+      {#if paired && door.status === 'live'}
+        <p class="connection live"><span class="dot"></span>Connected</p>
+      {:else if paired}
+        <div class="connection">
           <span class="dot"></span>
-          {#if door.status === 'live'}
-            Connected
-          {:else if waitingCount()}
-            Offline · {waitingCount()} {waitingCount() === 1 ? 'pass' : 'passes'} saved here
-          {:else}
-            Offline
-          {/if}
-        </p>
+          <span>
+            Offline{waitingCount() ? ` · ${waitingCount()} ${waitingCount() === 1 ? 'pass' : 'passes'} saved here` : ''}
+          </span>
+          <button class="reconnect" onclick={reconnect} disabled={reconnecting}>
+            {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+        </div>
       {/if}
     </header>
 
@@ -508,6 +541,31 @@
             <button class="door-btn primary">Unlock</button>
           </form>
           {#if pinError}<p class="door-error" role="alert">{pinError}</p>{/if}
+        {:else if repairing}
+          <h2>Pair again</h2>
+          <p class="lede small">
+            On the teacher's laptop, open Happy Hallways and choose <strong>Pair it again</strong> on Home (or
+            <strong>Kiosk → Pair a different device</strong>). Type the 6-digit code here. Passes this device hasn't sent
+            yet are kept.
+          </p>
+          <form onsubmit={submitRepair}>
+            <input
+              class="code-input"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="6"
+              aria-label="Pairing code"
+              placeholder="000000"
+              bind:value={repairCode}
+              {@attach focusOnShow}
+            />
+            <button class="door-btn primary" disabled={!/^\d{6}$/.test(repairCode) || door.pairing.state === 'connecting'}>
+              {door.pairing.state === 'connecting' ? 'Connecting…' : 'Connect'}
+            </button>
+          </form>
+          {#if door.pairing.state === 'error'}
+            <p class="door-error" role="alert">{door.pairing.message}</p>
+          {/if}
         {:else if confirmForget}
           <h2>Stop being the kiosk?</h2>
           {#if waitingCount()}
@@ -546,6 +604,7 @@
           {#if local}
             <button class="door-btn" onclick={exitToTeacher}><Icon name="unlock" size={16} />Exit kiosk</button>
           {:else}
+            <button class="door-btn" onclick={startRepair}>Pair again with a code</button>
             <button class="door-btn" onclick={() => (confirmForget = true)}>Unpair this device</button>
           {/if}
         {/if}
@@ -623,6 +682,21 @@
     color: var(--door-muted);
     font-size: 14px;
     font-weight: 700;
+  }
+
+  .reconnect {
+    padding: 6px 12px;
+    border: 1px solid var(--door-line);
+    border-radius: 999px;
+    background: var(--door-tile);
+    color: var(--door-text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .reconnect:disabled {
+    color: var(--door-muted);
+    cursor: default;
   }
 
   .connection .dot {
