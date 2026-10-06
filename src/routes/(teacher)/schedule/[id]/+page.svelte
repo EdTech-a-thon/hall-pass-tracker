@@ -178,55 +178,59 @@
               Periods can't overlap.
             </p>
           </div>
-          {#each sortedPeriods(schedule) as period (period.id)}
-            <div class="time-row">
-              <select
-                aria-label="Class"
-                value={period.classId ?? ''}
-                onchange={(event) =>
-                  change((draft) => (draft.periods.find((each) => each.id === period.id)!.classId = event.currentTarget.value || null))}
-              >
-                <option value="">No class</option>
-                {#each classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
-              </select>
-              <input type="time" aria-label="Starts" value={period.start} onchange={(event) => setPeriodTime(event, period.id, 'start')} />
-              <input type="time" aria-label="Ends" value={period.end} onchange={(event) => setPeriodTime(event, period.id, 'end')} />
-              <button
-                class="btn btn-quiet btn-small"
-                aria-label="Remove this period"
-                onclick={() => change((draft) => (draft.periods = draft.periods.filter((each) => each.id !== period.id)))}
-              >
-                <Icon name="x" size={15} />
-              </button>
-            </div>
-            {#if period.classId}
-              <div class="no-pass-row small">
-                <Icon name="ban" size={14} />
-                <span class="muted">No passes: first</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="120"
-                  aria-label="First minutes with no passes"
-                  value={period.noPass?.first ?? 0}
-                  onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'first')}
-                />
-                <span class="muted">min, last</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="120"
-                  aria-label="Last minutes with no passes"
-                  value={period.noPass?.last ?? 0}
-                  onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'last')}
-                />
-                <span class="muted">min</span>
+          <div class="period-list">
+            {#each sortedPeriods(schedule) as period (period.id)}
+              <div class="period-item">
+                <div class="time-row">
+                  <select
+                    aria-label="Class"
+                    value={period.classId ?? ''}
+                    onchange={(event) =>
+                      change((draft) => (draft.periods.find((each) => each.id === period.id)!.classId = event.currentTarget.value || null))}
+                  >
+                    <option value="">No class</option>
+                    {#each classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
+                  </select>
+                  <input type="time" aria-label="Starts" value={period.start} onchange={(event) => setPeriodTime(event, period.id, 'start')} />
+                  <input type="time" aria-label="Ends" value={period.end} onchange={(event) => setPeriodTime(event, period.id, 'end')} />
+                  <button
+                    class="btn btn-quiet btn-small"
+                    aria-label="Remove this period"
+                    onclick={() => change((draft) => (draft.periods = draft.periods.filter((each) => each.id !== period.id)))}
+                  >
+                    <Icon name="x" size={15} />
+                  </button>
+                </div>
+                {#if period.classId}
+                  <div class="no-pass-row small">
+                    <Icon name="ban" size={14} />
+                    <span class="muted">No passes: first</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      aria-label="First minutes with no passes"
+                      value={period.noPass?.first ?? 0}
+                      onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'first')}
+                    />
+                    <span class="muted">min, last</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      aria-label="Last minutes with no passes"
+                      value={period.noPass?.last ?? 0}
+                      onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'last')}
+                    />
+                    <span class="muted">min</span>
+                  </div>
+                {/if}
+                {#if problem?.id === period.id}<p class="form-error" role="alert">{problem.text}</p>{/if}
               </div>
-            {/if}
-            {#if problem?.id === period.id}<p class="form-error" role="alert">{problem.text}</p>{/if}
-          {:else}
-            <p class="muted small">No periods yet. Add one here, or drag across the calendar.</p>
-          {/each}
+            {:else}
+              <p class="muted small">No periods yet. Add one here, or drag across the calendar.</p>
+            {/each}
+          </div>
           <div><button class="btn btn-small" onclick={addPeriod}><Icon name="plus" size={14} />Add a period</button></div>
           {#if !classes.length}
             <p class="muted small"><a href="/classes/new">Create a class</a> to put it in a period.</p>
@@ -407,11 +411,30 @@
     flex: 1;
   }
 
+  .period-list {
+    display: grid;
+  }
+
+  /* Each period's rows, set apart from the next by a line. */
+  .period-item {
+    display: grid;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .period-item:first-child {
+    padding-top: 0;
+  }
+
+  .period-item + .period-item {
+    border-top: 1px solid var(--border);
+  }
+
   .no-pass-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin: -4px 0 4px 4px;
+    margin-left: 4px;
     color: var(--warn);
   }
 
