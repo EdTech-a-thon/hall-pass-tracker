@@ -4,13 +4,13 @@
   import { account, keepToSchedule } from '#lib/account.svelte.ts';
   import { isPairedDevice } from '#lib/door.svelte.ts';
   import GettingStarted from '#lib/GettingStarted.svelte';
-  import Icon from '#lib/Icon.svelte';
   import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
   import { refreshLink } from '#lib/link.svelte.ts';
   import { onboarding } from '#lib/onboarding.svelte.ts';
   import OverdueReminder from '#lib/OverdueReminder.svelte';
   import Sidebar from '#lib/Sidebar.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
+  import Toast from '#lib/Toast.svelte';
   import WhatsChanged from '#lib/WhatsChanged.svelte';
 
   let { children } = $props();
@@ -66,18 +66,43 @@
   <div class="shell">
     <Sidebar />
     <main class="main">
-      {#if updated.current}
-        <div class="notice-bar" role="status">
-          <Icon name="sparkles" />
-          <span>Happy Hallways has been updated. Refresh to get the newest version.</span>
-          <button class="btn btn-small" onclick={() => leaveTo(location.href)}>Refresh</button>
-        </div>
-      {/if}
-      <OverdueReminder />
       {@render children()}
       <SiteFooter />
     </main>
   </div>
-  {#if onboarding.showChecklist}<GettingStarted />{/if}
+  <!-- Messages for every page float in this corner, above the checklist, so the page never shifts. -->
+  <div class="corner">
+    {#if updated.current}
+      <Toast icon="sparkles">
+        <div class="update">
+          <span>Happy Hallways has been updated. Refresh to get the newest version.</span>
+          <button class="btn btn-small" onclick={() => leaveTo(location.href)}>Refresh</button>
+        </div>
+      </Toast>
+    {/if}
+    <OverdueReminder />
+    {#if onboarding.showChecklist}<GettingStarted />{/if}
+  </div>
   <WhatsChanged />
 {/if}
+
+<style>
+  .corner {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 45;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    width: min(400px, calc(100vw - 40px));
+    pointer-events: none;
+  }
+
+  .update {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+</style>

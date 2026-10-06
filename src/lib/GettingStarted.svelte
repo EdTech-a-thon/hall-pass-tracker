@@ -88,12 +88,10 @@
 </aside>
 
 <style>
+  /* It sits in the teacher layout's corner, under any toasts. */
   .checklist {
-    position: fixed;
-    right: 20px;
-    bottom: 20px;
-    z-index: 45;
     width: 270px;
+    pointer-events: auto;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 12px;
