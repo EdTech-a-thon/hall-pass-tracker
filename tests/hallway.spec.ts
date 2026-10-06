@@ -15,6 +15,25 @@ async function setPin(page: Page) {
   await page.getByRole('button', { name: 'Save PIN' }).click();
 }
 
+/** One period on the teacher's schedule, from the Schedule tab's list. */
+async function addPeriod(page: Page, className: string, start: string, end: string) {
+  await page.getByRole('button', { name: 'Add a period' }).click();
+  const row = page.locator('.time-row').last();
+  await row.getByLabel('Class', { exact: true }).selectOption({ label: className });
+  await row.getByLabel('Ends').fill(end);
+  await row.getByLabel('Starts').fill(start);
+}
+
+/** A schedule where the class runs 9:00 to 10:00, with no passes in its first half hour, turned on. */
+async function scheduleNoPassesUntil930(page: Page, className: string) {
+  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await addPeriod(page, className, '09:00', '10:00');
+  await page.getByRole('button', { name: 'First or last minutes of class' }).click();
+  await page.getByLabel('Minutes').fill('30');
+  await page.getByRole('button', { name: 'Turn on My Schedule' }).click();
+  await expect(page.getByText('Following My Schedule.')).toBeVisible();
+}
+
 test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await createClassWithRoster(page, 'Period 1');
   await page.getByRole('link', { name: 'Students' }).click();
@@ -191,12 +210,7 @@ test('pop-ups close with Escape or a click outside', async ({ page }) => {
 test('no-pass times hold everyone back, but students can line up', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-10-05T09:10:00') });
   await createClassWithRoster(page, 'Period 1');
-  await page.getByRole('button', { name: 'Class settings' }).click();
-  await page.getByRole('button', { name: 'Add a no-pass time' }).click();
-  await page.getByLabel('No passes from').fill('09:00');
-  await page.getByLabel('No passes until').fill('09:30');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText(/No passes 9:00/)).toBeVisible();
+  await scheduleNoPassesUntil930(page, 'Period 1');
 
   await page.getByRole('link', { name: 'Pass Options' }).click();
   await page.getByRole('switch', { name: 'Let students line up' }).check();
@@ -480,11 +494,7 @@ test('each destination has its own limit, and only limited ones have a line', as
 test('the teacher lets students past no-pass time and a full line, and each is marked', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-10-05T09:10:00') });
   await createClassWithRoster(page, 'Period 3');
-  await page.getByRole('button', { name: 'Class settings' }).click();
-  await page.getByRole('button', { name: 'Add a no-pass time' }).click();
-  await page.getByLabel('No passes from').fill('09:00');
-  await page.getByLabel('No passes until').fill('09:30');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await scheduleNoPassesUntil930(page, 'Period 3');
   await page.getByRole('link', { name: 'Pass Options' }).click();
   await page.getByRole('switch', { name: 'Let students line up' }).check();
   await setPin(page);
@@ -546,11 +556,15 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await createClassWithRoster(page, 'Period 1');
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeHidden();
 
-  // A teacher whose saved data is from before the update, with one limit for every destination.
+  // A teacher whose saved data is from before both updates: one limit for every
+  // destination, and no-pass times set on the class.
   await page.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem('hallway.account')!);
     delete saved.seenUpdate;
     delete saved.permissions;
+    delete saved.schedules;
+    delete saved.currentScheduleId;
+    saved.classes[0].noPassTimes = [{ start: '09:00', end: '09:10' }];
     for (const destination of saved.destinations) delete destination.limit;
     saved.destinations.push({ id: 'nurse', label: 'Nurse', minutes: 15, color: 'pink', icon: 'stethoscope' });
     saved.passLimit = 2;
@@ -559,13 +573,18 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Each destination has its own limit' })).toBeVisible();
-  await page.getByRole('button', { name: 'Review destinations' }).click();
-  await expect(page).toHaveURL(/\/destinations$/);
-  await expect(page.getByRole('button', { name: /Nurse.*2 at a time/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'The kiosk can follow your schedule' })).toBeVisible();
+  await page.getByRole('button', { name: 'Set up your schedule' }).click();
+  await expect(page).toHaveURL(/\/schedule$/);
+  // The class's no-pass time moved to the schedule.
+  await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
+  await expect(page.getByLabel('No passes until')).toHaveValue('09:10');
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Where students can go' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'When each class is on the kiosk' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeHidden();
+  await page.getByRole('link', { name: 'Destinations' }).click();
+  await expect(page.getByRole('button', { name: /Nurse.*2 at a time/ })).toBeVisible();
 });
 
 test('a kiosk holding settings from the older version keeps its old limit', async ({ page }) => {
@@ -611,4 +630,74 @@ test('a kiosk holding settings from the older version keeps its old limit', asyn
   await page.getByRole('button', { name: /Maya C\./ }).click();
   await page.getByRole('button', { name: /^Bathroom/ }).click();
   await expect(page.getByText('Please wait in class')).toBeVisible();
+});
+
+test('on schedule, the kiosk changes class by itself until the teacher switches by hand', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-05T09:40:00') });
+  await createClassWithRoster(page, 'Period 1');
+  await createClassWithRoster(page, 'Period 2');
+  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await addPeriod(page, 'Period 1', '09:00', '09:50');
+  await addPeriod(page, 'Period 2', '09:55', '10:45');
+  await page.getByRole('button', { name: 'Turn on My Schedule' }).click();
+  await expect(page.getByText('Right now: Period 1')).toBeVisible();
+
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+  await expect(page.locator('.door-eyebrow').first()).toHaveText('Period 1');
+  await page.getByRole('button', { name: /Jordan E\./ }).click();
+  await page.getByRole('button', { name: /^Bathroom/ }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // Between periods there is no class, and the kiosk says what's next.
+  await page.clock.runFor('11:00');
+  await expect(page.getByRole('heading', { name: 'No class right now' })).toBeVisible();
+  await expect(page.getByText('Next: Period 2 at 9:55 AM')).toBeVisible();
+
+  // Then the next period's class comes on.
+  await page.clock.runFor('05:00');
+  await expect(page.locator('.door-eyebrow').first()).toHaveText('Period 2');
+
+  // Switching by hand asks first, then takes the kiosk off schedule.
+  await page.getByRole('button', { name: 'Teacher' }).click();
+  await page.getByLabel('PIN').fill('2468');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await page.getByRole('button', { name: 'Period 1', exact: true }).click();
+  await page.getByRole('button', { name: /Tap again/ }).click();
+  await expect(page.locator('.door-eyebrow').first()).toHaveText('Period 1');
+  await page.getByRole('button', { name: 'Teacher' }).click();
+  await page.getByLabel('PIN').fill('2468');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await page.getByRole('button', { name: 'Exit kiosk' }).click();
+  await expect(page.getByRole('link', { name: /Schedule.*Off · Manual/ })).toBeVisible();
+
+  // Jordan's pass ended when Period 1 left the kiosk.
+  await page.getByRole('link', { name: /^Period 1/ }).click();
+  await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('Class changed');
+});
+
+test('dragging on the calendar adds a no-pass time, and the teacher can stop passes by hand', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 1');
+  await page.getByRole('link', { name: /^Schedule/ }).click();
+  // The calendar starts at 7 AM, a minute and a half to the pixel: 9 AM is 180px down.
+  const grid = page.locator('.grid');
+  const box = (await grid.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 180);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + 225, { steps: 5 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Make it a no-pass time' }).click();
+  await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
+  await expect(page.getByLabel('No passes until')).toHaveValue('09:30');
+
+  // Off schedule, the teacher stops passes from the Now tab.
+  await setPin(page);
+  await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.getByRole('link', { name: /^Period 1/ }).click();
+  await page.getByRole('button', { name: 'No passes now' }).click();
+  await expect(page.getByText(/Students can't start passes until you open them/)).toBeVisible();
+  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+  await expect(page.getByText('Your teacher will open passes again.')).toBeVisible();
 });

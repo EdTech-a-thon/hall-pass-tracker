@@ -12,6 +12,8 @@
     connectToLaptop,
     dismissNotice,
     door,
+    doorSchedule,
+    followSchedule,
     forgetDevice,
     isFull,
     isLocal,
@@ -20,6 +22,7 @@
     line,
     lineSpotFor,
     noPassNow,
+    onSchedule,
     openPassFor,
     outCount,
     pairWithCode,
@@ -29,24 +32,38 @@
     undoPass,
     upNext,
     waitingCount,
+    whenPassesOpen,
   } from '#lib/door.svelte.ts';
   import BrandMark from '#lib/BrandMark.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
   import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
   import Modal from '#lib/Modal.svelte';
-  import { formatClock } from '#lib/schedule.ts';
+  import { formatClock, nextClassPeriod } from '#lib/schedule.ts';
 
   const local = $derived(isLocal());
   const paired = $derived(!!door.device);
   const cls = $derived(activeDoorClass());
   const destinations = $derived(setup()?.destinations ?? []);
-  // No-Pass Times start and end on their own, so look at the clock regularly.
+  // Periods and No-Pass Times start and end on their own, so look at the clock regularly.
   let clock = $state(Date.now());
   onMount(() => {
     const timer = setInterval(() => (clock = Date.now()), 15_000);
     return () => clearInterval(timer);
   });
+  // On Schedule, the kiosk changes class by itself as each period starts.
+  $effect(() => {
+    if (local || paired) followSchedule(clock);
+  });
+  const following = $derived(onSchedule());
+  /** Between periods: the next class the schedule puts on today. */
+  const next = $derived.by(() => {
+    const period = nextClassPeriod(doorSchedule(), clock);
+    const name = setup()?.classes.find((each) => each.id === period?.classId)?.name;
+    return period && name ? { name, start: period.start } : null;
+  });
+  /** Moving the class by hand from the teacher menu takes the kiosk off schedule, so it asks first. */
+  let switching = $state<string | null>(null);
 
   const waiting = $derived(line());
   /** Each destination's line, in the order the destinations are listed. */
@@ -126,6 +143,7 @@
 
   function openTeacher() {
     lettingGo = null;
+    switching = null;
     teacher = 'pin';
     pin = '';
     pinError = '';
@@ -154,6 +172,11 @@
   }
 
   function switchTo(classId: string) {
+    if (following && switching !== classId) {
+      switching = classId;
+      return;
+    }
+    switching = null;
     changeClass(classId);
     teacher = 'closed';
   }
@@ -212,7 +235,7 @@
     <header class="door-head">
       <div>
         <p class="door-eyebrow">{cls?.name ?? 'Happy Hallways'}</p>
-        <h1>Tap your name</h1>
+        <h1>{cls || !following ? 'Tap your name' : 'No class right now'}</h1>
       </div>
       {#if paired}
         <p class="connection" class:live={door.status === 'live'}>
@@ -230,8 +253,8 @@
 
     {#if cls && blocked}
       <div class="no-pass" role="status">
-        <Icon name="clock" size={20} />
-        <span><strong>No passes right now.</strong> Passes open at {formatClock(blocked.end)}.</span>
+        <Icon name="ban" size={34} />
+        <span><strong>No passes right now.</strong> {whenPassesOpen(blocked)}</span>
       </div>
     {/if}
 
@@ -255,7 +278,7 @@
       {#if !destinations.length}
         <p class="door-error">Your teacher hasn't set up any destinations yet.</p>
       {/if}
-      <main class="names" aria-label="Students in {cls.name}">
+      <main class="names" class:closed={blocked} aria-label="Students in {cls.name}">
         {#each cls.students as student (student.id)}
           {@const pass = openPassFor(student.id)}
           {@const spot = pass ? null : lineSpotFor(student.id)}
@@ -286,6 +309,10 @@
       <p class="count">
         {outCount(cls.id)} out{waiting.length ? ` · ${waiting.length} in line` : ''}
       </p>
+    {:else if following}
+      <main class="pairing">
+        <p class="lede">{next ? `Next: ${next.name} at ${formatClock(next.start)}` : "That's all the classes on today's schedule."}</p>
+      </main>
     {:else}
       <main class="pairing">
         <p class="lede">No class is on the kiosk yet. Teacher: choose one from your laptop, or tap Teacher below.</p>
@@ -420,10 +447,16 @@
           </div>
         {:else}
           <h2>Switch class</h2>
+          {#if following}
+            <p class="lede small">
+              The kiosk is following your schedule. Switching by hand turns the schedule off until you turn it back on
+              from your laptop.
+            </p>
+          {/if}
           <div class="choices">
             {#each setup()?.classes ?? [] as option (option.id)}
               <button class="door-btn choice" class:current={option.id === cls?.id} onclick={() => switchTo(option.id)}>
-                {option.name}
+                {switching === option.id ? `Tap again: turn off the schedule and switch to ${option.name}` : option.name}
               </button>
             {/each}
           </div>
@@ -601,17 +634,28 @@
     color: var(--accent);
   }
 
+  /* Readable from across the room, so students can see it isn't time without asking. */
   .no-pass {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 16px;
     margin-bottom: 14px;
-    padding: 12px 16px;
+    padding: 18px 22px;
     border: 1px solid #ecd3ac;
-    border-radius: 12px;
+    border-radius: 14px;
     background: var(--warn-wash);
     color: var(--warn);
-    font-size: 17px;
+    font-size: clamp(20px, 2.6vw, 28px);
+    line-height: 1.25;
+  }
+
+  .no-pass strong {
+    display: block;
+  }
+
+  .names.closed {
+    filter: grayscale(0.85);
+    opacity: 0.6;
   }
 
   .line-strip {

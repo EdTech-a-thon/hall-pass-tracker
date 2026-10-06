@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { updated } from '$app/state';
-  import { account } from '#lib/account.svelte.ts';
+  import { account, keepToSchedule } from '#lib/account.svelte.ts';
   import { isPairedDevice } from '#lib/door.svelte.ts';
   import GettingStarted from '#lib/GettingStarted.svelte';
   import Icon from '#lib/Icon.svelte';
@@ -29,6 +29,18 @@
 
   $effect(() => {
     if (!belongsAtDoor) refreshLink();
+  });
+
+  /**
+   * On Schedule, the class on the kiosk changes as each period starts. A
+   * paired kiosk does that itself and tells this laptop; otherwise the laptop
+   * keeps to the schedule here.
+   */
+  $effect(() => {
+    if (belongsAtDoor || account.kiosk?.kind === 'device') return;
+    keepToSchedule();
+    const timer = setInterval(keepToSchedule, 15_000);
+    return () => clearInterval(timer);
   });
 
   /**

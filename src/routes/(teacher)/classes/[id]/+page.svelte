@@ -1,6 +1,14 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { account, classPasses, findClass, markReturned } from '#lib/account.svelte.ts';
+  import {
+    account,
+    classPasses,
+    endNoPassTime,
+    findClass,
+    markReturned,
+    noPassNow,
+    startNoPassTime,
+  } from '#lib/account.svelte.ts';
   import CorrectionDialog from '#lib/CorrectionDialog.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import { download, passesToCsv } from '#lib/csv.ts';
@@ -8,6 +16,7 @@
   import LetStudentGoDialog from '#lib/LetStudentGoDialog.svelte';
   import PassMarks from '#lib/PassMarks.svelte';
   import { dayKey, duration, hasRealDuration, isOverdue, shortDate, time } from '#lib/passes.ts';
+  import { formatClock } from '#lib/schedule.ts';
   import { destinationShares, minutesOut, passesByDay, startOfWeek } from '#lib/stats.ts';
   import type { Pass } from '#lib/types.ts';
 
@@ -20,6 +29,9 @@
     const timer = setInterval(() => (clock = Date.now()), 30_000);
     return () => clearInterval(timer);
   });
+
+  const onKiosk = $derived(!!account.kiosk && account.activeClass?.id === cls.id);
+  const noPass = $derived(noPassNow(cls.id, clock));
 
   const waiting = $derived(account.line.filter((spot) => spot.classId === cls.id));
   /** Each destination has its own line. */
@@ -61,8 +73,26 @@
         {out.length ? `${out.length} out` : "Everyone's in class"}{waiting.length ? ` · ${waiting.length} in line` : ''}
       </h2>
     </div>
-    <button class="btn" onclick={() => (lettingGo = true)}><Icon name="unlock" size={16} />Let a student go</button>
+    <div class="row">
+      {#if onKiosk && !noPass}
+        <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
+          <Icon name="ban" size={16} />No passes now
+        </button>
+      {/if}
+      <button class="btn" onclick={() => (lettingGo = true)}><Icon name="unlock" size={16} />Let a student go</button>
+    </div>
   </div>
+  {#if noPass}
+    <div class="notice-bar" role="status" style="align-items:center">
+      <Icon name="ban" />
+      {#if noPass.end}
+        <span>No-pass time until {formatClock(noPass.end)}, from your <a href="/schedule">schedule</a>.</span>
+      {:else}
+        <span>No-pass time since {formatClock(noPass.start)}. Students can't start passes until you open them.</span>
+        <button class="btn btn-small" onclick={endNoPassTime}>Open passes</button>
+      {/if}
+    </div>
+  {/if}
   {#if out.length}
     <div class="table-wrap">
       <table>

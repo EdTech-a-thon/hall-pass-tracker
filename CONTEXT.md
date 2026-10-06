@@ -9,7 +9,7 @@ lives on the teacher's own devices; there is no server and no sign-in.
 **Class**:
 A group of students a teacher sees together during one period. Each class owns
 its own roster.
-_Avoid_: Period, section, classroom, group
+_Avoid_: Section, classroom, group
 
 **Student**:
 One child on one class's roster. The same child taught in two different classes
@@ -84,9 +84,12 @@ recorded, and the kiosk never shows that they are exempt.
 _Avoid_: Unlimited student, special student, accommodation
 
 **No-Pass Time**:
-A stretch of the clock, set for one class, when that class may not start
-passes, such as the first and last ten minutes of the period. It applies only
-while that class is on the kiosk. Students already out can always come back,
+A stretch of the clock when the class on the kiosk may not start passes. Most
+come from the Current Schedule and apply only while the teacher is On Schedule:
+each schedule has its own, either the first or last minutes of its periods,
+such as the first and last ten minutes of every class, or a fixed time drawn on
+it. The teacher can also start one by hand from the laptop, on or off schedule,
+which lasts until they end it or the class on the kiosk changes. Students already out can always come back,
 and if the Line is on, students may join it and go once the No-Pass Time ends.
 _Avoid_: Blackout, lockout, quiet time
 
@@ -99,6 +102,32 @@ in its line, who is **Up Next** for it; nobody else may take it, but students
 headed somewhere else are not held up. The line belongs to the class on the kiosk and empties when
 the class changes. Being in line is not a pass and leaves nothing in history.
 _Avoid_: Queue, wait list
+
+**Schedule**:
+A plan for one kind of school day, made of Periods and named by the teacher
+however they like ("A Day", "Early Release"). A teacher whose day is the same
+every day has just one; one with rotating days has one for each. The same class
+may sit in different periods on different schedules.
+_Avoid_: Bell schedule, timetable, rotation
+
+**Period**:
+One stretch of the clock in a Schedule, belonging to one class or to none, such
+as lunch or planning.
+_Avoid_: Class (that is the students), block, slot
+
+**Current Schedule**:
+The schedule the teacher last picked. It stays picked, day after day, until the
+teacher picks another; Happy Hallways never works out which day it is.
+_Avoid_: Today's schedule, default schedule
+
+**On Schedule**:
+Whether the kiosk is following the Current Schedule, moving the Active Class by
+itself as each period starts. Moving the class by hand, after a warning, takes
+the teacher off schedule, and they stay off — even the next day — until they
+put it back. Putting it back, or picking a schedule, jumps to whatever period
+the clock is in, not to where they left off. Off schedule, the only No-Pass
+Time is one the teacher starts by hand.
+_Avoid_: Auto mode, autopilot, paused schedule
 
 **Kiosk**:
 The locked, student-facing device by the classroom door. A teacher has at most
@@ -117,9 +146,11 @@ _Avoid_: Linking, connecting, logging in
 
 **Active Class**:
 The class the kiosk is currently showing. Changing it ends every pass still open
-in the class being left. It moves only when someone deliberately moves it — from
-the teacher's laptop, or at the kiosk with the teacher's PIN. Browsing a
-different class on the laptop does not move it.
+in the class being left. While the teacher is On Schedule it moves by itself as
+each Period starts, and between periods there is none, so nobody can leave.
+Otherwise it moves only when someone deliberately moves it — from the teacher's
+laptop, or at the kiosk with the teacher's PIN — and moving it by hand takes the
+teacher off schedule. Browsing a different class on the laptop does not move it.
 _Avoid_: Current class, selected class
 
 **Overdue**:
@@ -150,7 +181,7 @@ _Avoid_: Archived student, deleted student, inactive student
 
 **Backup**:
 A single file holding everything the teacher's laptop knows: classes, students,
-passes, destinations, Pass Options and the kiosk pairing. Restoring it replaces
+passes, destinations, Pass Options, schedules and the kiosk pairing. Restoring it replaces
 everything in that browser and puts the teacher back exactly where they were.
 Happy Hallways has no accounts or sign-in; the backup is the only copy that leaves the
 browser.

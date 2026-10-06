@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { account, findClass } from './account.svelte';
+  import { account, currentSchedule, findClass } from './account.svelte';
   import BrandMark from './BrandMark.svelte';
   import HelpButton from './HelpButton.svelte';
   import Icon from './Icon.svelte';
@@ -10,7 +10,11 @@
   let classesOpen = $state(true);
 
   const path = $derived(page.url.pathname);
-  const kioskClass = $derived(account.activeClass ? findClass(account.activeClass.id)?.name : undefined);
+  const kioskClass = $derived(
+    account.activeClass?.onSchedule && !account.activeClass.id ? 'No class' : findClass(account.activeClass?.id)?.name,
+  );
+  /** Under "Schedule": which one the kiosk is following, or that it's off. */
+  const scheduleStatus = $derived(account.activeClass?.onSchedule ? `${currentSchedule().name} · On` : 'Off · Manual');
 
   /** One line under "Kiosk" saying whether the door is connected, and to what. */
   const kioskStatus = $derived.by(() => {
@@ -53,6 +57,12 @@
 
     <a class="nav-link" class:active={path === '/pass-options'} href="/pass-options">
       <Icon name="clock" />Pass Options
+    </a>
+
+    <a class="nav-link" class:active={path === '/schedule'} href="/schedule">
+      <Icon name="calendar" />
+      <span>Schedule<span class="nav-meta">{scheduleStatus}</span></span>
+      <span class="status-dot {account.activeClass?.onSchedule ? 'live' : ''}" style="margin-left:auto" aria-hidden="true"></span>
     </a>
 
     <a class="nav-link" class:active={path === '/kiosk'} href="/kiosk">

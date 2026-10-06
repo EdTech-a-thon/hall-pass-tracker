@@ -9,11 +9,16 @@
    * "What's changed": shown once to a returning teacher after an update, on
    * the laptop only. Closing it in any way counts as having seen it.
    */
-  const items = $derived(unseenUpdates(account.seenUpdate).flatMap((update) => update.items));
+  const unseen = $derived(unseenUpdates(account.seenUpdate));
+  const items = $derived(unseen.flatMap((update) => update.items));
+  /** The newest news decides where the teacher is offered to go. */
+  const action = $derived(unseen[unseen.length - 1]?.action);
 
-  function reviewDestinations() {
+  function act() {
+    // Read it first: once seen, there is no news left to take it from.
+    const href = action?.href;
     markUpdatesSeen();
-    goto('/destinations');
+    if (href) goto(href);
   }
 </script>
 
@@ -39,7 +44,7 @@
       </ol>
 
       <div class="dialog-actions">
-        <button class="btn" onclick={reviewDestinations}>Review destinations</button>
+        {#if action}<button class="btn" onclick={act}>{action.label}</button>{/if}
         <button class="btn btn-primary" onclick={markUpdatesSeen}>Got it</button>
       </div>
     </div>

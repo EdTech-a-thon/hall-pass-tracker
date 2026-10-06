@@ -64,15 +64,42 @@ export type Permission = {
 
 export type PermissionKind = Permission['kind'];
 
-/** A stretch of the clock when a class may not start passes, as "HH:MM" (24-hour) times. */
-export type NoPassTime = { start: string; end: string };
+/** A stretch of the clock, as "HH:MM" (24-hour) times, from `start` up to (not including) `end`. */
+export type ClockRange = { start: string; end: string };
+
+/** One stretch of the clock in a Schedule, belonging to one class, or to none (lunch, planning). */
+export type Period = ClockRange & { id: string; classId: string | null };
+
+/** "First 10 minutes of every class": a No-Pass Time at the start or end of a schedule's periods. */
+export type EdgeRule = {
+  id: string;
+  edge: 'first' | 'last';
+  minutes: number;
+  /** The one class it applies to, or null for every class. */
+  classId: string | null;
+};
+
+/**
+ * A plan for one kind of school day ("A Day", "Early Release"): its Periods
+ * and its No-Pass Times. See docs/adr/0008.
+ */
+export type Schedule = {
+  id: string;
+  name: string;
+  periods: Period[];
+  rules: EdgeRule[];
+  /** Fixed No-Pass Times drawn on this schedule. They apply to whichever class is on the kiosk. */
+  noPassTimes: (ClockRange & { id: string })[];
+};
+
+/** A No-Pass Time the teacher started by hand. It lasts until they end it or the class on the kiosk changes. */
+export type ManualNoPass = { classId: string; startedAt: string };
 
 /** A group of students a teacher sees together during one period. */
 export type Class = {
   id: string;
   name: string;
   students: Student[];
-  noPassTimes: NoPassTime[];
   createdAt: string;
 };
 
@@ -119,8 +146,11 @@ export type LineSpot = {
   joinedAt: string;
 };
 
-/** Which class the kiosk is showing, and when someone last deliberately changed it. */
-export type ActiveClass = { id: string; changedAt: string };
+/**
+ * Which class the kiosk is showing, and when it last changed. On Schedule it
+ * changes by itself as each period starts, and between periods there is none.
+ */
+export type ActiveClass = { id: string | null; changedAt: string; onSchedule?: boolean };
 
 /** The teacher's one kiosk: either a paired device, or this computer itself. */
 export type Kiosk =
@@ -140,6 +170,11 @@ export type Account = {
   /** Every destination's Line as the kiosk last reported it. The kiosk is in charge of them. */
   line: LineSpot[];
   passAllowance: PassAllowance;
+  /** Always at least one. */
+  schedules: Schedule[];
+  /** The schedule the teacher last picked. It stays picked until they pick another. */
+  currentScheduleId: string;
+  manualNoPass: ManualNoPass | null;
   /** Permissions given from the laptop and not used yet. */
   permissions: Permission[];
   /** The newest "What's changed" entry this teacher has seen. Missing on accounts from before there was one. */
@@ -160,7 +195,6 @@ export type DoorClass = {
   id: string;
   name: string;
   students: { id: string; name: string; exempt?: boolean }[];
-  noPassTimes: NoPassTime[];
 };
 
 /** Just enough of a past pass for the kiosk to count it against the Pass Allowance. */
@@ -176,6 +210,9 @@ export type DoorSetup = {
   countedPasses: CountedPass[];
   permissions: Permission[];
   activeClass: ActiveClass | null;
+  /** The Current Schedule. Missing from a laptop on the version before schedules. */
+  schedule?: Schedule;
+  manualNoPass?: ManualNoPass | null;
   pin: string;
   /**
    * What a kiosk still running the version before per-destination limits

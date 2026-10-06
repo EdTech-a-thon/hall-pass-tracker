@@ -28,6 +28,9 @@ const interfaceIcons = {
   help: 'circle-question-mark',
   'arrow-right': 'arrow-right',
   'chevron-up': 'chevron-up',
+  calendar: 'calendar-clock',
+  copy: 'copy',
+  ban: 'ban',
   'shield-check': 'shield-check',
   'circle-play': 'circle-play',
 };
