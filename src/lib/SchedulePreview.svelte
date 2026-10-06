@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { formatClock, formatRange, periodNoPass, sortedPeriods, toClock, toMinutes } from './schedule';
+  import { clockOf, formatClock, formatRange, periodNoPass, sortedPeriods, toClock, toMinutes } from './schedule';
   import type { Class, ClockRange, Schedule } from './types';
 
   /**
    * A schedule at a glance, for its card on the Schedule page: its day as one
-   * bar, periods in green and no-pass time striped, then the periods in order.
+   * bar, periods in green and no-pass time striped, a red line at the time
+   * now (as on the calendar, but standing up), then the periods in order.
    */
   let { schedule, classes }: { schedule: Schedule; classes: Class[] } = $props();
 
@@ -21,17 +22,31 @@
   const left = (each: ClockRange) => ((toMinutes(each.start) - range.start) / (range.end - range.start)) * 100;
   const width = (each: ClockRange) => ((toMinutes(each.end) - toMinutes(each.start)) / (range.end - range.start)) * 100;
   const noPass = $derived([...schedule.periods.flatMap((period) => periodNoPass(period)), ...schedule.noPassTimes]);
+
+  let clock = $state(Date.now());
+  $effect(() => {
+    const timer = setInterval(() => (clock = Date.now()), 30_000);
+    return () => clearInterval(timer);
+  });
+  const now = $derived(clockOf(clock));
+  const nowShown = $derived(toMinutes(now) >= range.start && toMinutes(now) < range.end);
+
   const className = (id: string | null) => classes.find((cls) => cls.id === id)?.name ?? 'No class';
 </script>
 
 <div class="preview">
-  <div class="day" aria-hidden="true">
-    {#each periods as period (period.id)}
-      <span class="period" class:empty={!period.classId} style:left="{left(period)}%" style:width="{width(period)}%"></span>
-    {/each}
-    {#each noPass as time, index (index)}
-      <span class="no-pass" style:left="{left(time)}%" style:width="{width(time)}%"></span>
-    {/each}
+  <div class="track">
+    <div class="day" aria-hidden="true">
+      {#each periods as period (period.id)}
+        <span class="period" class:empty={!period.classId} style:left="{left(period)}%" style:width="{width(period)}%"></span>
+      {/each}
+      {#each noPass as time, index (index)}
+        <span class="no-pass" style:left="{left(time)}%" style:width="{width(time)}%"></span>
+      {/each}
+    </div>
+    {#if nowShown}
+      <span class="now" style:left="{left({ start: now, end: now })}%" title="Now, {formatClock(now)}"></span>
+    {/if}
   </div>
   <div class="ends muted" aria-hidden="true">
     <span>{formatClock(toClock(range.start))}</span><span>{formatClock(toClock(range.end))}</span>
@@ -52,6 +67,32 @@
   .preview {
     display: grid;
     gap: 6px;
+  }
+
+  .track {
+    position: relative;
+  }
+
+  /* The time now: the calendar's red line, standing up across the bar. */
+  .now {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    margin-left: -1px;
+    background: #c2412d;
+    pointer-events: none;
+  }
+
+  .now::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #c2412d;
   }
 
   .day {
