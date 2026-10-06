@@ -661,7 +661,7 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await addPeriod(page, 'Period 2', '09:55', '10:45');
   await page.getByRole('button', { name: 'Use this schedule' }).click();
   await page.getByRole('link', { name: 'All schedules' }).click();
-  await expect(page.getByText('Right now: Period 1')).toBeVisible();
+  await expect(page.locator('.schedule-card').getByText('Live')).toBeVisible();
 
   await setPin(page);
   await page.getByRole('button', { name: 'Use this computer' }).click();

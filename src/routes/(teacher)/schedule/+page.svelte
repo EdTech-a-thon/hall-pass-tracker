@@ -14,17 +14,9 @@
   import ConfirmDialog from '#lib/ConfirmDialog.svelte';
   import Icon from '#lib/Icon.svelte';
   import SchedulePreview from '#lib/SchedulePreview.svelte';
-  import { formatRange, periodAt } from '#lib/schedule.ts';
 
   /** Every schedule the teacher has, as cards: open one to change it, or pick the one the kiosk follows. */
   const live = $derived(liveSchedule());
-
-  let clock = $state(Date.now());
-  $effect(() => {
-    const timer = setInterval(() => (clock = Date.now()), 30_000);
-    return () => clearInterval(timer);
-  });
-  const periodNow = $derived(live ? periodAt(live, clock) : null);
 
   let confirmingUse = $state<string | null>(null);
 
@@ -63,20 +55,7 @@
     {/if}
   </header>
 
-  {#if live}
-    <div class="status on" role="status">
-      <span class="status-dot live"></span>
-      <div>
-        <strong>Following {live.name}.</strong>
-        {#if periodNow}
-          Right now: {findClass(periodNow.classId)?.name ?? 'no class'} ({formatRange(periodNow)}).
-        {:else}
-          No class right now.
-        {/if}
-        <span class="muted">Changing the kiosk's class by hand stops following it.</span>
-      </div>
-    </div>
-  {:else if account.schedules.length}
+  {#if !live && account.schedules.length}
     <div class="status" role="status">
       <span class="status-dot"></span>
       <div>
@@ -155,11 +134,6 @@
 
   .status > div {
     flex: 1;
-  }
-
-  .status.on {
-    border-color: #c7dccd;
-    background: var(--accent-wash);
   }
 
   .no-schedules {
