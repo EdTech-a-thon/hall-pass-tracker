@@ -13,7 +13,10 @@
       'The kiosk asking where a student is going: the Restroom is full with 2 waiting, while the Nurse and the Counselor are open',
     'let-go': 'The Let a student go list: Maya is held by No-Pass Time and Jordan is waiting in line, each with a button to let them go',
     'check-destinations': 'The destinations list: the Restroom is one at a time, the Nurse and the Counselor have no limit',
+    schedule: 'A day calendar for A Day: Biology, then Chemistry, then lunch, with a line marking now inside Chemistry',
+    'no-pass-rules': 'Schedule settings reading: First 10 minutes of every class, and Last 5 minutes of every class, are no-pass time',
   };
+  const periodLook = { strong: '#2a7a52', soft: '#e3f1e9' };
 </script>
 
 <div class="art" role="img" aria-label={labels[art]}>
@@ -62,6 +65,38 @@
           <text x="352" y={y + 29} class="ok-text" text-anchor="end">✓ Let go</text>
         {/if}
       {/each}
+    {:else if art === 'schedule'}
+      <g filter="url(#update-shadow-{art})">
+        <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />
+      </g>
+      <text x="48" y="56" class="eyebrow-text">SCHEDULE · A DAY</text>
+      {#each ['8 AM', '9 AM', '10 AM', '11 AM'] as hour, i (hour)}
+        <text x="48" y={86 + i * 44} class="muted-text">{hour}</text>
+        <line x1="96" x2="352" y1={82 + i * 44} y2={82 + i * 44} stroke="var(--border)" />
+      {/each}
+      {#each [{ label: 'Biology', y: 86, h: 38 }, { label: 'Chemistry', y: 130, h: 50 }, { label: 'No class · Lunch', y: 186, h: 30 }] as block (block.label)}
+        <rect x="100" y={block.y} width="248" height={block.h} rx="8" fill={block.label.startsWith('No') ? 'var(--bg)' : periodLook.soft} stroke={block.label.startsWith('No') ? 'var(--border)' : periodLook.strong} stroke-opacity=".35" />
+        <text x="112" y={block.y + 20} class="name-text">{block.label}</text>
+      {/each}
+      <line x1="96" x2="352" y1="152" y2="152" stroke="#c2412d" stroke-width="2" />
+      <circle cx="96" cy="152" r="4" fill="#c2412d" />
+    {:else if art === 'no-pass-rules'}
+      <g filter="url(#update-shadow-{art})">
+        <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />
+      </g>
+      <text x="48" y="56" class="eyebrow-text">NO-PASS TIMES</text>
+      <text x="48" y="82" class="title-text">Keep students in class</text>
+      {#each [{ edge: 'First', minutes: '10' }, { edge: 'Last', minutes: '5' }] as rule, i (rule.edge)}
+        {@const y = 104 + i * 48}
+        <rect x="48" {y} width="304" height="38" rx="9" fill="#fff" stroke="var(--border)" />
+        <rect x="58" y={y + 8} width="44" height="22" rx="6" fill="var(--bg)" stroke="var(--border)" />
+        <text x="80" y={y + 24} class="badge-text" text-anchor="middle" fill="var(--text)">{rule.edge}</text>
+        <rect x="110" y={y + 8} width="30" height="22" rx="6" fill="var(--bg)" stroke="var(--border)" />
+        <text x="125" y={y + 24} class="badge-text" text-anchor="middle" fill="var(--text)">{rule.minutes}</text>
+        <text x="148" y={y + 24} class="muted-text">minutes of every class</text>
+      {/each}
+      <rect x="48" y="210" width="150" height="16" rx="8" fill="#fbefdc" />
+      <text x="56" y="222" class="badge-text" fill="#a8620f">No passes · open at 9:10</text>
     {:else}
       <g filter="url(#update-shadow-{art})">
         <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />

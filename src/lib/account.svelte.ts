@@ -2,7 +2,7 @@ import { defaultAllowance, passCounts, usedBy, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
 import { endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { displayName, type ImportPlan } from './roster';
-import { noPassTimeAt } from './schedule';
+import { blankSchedule, noPassAt, scheduledClassAt } from './schedule';
 import type {
   Account,
   ActiveClass,
@@ -14,6 +14,7 @@ import type {
   PassAllowance,
   Permission,
   PermissionKind,
+  Schedule,
   Student,
 } from './types';
 import { latestUpdate } from './updates';
@@ -25,6 +26,7 @@ import { latestUpdate } from './updates';
 const storageKey = 'hallway.account';
 
 function blankAccount(): Account {
+  const schedule = blankSchedule(newId(), 'My Schedule');
   return {
     version: 1,
     laptopPeerId: `hallway-${newId()}`,
@@ -34,6 +36,9 @@ function blankAccount(): Account {
     lineEnabled: false,
     line: [],
     passAllowance: defaultAllowance(),
+    schedules: [schedule],
+    currentScheduleId: schedule.id,
+    manualNoPass: null,
     permissions: [],
     // Nothing changed under a brand-new teacher, so there is no news to show them.
     seenUpdate: latestUpdate,
@@ -52,13 +57,20 @@ function blankAccount(): Account {
  * - The Pass Limit used to be one number for every destination (and before
  *   that, one per class); each destination now has its own. See docs/adr/0007.
  * - Extra Passes given from the laptop became one kind of Permission.
+ * - No-pass times used to be clock times on each class; they moved to the
+ *   teacher's first schedule. See docs/adr/0008.
  */
-type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'permissions'> & {
+type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'permissions' | 'schedules'> & {
+  schedules?: Schedule[];
   destinations?: (Omit<Destination, 'limit'> & { limit?: number | null })[];
   passLimit?: number;
   permissions?: Permission[];
   extraPassGifts?: { id: string; classId: string; studentId: string; givenAt: string }[];
-  classes: (Class & { destinations?: { label: string; minutes: number }[]; limit?: number })[];
+  classes: (Class & {
+    destinations?: { label: string; minutes: number }[];
+    limit?: number;
+    noPassTimes?: { start: string; end: string }[];
+  })[];
 };
 
 function upgrade(saved: SavedAccount): Account {
@@ -88,16 +100,37 @@ function upgrade(saved: SavedAccount): Account {
     expiresAt: endOfDay(gift.givenAt),
   }));
   delete saved.extraPassGifts;
+  if (!saved.schedules?.length) {
+    const schedule = blankSchedule(newId(), 'My Schedule');
+    const copied = new Set<string>();
+    for (const time of saved.classes.flatMap((cls) => cls.noPassTimes ?? [])) {
+      if (copied.has(time.start + time.end)) continue;
+      copied.add(time.start + time.end);
+      schedule.noPassTimes.push({ id: newId(), start: time.start, end: time.end });
+    }
+    saved.schedules = [schedule];
+    saved.currentScheduleId = schedule.id;
+  }
+  if (!saved.schedules.some((schedule) => schedule.id === saved.currentScheduleId)) {
+    saved.currentScheduleId = saved.schedules[0].id;
+  }
+  saved.manualNoPass ??= null;
   for (const cls of saved.classes) {
     delete cls.destinations;
     delete cls.limit;
-    cls.noPassTimes ??= [];
+    delete cls.noPassTimes;
   }
   return saved as Account;
 }
 
 /** Fields a saved account must not borrow from a blank one, so upgrade() can tell an older account by their absence. */
-const fromOlderVersions = { destinations: undefined, permissions: undefined, seenUpdate: undefined };
+const fromOlderVersions = {
+  destinations: undefined,
+  permissions: undefined,
+  seenUpdate: undefined,
+  schedules: undefined,
+  currentScheduleId: undefined,
+};
 
 function load(): Account {
   try {
@@ -143,7 +176,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export function findClass(id: string) {
+export function findClass(id: string | null | undefined) {
   return account.classes.find((cls) => cls.id === id);
 }
 
@@ -164,7 +197,6 @@ export function createClass(name: string) {
     id: newId(),
     name,
     students: [],
-    noPassTimes: [],
     createdAt: now(),
   };
   account.classes.push(cls);
@@ -173,22 +205,164 @@ export function createClass(name: string) {
   return cls.id;
 }
 
-export function updateClass(id: string, changes: Partial<Pick<Class, 'name' | 'noPassTimes'>>) {
+export function updateClass(id: string, changes: Partial<Pick<Class, 'name'>>) {
   const cls = findClass(id);
   if (!cls) return;
   Object.assign(cls, changes);
   save();
 }
 
-/** Deleting a class deletes its history too. The page asks before calling this. */
+/**
+ * Deleting a class deletes its history too. The page asks before calling
+ * this. Its periods stay, with no class in them, and rules just for it go.
+ */
 export function deleteClass(id: string) {
   account.classes = account.classes.filter((cls) => cls.id !== id);
   account.passes = account.passes.filter((pass) => pass.classId !== id);
-  if (account.activeClass?.id === id) {
+  for (const schedule of account.schedules) {
+    for (const period of schedule.periods) if (period.classId === id) period.classId = null;
+    schedule.rules = schedule.rules.filter((rule) => rule.classId !== id);
+  }
+  if (account.activeClass?.onSchedule) {
+    account.activeClass = { id: scheduledClassAt(currentSchedule()), changedAt: now(), onSchedule: true };
+  } else if (account.activeClass?.id === id) {
     const next = account.classes[0];
     account.activeClass = next ? { id: next.id, changedAt: now() } : null;
   }
   save();
+}
+
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+export function currentSchedule() {
+  return account.schedules.find((schedule) => schedule.id === account.currentScheduleId) ?? account.schedules[0];
+}
+
+export function findSchedule(id: string) {
+  return account.schedules.find((schedule) => schedule.id === id);
+}
+
+/** A brand-new, empty schedule. Returns its id. */
+export function addSchedule(name: string) {
+  const schedule = blankSchedule(newId(), name);
+  account.schedules.push(schedule);
+  save();
+  return schedule.id;
+}
+
+/** A copy of a schedule with all its periods and No-Pass Times, quickest way to make B Day from A Day. */
+export function duplicateSchedule(id: string) {
+  const original = findSchedule(id);
+  if (!original) return id;
+  const copy: Schedule = {
+    ...$state.snapshot(original),
+    id: newId(),
+    name: `${original.name} (copy)`,
+  };
+  for (const each of [...copy.periods, ...copy.rules, ...copy.noPassTimes]) each.id = newId();
+  account.schedules.push(copy);
+  save();
+  return copy.id;
+}
+
+/** Replaces a schedule with an edited copy. On Schedule, the kiosk follows the change. */
+export function saveSchedule(schedule: Schedule) {
+  const index = account.schedules.findIndex((each) => each.id === schedule.id);
+  if (index === -1) return;
+  account.schedules[index] = schedule;
+  if (schedule.id === account.currentScheduleId) followSchedule();
+  save();
+}
+
+/** The last schedule can't go: a teacher always has one. */
+export function deleteSchedule(id: string) {
+  if (account.schedules.length < 2) return;
+  account.schedules = account.schedules.filter((schedule) => schedule.id !== id);
+  if (account.currentScheduleId === id) {
+    account.currentScheduleId = account.schedules[0].id;
+    followSchedule();
+  }
+  save();
+}
+
+/** The class a schedule would put on the kiosk right now. */
+export function classScheduledNow(scheduleId = account.currentScheduleId) {
+  return scheduledClassAt(findSchedule(scheduleId));
+}
+
+/**
+ * Picks a schedule and puts the kiosk On Schedule, at whatever period the
+ * clock is in now, not wherever the teacher left off.
+ */
+export function useSchedule(id: string) {
+  if (!findSchedule(id)) return;
+  account.currentScheduleId = id;
+  setActiveClass({ id: classScheduledNow(id), changedAt: now(), onSchedule: true });
+}
+
+/**
+ * On Schedule, moves the kiosk to whatever class the clock says, ending
+ * passes still open in the class it leaves. The device acting as the kiosk
+ * calls this as the clock ticks. Returns whether anything changed; the caller saves.
+ */
+function followSchedule() {
+  const active = account.activeClass;
+  if (!active?.onSchedule) return false;
+  const id = scheduledClassAt(currentSchedule());
+  if (id === active.id) return false;
+  moveActiveClass({ id, changedAt: now(), onSchedule: true });
+  return true;
+}
+
+/** Called regularly on the laptop when no paired device is in charge of the door. */
+export function keepToSchedule() {
+  if (followSchedule()) save();
+}
+
+/** Starts a No-Pass Time by hand for the class on the kiosk. It lasts until ended, or the class changes. */
+export function startNoPassTime() {
+  const classId = account.activeClass?.id;
+  if (!classId) return;
+  account.manualNoPass = { classId, startedAt: now() };
+  save();
+}
+
+export function endNoPassTime() {
+  account.manualNoPass = null;
+  save();
+}
+
+/** What decides No-Pass Time, as the laptop knows it. */
+function noPassSources() {
+  return { schedule: currentSchedule(), activeClass: account.activeClass, manualNoPass: account.manualNoPass };
+}
+
+/** The No-Pass Time a class is in right now, if it's on the kiosk and in one. */
+export function noPassNow(classId: string, at = Date.now()) {
+  return account.activeClass?.id === classId ? noPassAt(noPassSources(), classId, at) : null;
+}
+
+/**
+ * What the teacher should know before moving the kiosk by hand: that it takes
+ * them off schedule, and whose passes it ends. Null when there's nothing to say.
+ */
+export function moveWarning(toClassId: string) {
+  const warnings: string[] = [];
+  if (account.activeClass?.onSchedule) {
+    warnings.push(
+      "This takes the kiosk off your schedule. It won't switch classes or keep your scheduled no-pass times until you turn the schedule back on.",
+    );
+  }
+  const leaving = findClass(account.activeClass?.id);
+  const out = leaving && leaving.id !== toClassId ? openPasses(leaving.id).length : 0;
+  if (leaving && out) {
+    warnings.push(
+      `${out} ${out === 1 ? 'student is' : 'students are'} still out in ${leaving.name}. Their passes will end with an unknown return time.`,
+    );
+  }
+  return warnings.length ? warnings.join(' ') : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +529,7 @@ export function holdsOn(classId: string, studentId: string): Hold[] {
   if (allowance.enabled && !student.exempt && usedBy(allowance, classId, studentId, account.passes) >= allowance.passes) {
     holds.push({ kind: 'extra-pass', text: 'Out of passes', given: given('extra-pass') });
   }
-  if (noPassTimeAt(cls.noPassTimes)) {
+  if (noPassNow(classId)) {
     holds.push({ kind: 'no-pass-exception', text: 'No-pass time', given: given('no-pass-exception') });
   }
   const waiting = account.line.filter((spot) => spot.classId === classId);
@@ -383,7 +557,7 @@ export function letStudentGo(classId: string, studentId: string) {
   const needed = holdsOn(classId, studentId).filter((hold) => !hold.given);
   if (!needed.length) return;
   const givenAt = now();
-  const noPassTime = noPassTimeAt(cls.noPassTimes);
+  const noPassTime = noPassNow(classId);
   account.permissions = [
     ...activePermissions(),
     ...needed.map((hold) => ({
@@ -392,7 +566,7 @@ export function letStudentGo(classId: string, studentId: string) {
       classId,
       studentId,
       givenAt,
-      expiresAt: hold.kind === 'no-pass-exception' && noPassTime ? todayAt(noPassTime.end) : endOfDay(givenAt),
+      expiresAt: hold.kind === 'no-pass-exception' && noPassTime?.end ? todayAt(noPassTime.end) : endOfDay(givenAt),
     })),
   ];
   save();
@@ -436,20 +610,29 @@ export function correctPass(passId: string, changes: { student?: Student; outAt?
 // ---------------------------------------------------------------------------
 
 /**
- * Moves the kiosk to another class. Every pass still open in the class being
- * left ends with an unknown return: those students are no longer in front of
- * the door screen that could sign them back in.
+ * Moves the kiosk to another class (or, between periods, to none). Every pass
+ * still open in the class being left ends with an unknown return: those
+ * students are no longer in front of the door screen that could sign them
+ * back in. Moving it by hand takes the teacher off schedule; pass
+ * `onSchedule` when the schedule moved it.
  */
 export function setActiveClass(activeClass: ActiveClass) {
-  const leaving = account.activeClass?.id;
   if (account.activeClass && account.activeClass.changedAt >= activeClass.changedAt) return;
+  moveActiveClass(activeClass);
+  save();
+}
+
+function moveActiveClass(activeClass: ActiveClass) {
+  const leaving = account.activeClass?.id;
   if (leaving && leaving !== activeClass.id) {
     mergeInto(account.passes, openPasses(leaving).map((pass) => endUnseen(pass, 'switch')));
   }
   account.activeClass = activeClass;
-  // The Line belongs to the class at the door; a new class starts with none.
-  if (leaving !== activeClass.id) account.line = [];
-  save();
+  if (leaving !== activeClass.id) {
+    // The Line belongs to the class at the door; a new class starts with none.
+    account.line = [];
+    account.manualNoPass = null;
+  }
 }
 
 export function setPin(pin: string) {
@@ -514,7 +697,6 @@ export function doorSetup(): DoorSetup {
     classes: account.classes.map((cls) => ({
       id: cls.id,
       name: cls.name,
-      noPassTimes: cls.noPassTimes,
       students: cls.students
         .filter((student) => student.status === 'current')
         .map((student) => ({ id: student.id, name: displayName(student), exempt: student.exempt })),
@@ -525,6 +707,8 @@ export function doorSetup(): DoorSetup {
     countedPasses: account.passAllowance.enabled ? countedPasses() : [],
     permissions: activePermissions(),
     activeClass: account.activeClass,
+    schedule: currentSchedule(),
+    manualNoPass: account.manualNoPass,
     pin: account.pin,
     ...forOlderKiosks(),
     passes: account.passes.filter((pass) => !pass.inAt || pass.outAt >= since),

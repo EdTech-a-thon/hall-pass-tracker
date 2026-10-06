@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { assignPrefixes, displayName } from '../src/lib/roster';
 import { latestUpdate } from '../src/lib/updates';
-import type { Account, Class, Destination, EndedBy, Pass, Student } from '../src/lib/types';
+import type { Account, Class, ClockRange, Destination, EdgeRule, EndedBy, Pass, Schedule, Student } from '../src/lib/types';
 
 /** The same file every time for the same day, so a re-run doesn't reshuffle the story. */
 let seed = 20261002;
@@ -33,13 +33,14 @@ const destinations: Destination[] = [
 ];
 const destinationOdds = [55, 18, 7, 8, 8, 4].map((weight, i) => ({ value: destinations[i], weight }));
 
-type Roster = { name: string; periodStart: string; periodEnd: string; noPassTimes: Class['noPassTimes']; names: string[] };
+/** `noPass` is the first or last ten minutes the class's schedule keeps passes closed. */
+type Roster = { name: string; periodStart: string; periodEnd: string; noPass: EdgeRule['edge'] | null; names: string[] };
 const rosters: Roster[] = [
   {
     name: 'Period 1 · Algebra',
     periodStart: '08:00',
     periodEnd: '08:50',
-    noPassTimes: [{ start: '08:00', end: '08:10' }],
+    noPass: 'first',
     names: [
       'Maya Chen', 'Maya Carter', 'Jordan Ellis', 'Priya Shah', 'Leo Martinez', 'Ava Thompson', 'Noah Kim',
       'Isabella Rossi', 'Ethan Brooks', 'Zoe Nguyen', 'Lucas Ortiz', 'Chloe Adams', 'Mateo Alvarez', 'Harper Lee',
@@ -51,7 +52,7 @@ const rosters: Roster[] = [
     name: 'Period 2 · English',
     periodStart: '08:55',
     periodEnd: '09:45',
-    noPassTimes: [],
+    noPass: null,
     names: [
       'Elliot Roe', 'Duncan Johnson', 'Josh Pullen', 'Jessika Golab', 'Sam Barans', 'Sam Brooks', 'Amara Okafor',
       'Theo Bailey', 'Grace Liu', 'Miles Turner', 'Hazel Kowalski', 'Ezra Cohen', 'Layla Haddad', 'Wyatt Reed',
@@ -63,7 +64,7 @@ const rosters: Roster[] = [
     name: 'Period 4 · Biology',
     periodStart: '10:50',
     periodEnd: '11:40',
-    noPassTimes: [{ start: '11:30', end: '11:40' }],
+    noPass: 'last',
     names: [
       'Riley Park', 'Aaliyah Brown', 'Benjamin Clark', 'Camila Torres', 'Daniel Moore', 'Emily Davis', 'Finn Murphy',
       'Gianna Russo', 'Hudson Bell', 'Ivy Chen', 'Jonah Weiss', 'Kayla Jackson', 'Liam Walker', 'Madison Young',
@@ -116,14 +117,13 @@ for (const roster of rosters) {
     id: randomUUID(),
     name: roster.name,
     students: students.map(({ fullName, ...student }) => student),
-    noPassTimes: roster.noPassTimes,
     createdAt: at(schoolDays[0], minutesOf('07:30')).toISOString(),
   };
   classes.push(cls);
 
   const start = minutesOf(roster.periodStart);
   const end = minutesOf(roster.periodEnd);
-  const blocked = roster.noPassTimes.map((range) => [minutesOf(range.start), minutesOf(range.end)]);
+  const blocked = roster.noPass === 'first' ? [[start, start + 10]] : roster.noPass === 'last' ? [[end - 10, end]] : [];
 
   for (const day of schoolDays) {
     const present = students.filter((student) => student.status === 'current' || (student.fullName === leftClass && day < twoWeeksAgo));
@@ -178,6 +178,40 @@ for (const roster of rosters) {
   }
 }
 
+/** The regular day, with each class's no-pass minutes, and a shorter early-release day. */
+const regular: Schedule = {
+  id: randomUUID(),
+  name: 'Regular Day',
+  periods: [
+    ...rosters.map((roster, i) => ({ id: randomUUID(), classId: classes[i].id, start: roster.periodStart, end: roster.periodEnd })),
+    { id: randomUUID(), classId: null, start: '11:45', end: '12:20' },
+  ],
+  rules: rosters.flatMap((roster, i) =>
+    roster.noPass ? [{ id: randomUUID(), edge: roster.noPass, minutes: 10, classId: classes[i].id }] : [],
+  ),
+  noPassTimes: [],
+};
+/** Early release: half-hour periods, back to back from 8:00. */
+const shortened = (index: number): ClockRange => {
+  const start = minutesOf('08:00') + index * 35;
+  return { start: clock(start), end: clock(start + 30) };
+};
+const earlyRelease: Schedule = {
+  id: randomUUID(),
+  name: 'Early Release',
+  periods: classes.map((cls, i) => ({
+    id: randomUUID(),
+    classId: cls.id,
+    ...shortened(i),
+  })),
+  rules: [{ id: randomUUID(), edge: 'first', minutes: 5, classId: null }],
+  noPassTimes: [],
+};
+
+function clock(minutes: number) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
 const account: Account = {
   version: 1,
   laptopPeerId: `hallway-${randomUUID()}`,
@@ -186,6 +220,10 @@ const account: Account = {
   passes: passes.sort((a, b) => a.outAt.localeCompare(b.outAt)),
   lineEnabled: true,
   line: [],
+  passAllowance: { enabled: false, passes: 3, per: 'week', whenUsedUp: 'stop', since: today.toISOString() },
+  schedules: [regular, earlyRelease],
+  currentScheduleId: regular.id,
+  manualNoPass: null,
   permissions: [],
   seenUpdate: latestUpdate,
   pin: '1234',

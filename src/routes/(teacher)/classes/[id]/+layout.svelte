@@ -2,14 +2,14 @@
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { account, findClass, openPasses, setActiveClass } from '#lib/account.svelte.ts';
+  import { account, currentSchedule, findClass, moveWarning, setActiveClass } from '#lib/account.svelte.ts';
   import AddStudentsDialog from '#lib/AddStudentsDialog.svelte';
   import ClassSettingsDialog from '#lib/ClassSettingsDialog.svelte';
   import ConfirmDialog from '#lib/ConfirmDialog.svelte';
   import Icon from '#lib/Icon.svelte';
   import KioskBadge from '#lib/KioskBadge.svelte';
   import { now } from '#lib/passes.ts';
-  import { formatClock } from '#lib/schedule.ts';
+  import { formatRange, sortedPeriods } from '#lib/schedule.ts';
 
   let { children } = $props();
 
@@ -17,8 +17,9 @@
   const base = $derived(`/classes/${page.params.id}`);
   const current = $derived(cls?.students.filter((student) => student.status === 'current').length ?? 0);
   const onKiosk = $derived(account.activeClass?.id === cls?.id);
-  const leaving = $derived(account.activeClass ? findClass(account.activeClass.id) : undefined);
-  const stillOut = $derived(leaving ? openPasses(leaving.id).length : 0);
+  const warning = $derived(cls ? moveWarning(cls.id) : null);
+  /** When the Current Schedule puts this class on the kiosk. */
+  const periods = $derived(sortedPeriods(currentSchedule()).filter((period) => period.classId === cls?.id));
 
   let adding = $state(false);
   let settings = $state(false);
@@ -38,7 +39,7 @@
   ];
 
   function showOnKiosk() {
-    if (stillOut) confirmingMove = true;
+    if (warning) confirmingMove = true;
     else moveKiosk();
   }
 
@@ -62,8 +63,8 @@
         </div>
         <p class="muted small">
           {current} {current === 1 ? 'student' : 'students'}
-          {#if cls.noPassTimes.length}
-            · No passes {cls.noPassTimes.map((time) => `${formatClock(time.start)}–${formatClock(time.end)}`).join(', ')}
+          {#if periods.length}
+            · <a href="/schedule">{currentSchedule().name}: {periods.map(formatRange).join(', ')}</a>
           {/if}
         </p>
       </div>
@@ -86,10 +87,10 @@
 
   {#if adding}<AddStudentsDialog {cls} onClose={() => (adding = false)} />{/if}
   {#if settings}<ClassSettingsDialog {cls} onClose={() => (settings = false)} />{/if}
-  {#if confirmingMove && leaving}
+  {#if confirmingMove && warning}
     <ConfirmDialog
       title="Move the kiosk to {cls.name}?"
-      message="{stillOut} {stillOut === 1 ? 'student is' : 'students are'} still out in {leaving.name}. Their passes will end with an unknown return time."
+      message={warning}
       confirmLabel="Move the kiosk"
       onConfirm={moveKiosk}
       onCancel={() => (confirmingMove = false)}

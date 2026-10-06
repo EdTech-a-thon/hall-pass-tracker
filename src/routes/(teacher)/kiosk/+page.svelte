@@ -2,8 +2,9 @@
   import { goto } from '$app/navigation';
   import {
     account,
+    currentSchedule,
     findClass,
-    openPasses,
+    moveWarning,
     removeKiosk,
     setActiveClass,
     setDoorLocked,
@@ -26,7 +27,6 @@
   let pairing = $state(false);
 
   const kiosk = $derived(account.kiosk);
-  const activeName = $derived(account.activeClass ? findClass(account.activeClass.id)?.name : undefined);
 
   function savePin(event: SubmitEvent) {
     event.preventDefault();
@@ -41,7 +41,8 @@
   }
 
   function chooseClass(id: string) {
-    if (account.activeClass && openPasses(account.activeClass.id).length && id !== account.activeClass.id) {
+    if (id === account.activeClass?.id) return;
+    if (moveWarning(id)) {
       pendingClass = id;
       return;
     }
@@ -160,11 +161,18 @@
           Class on the kiosk
           <select value={account.activeClass?.id ?? ''} onchange={(event) => chooseClass(event.currentTarget.value)}>
             {#if !account.activeClass}<option value="" disabled>Choose a class</option>{/if}
+            {#if account.activeClass && !account.activeClass.id}<option value="" disabled>No class right now</option>{/if}
             {#each account.classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
           </select>
         </label>
         {#if !account.classes.length}
           <p class="muted small">Create a class first, and it will show here.</p>
+        {:else if account.activeClass?.onSchedule}
+          <p class="muted small">
+            Following <a href="/schedule">{currentSchedule().name}</a>: the kiosk changes class by itself as each period starts.
+          </p>
+        {:else}
+          <p class="muted small">Want it to change class by itself? Set up your <a href="/schedule">schedule</a>.</p>
         {/if}
 
         <div class="row">
@@ -235,10 +243,10 @@
   <PairingDialog onClose={() => (pairing = false)} onUseThisComputer={thisComputer} />
 {/if}
 
-{#if pendingClass && activeName}
+{#if pendingClass}
   <ConfirmDialog
     title="Switch the kiosk to {findClass(pendingClass)?.name}?"
-    message="Students still out in {activeName} will have their passes ended with an unknown return time."
+    message={moveWarning(pendingClass) ?? ''}
     confirmLabel="Switch class"
     onConfirm={confirmClass}
     onCancel={() => (pendingClass = '')}

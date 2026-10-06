@@ -1,9 +1,9 @@
 import type { DataConnection, Peer } from 'peerjs';
-import { account, doorSetup, receivePasses, setActiveClass, setLine } from './account.svelte';
+import { account, doorSetup, keepToSchedule, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { destinationCounts, passesLeftText, usedBy, usedUpText } from './allowance';
 import { dueTime, endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
-import { formatClock, noPassTimeAt } from './schedule';
+import { formatClock, noPassAt, scheduledClassAt } from './schedule';
 import type { ActiveClass, DoorSetup, KioskMessage, LaptopMessage, LineSpot, Pass, PermissionKind } from './types';
 
 /**
@@ -110,8 +110,17 @@ export function setup(): DoorSetup | null {
   return door.device?.setup ?? null;
 }
 
+function currentActiveClass() {
+  return isLocal() ? account.activeClass : door.device?.activeClass;
+}
+
 function activeClassId() {
-  return isLocal() ? account.activeClass?.id : door.device?.activeClass?.id;
+  return currentActiveClass()?.id;
+}
+
+/** Whether the kiosk is following the Current Schedule. */
+export function onSchedule() {
+  return !!currentActiveClass()?.onSchedule && !!setup()?.schedule;
 }
 
 export function activeDoorClass() {
@@ -166,7 +175,17 @@ export function lineSpotFor(studentId: string) {
 
 /** The No-Pass Time the class on the kiosk is in right now, if any. */
 export function noPassNow(at = Date.now()) {
-  return noPassTimeAt(activeDoorClass()?.noPassTimes ?? [], at);
+  const current = setup();
+  return noPassAt(
+    { schedule: current?.schedule, activeClass: currentActiveClass(), manualNoPass: current?.manualNoPass },
+    activeClassId(),
+    at,
+  );
+}
+
+/** "Passes open again at 9:15 AM", or, for one the teacher started, that the teacher will open them. */
+export function whenPassesOpen(noPass: { end: string | null }) {
+  return noPass.end ? `Passes open at ${formatClock(noPass.end)}.` : 'Your teacher will open passes again.';
 }
 
 /** A Permission from the laptop that the student may still use here, if they have one of that kind. */
@@ -333,7 +352,7 @@ export function requestPass(studentId: string, destination: string, teacherLetGo
   const blocked = noPassNow();
   const exception = blocked && !teacherLetGo ? permissionFor(studentId, 'no-pass-exception') : undefined;
   if (blocked && !teacherLetGo && !exception) {
-    const opens = formatClock(blocked.end);
+    const opens = whenPassesOpen(blocked);
     // During a No-Pass Time, a destination with a limit offers a place in its line.
     const mayLineUp = setup()?.lineEnabled && place.limit !== null && !inThisLine;
     showNotice(
@@ -342,7 +361,7 @@ export function requestPass(studentId: string, destination: string, teacherLetGo
             kind: 'denied',
             eyebrow: 'No-pass time',
             title: 'Join the line?',
-            message: `Passes open at ${opens}. Join the line to go as soon as they do.`,
+            message: `${opens} Join the line to go as soon as they do.`,
             offerLine: { studentId, destination },
             offerTeacher,
           }
@@ -350,7 +369,7 @@ export function requestPass(studentId: string, destination: string, teacherLetGo
             kind: 'denied',
             eyebrow: 'No-pass time',
             title: 'No passes right now',
-            message: `Passes open again at ${opens}.`,
+            message: opens,
             offerTeacher,
           },
       10,
@@ -468,15 +487,37 @@ export function undoPass(passId: string) {
   dismissNotice();
 }
 
-/** Changing class at the door ends every pass still open in the class being left. */
-export function changeClass(classId: string) {
-  const activeClass = { id: classId, changedAt: now() };
+/**
+ * Changing class at the door ends every pass still open in the class being
+ * left. Changing it by hand takes the teacher off schedule.
+ */
+export function changeClass(classId: string | null, byTheSchedule = false) {
+  const activeClass = { id: classId, changedAt: now(), ...(byTheSchedule ? { onSchedule: true } : {}) };
   if (isLocal()) {
     setActiveClass(activeClass);
     return;
   }
   adoptActiveClass(activeClass);
   send({ type: 'active-class', activeClass });
+}
+
+/**
+ * On Schedule, the kiosk moves itself to whatever class the clock says, even
+ * while the laptop is closed. The door screen calls this as the clock ticks.
+ */
+export function followSchedule(at = Date.now()) {
+  if (isLocal()) {
+    keepToSchedule();
+    return;
+  }
+  if (!onSchedule()) return;
+  const id = scheduledClassAt(setup()?.schedule, at);
+  if (id !== activeClassId()) changeClass(id, true);
+}
+
+/** The Current Schedule, as the kiosk last heard it from the laptop. */
+export function doorSchedule() {
+  return setup()?.schedule;
 }
 
 function adoptActiveClass(activeClass: ActiveClass) {
