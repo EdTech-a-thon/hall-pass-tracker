@@ -5,10 +5,10 @@
   /**
    * A schedule at a glance, for its card on the Schedule page: its day as one
    * bar, periods in green and no-pass time striped, a red line at the time
-   * now (as on the calendar, but standing up), then the periods in order.
-   * On the live schedule, a green dot marks the period on the kiosk right now.
+   * now (as on the calendar, but standing up), then the periods in order,
+   * with the same red line beside the one the clock is in.
    */
-  let { schedule, classes, live = false }: { schedule: Schedule; classes: Class[]; live?: boolean } = $props();
+  let { schedule, classes }: { schedule: Schedule; classes: Class[] } = $props();
 
   const periods = $derived(sortedPeriods(schedule));
   const range = $derived.by(() => {
@@ -31,7 +31,7 @@
   });
   const now = $derived(clockOf(clock));
   const nowShown = $derived(toMinutes(now) >= range.start && toMinutes(now) < range.end);
-  const periodNow = $derived(live ? periodAt(schedule, clock) : null);
+  const periodNow = $derived(periodAt(schedule, clock));
 
   const className = (id: string | null) => classes.find((cls) => cls.id === id)?.name ?? 'No class';
 </script>
@@ -56,11 +56,8 @@
   {#if periods.length}
     <ul>
       {#each periods.slice(0, 6) as period (period.id)}
-        <li>
-          <strong>
-            {className(period.classId)}
-            {#if period.id === periodNow?.id}<span class="status-dot live" title="On the kiosk now"></span>{/if}
-          </strong>
+        <li class:now-period={period.id === periodNow?.id} title={period.id === periodNow?.id ? 'Now' : undefined}>
+          <strong>{className(period.classId)}</strong>
           <span class="muted">{formatRange(period)}</span>
         </li>
       {/each}
@@ -81,8 +78,9 @@
     position: relative;
   }
 
-  /* The time now: the calendar's red line, standing up across the bar. */
-  .now {
+  /* The time now: the calendar's red line, standing up across the bar, and beside the period it's in. */
+  .now,
+  .now-period::before {
     position: absolute;
     top: -4px;
     bottom: -4px;
@@ -92,7 +90,8 @@
     pointer-events: none;
   }
 
-  .now::before {
+  .now::before,
+  .now-period::after {
     content: '';
     position: absolute;
     top: -4px;
@@ -146,15 +145,23 @@
     font-size: 13px;
   }
 
-  li strong {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
   li {
+    position: relative;
+    padding-left: 12px;
     display: flex;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  .now-period::before {
+    content: '';
+    top: 3px;
+    bottom: 1px;
+    left: 2px;
+  }
+
+  .now-period::after {
+    top: 0;
+    left: 0;
   }
 </style>

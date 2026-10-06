@@ -81,7 +81,7 @@
               <h2>{schedule.name}</h2>
               {#if isLive}<span class="badge ok"><span class="status-dot live"></span>Live</span>{/if}
             </div>
-            <SchedulePreview {schedule} classes={account.classes} live={isLive} />
+            <SchedulePreview {schedule} classes={account.classes} />
           </a>
           <div class="row">
             {#if isLive}
