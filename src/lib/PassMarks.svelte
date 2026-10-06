@@ -6,6 +6,6 @@
 </script>
 
 {#if pass.extra}<span class="badge" title="Taken after their Pass Allowance was used up">Extra</span>{/if}
-{#if pass.noPassException}<span class="badge" title="You let them go during No-Pass Time">No-pass time</span>{/if}
-{#if pass.lineSkip}<span class="badge" title="You let them go while the destination was full">Skipped line</span>{/if}
+{#if pass.noPassException}<span class="badge" title="Taken during No-Pass Time, with your approval">No-pass time</span>{/if}
+{#if pass.lineSkip}<span class="badge" title="Taken ahead of the line while the destination was full, with your approval">Skipped line</span>{/if}
 {#if pass.approvedBy}<span class="badge ok" title="You approved their request {pass.approvedBy === 'home' ? 'on Home' : 'with your PIN at the kiosk'}">Approved{pass.approvedBy === 'pin' ? ' by PIN' : ''}</span>{/if}

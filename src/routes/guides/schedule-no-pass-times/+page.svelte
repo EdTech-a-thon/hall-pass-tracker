@@ -41,10 +41,11 @@
       alt: 'The No-pass times section, circled, with no passes from 9:15 to 9:30 AM',
     },
     {
-      name: 'Use the schedule',
-      text: 'Click Use this schedule. From now on, the kiosk changes to each class as its period starts, and follows the no-pass times by itself.',
+      name: 'Use it on Home',
+      text: 'Click the box at the top of the sidebar to go to Home, and pick your schedule under Schedule. From now on, the kiosk changes to each class as its period starts, and follows the no-pass times by itself.',
+      tip: 'An early-release day? Pick that day’s schedule on Home in the morning, then switch back the next day.',
       image: `${pictures}/6-use-schedule.png`,
-      alt: 'The schedule editor, with the Use this schedule button circled',
+      alt: 'Home, with the status box at the top of the sidebar and the Schedule menu, set to Regular Day, both circled',
     },
   ];
 </script>
@@ -85,8 +86,9 @@
       />
     </figure>
     <p>
-      If a student really needs to go, tap <strong>Teacher: let them go</strong> and enter your PIN. Their pass is
-      marked so your records stay complete.
+      If a student really needs to go, they can tap <strong>Ask my teacher</strong>, and you approve or deny the request
+      on Home. Or tap <strong>Teacher PIN</strong> and enter your PIN right at the kiosk. Either way, their pass is marked
+      so your records stay complete. (When the kiosk is this computer, or it’s offline, only the PIN works.)
     </p>
     <figure>
       <img
@@ -104,9 +106,9 @@
     <dl>
       <dt>The kiosk isn’t changing classes or following the no-pass times.</dt>
       <dd>
-        The kiosk follows the schedule only while it’s in use. If someone switched classes by hand at the kiosk, it
-        stopped following it. The sidebar then shows <strong>Off · Manual</strong> under Schedule. Open your schedule and click
-        <strong>Use this schedule</strong> again.
+        The kiosk follows the schedule only while it’s in use. If someone switched classes by hand, it stopped
+        following it, and the box at the top of the sidebar says <strong>Off schedule</strong>. Go to Home and click
+        <strong>Back to Regular Day</strong> (or whatever your schedule is called).
       </dd>
       <dt>The kiosk says “No class right now.”</dt>
       <dd>That’s normal between periods. It shows which class is next and when it starts.</dd>
@@ -114,8 +116,7 @@
       <dd>Lines are off. Turn on <strong>Let students line up</strong> on the Pass Options page.</dd>
       <dt>I just need to stop passes for a few minutes, without a schedule.</dt>
       <dd>
-        Open your class and click <strong>No passes now</strong> on its Now tab. Click <strong>Open passes</strong>
-        when you’re ready.
+        On Home, click <strong>No passes now</strong>. Click <strong>Open passes</strong> when you’re ready.
       </dd>
     </dl>
   </section>
