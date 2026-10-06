@@ -12,6 +12,7 @@
     moveWarning,
     noPassNow,
     openPasses,
+    removeKiosk,
     passStatus,
     passStatusIcon,
     passStatusText,
@@ -20,6 +21,7 @@
     startNoPassTime,
     stopFollowingSchedule,
     useSchedule,
+    useThisComputer,
     useWarning,
     waitingRequests,
   } from '#lib/account.svelte.ts';
@@ -28,8 +30,10 @@
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
   import MenuSelect from '#lib/MenuSelect.svelte';
-  import { answerRequest, canAnswer, link } from '#lib/link.svelte.ts';
+  import { answerRequest, canAnswer, cancelPairing, kioskState, link, refreshLink } from '#lib/link.svelte.ts';
+  import PairingDialog from '#lib/PairingDialog.svelte';
   import PassMarks from '#lib/PassMarks.svelte';
+  import QuietScene from '#lib/QuietScene.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
   import { duration, hasRealDuration, isOverdue, now, time } from '#lib/passes.ts';
   import { nextClassPeriod, periodAt, toMinutes } from '#lib/schedule.ts';
@@ -58,12 +62,12 @@
 
   /** The second line: when this changes next, in words. */
   const timing = $derived.by(() => {
-    if (status === 'between') {
+    if (!classId && account.activeClass?.onSchedule) {
       const upcoming = nextClassPeriod(live, at);
       const cls = findClass(upcoming?.classId);
       return upcoming && cls ? `${cls.name} starts in ${until(upcoming.start)}` : 'No more classes today';
     }
-    if (status === 'no-class') return 'Choose a class to put on the kiosk';
+    if (!classId) return 'Choose a class to put on the kiosk';
     if (noPass) return noPass.end ? `Passes open in ${until(noPass.end)}` : 'Passes stay closed until you open them';
     const period = live ? periodAt(live, at) : null;
     // Off schedule nothing changes by itself, so there's nothing to say; the schedule menu says it's off.
@@ -165,6 +169,32 @@
     goto(`/classes/${createClass(name.trim())}?add`);
   }
 
+  const kiosk = $derived(kioskState());
+  let pairing = $state(false);
+
+  function thisComputer() {
+    pairing = false;
+    cancelPairing();
+    useThisComputer();
+    refreshLink();
+  }
+
+  function disconnect() {
+    confirming = {
+      title: account.kiosk?.kind === 'device' ? 'Disconnect the kiosk?' : 'Stop using this computer as the kiosk?',
+      message:
+        account.kiosk?.kind === 'device'
+          ? "Students won't be able to sign out on it. If it's holding passes this computer hasn't received yet, they'll still arrive the next time it connects."
+          : "Students won't be able to sign out until you set up a kiosk again.",
+      label: 'Disconnect',
+      run: () => {
+        cancelPairing();
+        removeKiosk();
+        refreshLink();
+      },
+    };
+  }
+
   function openDoor() {
     setDoorLocked(true);
     goto('/door');
@@ -229,17 +259,6 @@
           {#if timing}<span class="timing">{timing}</span>{/if}
         </div>
       </header>
-
-      {#if !account.kiosk}
-        <a class="card setup-kiosk" href="/kiosk">
-          <span class="icon-tile"><Icon name="tablet" /></span>
-          <span>
-            <strong>Set up your kiosk</strong>
-            <span class="muted small">Students sign out on a tablet or Chromebook by the door, or on this computer.</span>
-          </span>
-          <Icon name="arrow-right" />
-        </a>
-      {/if}
 
       {#if classId}
         <section class="stats this-class" aria-label="Right now">
@@ -312,27 +331,55 @@
             <p class="muted small">Nothing yet. Passes and your answers to requests show up here as they happen.</p>
           {/if}
         </section>
+      {:else}
+        <QuietScene message={account.activeClass?.onSchedule ? `No class right now. ${timing}.` : 'No class is on the kiosk. Choose one above.'} />
       {/if}
       <div class="footer-slot"><SiteFooter /></div>
     </div>
 
     <div class="side">
-    {#if status === 'open' || (noPass && !noPass.end) || account.kiosk?.kind === 'this-computer'}
-      <div class="actions">
-        {#if noPass && !noPass.end}
-          <button class="btn" onclick={endNoPassTime}><Icon name="check" size={16} />Open passes</button>
-        {:else if status === 'open'}
-          <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
-            <Icon name="ban" size={16} />No passes now
-          </button>
-        {/if}
-        {#if account.kiosk?.kind === 'this-computer'}
-          <button class="btn btn-primary" onclick={openDoor} disabled={!account.activeClass}>
-            <Icon name="lock" size={16} />Open kiosk screen
-          </button>
-        {/if}
-      </div>
+    {#if account.manualNoPass}
+      <button class="btn btn-primary" onclick={endNoPassTime}><Icon name="check" size={16} />Open passes</button>
+    {:else}
+      <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
+        <Icon name="ban" size={16} />No passes now
+      </button>
     {/if}
+
+    <section class="kiosk-card" aria-labelledby="kiosk-title">
+      <div class="panel-head">
+        <h2 id="kiosk-title"><Icon name="tablet" size={18} />Kiosk</h2>
+        <span class="kiosk-state"><span class="status-dot {kiosk.dot}" aria-hidden="true"></span>{kiosk.text.replace(/^Kiosk (\w)/, (_, first) => first.toUpperCase())}</span>
+      </div>
+      {#if !account.kiosk}
+        <p class="muted small">Students sign out on a tablet or Chromebook by the door, or on this computer.</p>
+        {#if account.pin}
+          <div class="kiosk-actions">
+            <button class="btn btn-small btn-primary" onclick={() => (pairing = true)}>Pair a device</button>
+            <button class="btn btn-small" onclick={thisComputer}>Use this computer</button>
+          </div>
+        {:else}
+          <a class="btn btn-small btn-primary" href="/kiosk">Set up the kiosk</a>
+        {/if}
+      {:else if account.kiosk.kind === 'this-computer'}
+        <div class="kiosk-actions">
+          <button class="btn btn-small btn-primary" onclick={openDoor} disabled={!account.activeClass}>
+            <Icon name="lock" size={14} />Open kiosk screen
+          </button>
+          <button class="btn btn-small" onclick={() => (pairing = true)}>Pair a device instead</button>
+          <button class="btn btn-small btn-quiet" onclick={disconnect}>Stop using it</button>
+        </div>
+      {:else}
+        {#if link.status !== 'live' && account.kiosk.lastSeenAt}
+          <p class="muted small">Last connected at {time(account.kiosk.lastSeenAt)}. It keeps working on its own.</p>
+        {/if}
+        <div class="kiosk-actions">
+          <button class="btn btn-small" onclick={() => (pairing = true)}>Pair a different device</button>
+          <button class="btn btn-small btn-quiet" onclick={disconnect}>Disconnect</button>
+        </div>
+      {/if}
+    </section>
+
     <aside class="requests-panel" aria-labelledby="requests-title" data-tip="tip-requests">
       <div class="panel-head">
         <h2 id="requests-title"><Icon name="hand" size={18} />Requests</h2>
@@ -382,6 +429,10 @@
     </aside>
     </div>
   </div>
+{/if}
+
+{#if pairing}
+  <PairingDialog onClose={() => (pairing = false)} onUseThisComputer={thisComputer} />
 {/if}
 
 {#if confirming}
@@ -487,20 +538,6 @@
     justify-content: space-between;
   }
 
-  .setup-kiosk {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 14px;
-    color: var(--text);
-    text-decoration: none;
-  }
-
-  .setup-kiosk > span:nth-child(2) {
-    display: grid;
-    flex: 1;
-  }
-
   .activity {
     display: grid;
     margin: 0;
@@ -538,21 +575,39 @@
     position: sticky;
     top: 40px;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 12px;
     height: var(--fit);
   }
 
-  .actions {
+  .kiosk-card {
     display: grid;
-    gap: 8px;
+    gap: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .kiosk-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .kiosk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .requests-panel {
     display: grid;
     align-content: start;
     gap: 14px;
-    grid-row: -2;
     padding: 18px;
     overflow-y: auto;
     border: 1px solid var(--border);

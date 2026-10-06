@@ -92,8 +92,8 @@ A stretch of the clock when the class on the kiosk may not start passes. Most
 come from the Current Schedule and apply only while the teacher is On Schedule:
 each schedule has its own, either the first or last minutes of a period
 (set on each period, and copied to the rest in one click), or a fixed time
-drawn on it. The teacher can also start one by hand from the laptop, on or off schedule,
-which lasts until they end it or the class on the kiosk changes. Students already out can always come back,
+drawn on it. The teacher can also start one by hand from Home at any time, on or off
+schedule, which lasts until they end it, even as classes change. Students already out can always come back,
 and if the Line is on, students may join it and go once the No-Pass Time ends.
 _Avoid_: Blackout, lockout, quiet time
 

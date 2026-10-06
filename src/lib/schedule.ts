@@ -151,7 +151,7 @@ export type NoPassNow = { start: string; end: string | null };
 export function noPassAt(sources: NoPassSources, classId: string | null | undefined, at = Date.now()): NoPassNow | null {
   if (!classId) return null;
   const manual = sources.manualNoPass;
-  if (manual?.classId === classId) return { start: clockOf(manual.startedAt), end: null };
+  if (manual) return { start: clockOf(manual.startedAt), end: null };
   if (!sources.activeClass?.onSchedule || !sources.schedule) return null;
   const clock = clockOf(at);
   const applying = scheduledNoPassTimes(sources.schedule).filter(

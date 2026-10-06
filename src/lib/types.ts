@@ -106,8 +106,12 @@ export type Schedule = {
   noPassTimes: (ClockRange & { id: string })[];
 };
 
-/** A No-Pass Time the teacher started by hand. It lasts until they end it or the class on the kiosk changes. */
-export type ManualNoPass = { classId: string; startedAt: string };
+/**
+ * A No-Pass Time the teacher started by hand. It lasts until they end it,
+ * whichever class is on the kiosk. `classId` follows the class on the kiosk
+ * only so a kiosk on an older version, which checks it, keeps applying it.
+ */
+export type ManualNoPass = { classId: string | null; startedAt: string };
 
 /** A group of students a teacher sees together during one period. */
 export type Class = {

@@ -340,11 +340,9 @@ export function keepToSchedule() {
   if (followSchedule()) save();
 }
 
-/** Starts a No-Pass Time by hand for the class on the kiosk. It lasts until ended, or the class changes. */
+/** Stops passes by hand, any time, until the teacher opens them again, whatever class comes on. */
 export function startNoPassTime() {
-  const classId = account.activeClass?.id;
-  if (!classId) return;
-  account.manualNoPass = { classId, startedAt: now() };
+  account.manualNoPass = { classId: account.activeClass?.id ?? null, startedAt: now() };
   save();
 }
 
@@ -368,6 +366,8 @@ export type PassStatus = 'open' | 'no-pass' | 'between' | 'no-class';
 
 export function passStatus(at = Date.now()): PassStatus {
   const active = account.activeClass;
+  // Stopped by hand, it's "no passes" whatever else is going on: that's what the teacher chose.
+  if (account.manualNoPass) return 'no-pass';
   if (!active?.id) return active?.onSchedule ? 'between' : 'no-class';
   return noPassNow(active.id, at) ? 'no-pass' : 'open';
 }
@@ -630,7 +630,8 @@ function moveActiveClass(activeClass: ActiveClass) {
     // The Line and Requests belong to the class at the door; a new class starts with none.
     account.line = [];
     account.requests = [];
-    account.manualNoPass = null;
+    // A No-Pass Time started by hand carries on into the new class.
+    if (account.manualNoPass) account.manualNoPass.classId = activeClass.id;
   }
 }
 
