@@ -9,9 +9,16 @@ export const siteUrl = 'https://happyhallways.com';
 
 export type Guide = {
   slug: string;
+  /** The guide's heading, on its page and on the Guides page. */
   title: string;
-  /** One or two sentences: shown in search results and on the Guides page. */
+  /** One or two sentences, on the Guides page. */
   description: string;
+  /**
+   * What search engines show, worded the way teachers search. It can differ
+   * from what the page says: teachers search for "girls' and boys' bathrooms",
+   * but the guide itself doesn't assume how a school divides its bathrooms.
+   */
+  search: { title: string; description: string };
   /** The day the guide was last checked against the app, as YYYY-MM-DD. */
   updated: string;
 };
@@ -19,9 +26,14 @@ export type Guide = {
 export const guides: Guide[] = [
   {
     slug: 'separate-bathroom-lines',
-    title: 'Separate lines for the girls’ and boys’ bathrooms',
+    title: 'Give each bathroom its own line',
     description:
-      'Set up a separate hall pass line for each bathroom, so a girl waiting for the girls’ bathroom never holds up a boy, and the other way around.',
+      'Set up a separate hall pass line for each bathroom, so a student waiting for one bathroom never holds up a student headed to another.',
+    search: {
+      title: 'Separate hall pass lines for the girls’ and boys’ bathrooms',
+      description:
+        'Give the girls’ and boys’ bathrooms (or any two bathrooms) their own hall pass line in Happy Hallways, so students waiting for one never hold up the other.',
+    },
     updated: '2026-10-06',
   },
 ];

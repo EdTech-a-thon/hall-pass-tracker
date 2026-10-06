@@ -9,15 +9,15 @@
     $props();
 
   const url = $derived(guideUrl(guide));
-  const title = $derived(`${guide.title} · Happy Hallways`);
+  const title = $derived(`${guide.search.title} · Happy Hallways`);
 
   // Search engines read the steps from this. "<" is escaped so the text can't end the script tag early.
   const structuredData = $derived(
     JSON.stringify({
       '@context': 'https://schema.org',
       '@type': 'HowTo',
-      name: guide.title,
-      description: guide.description,
+      name: guide.search.title,
+      description: guide.search.description,
       image: `${siteUrl}${image}`,
       dateModified: guide.updated,
       step: steps.map((step, index) => ({
@@ -34,12 +34,12 @@
 
 <svelte:head>
   <title>{title}</title>
-  <meta name="description" content={guide.description} />
+  <meta name="description" content={guide.search.description} />
   <link rel="canonical" href={url} />
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="Happy Hallways" />
-  <meta property="og:title" content={guide.title} />
-  <meta property="og:description" content={guide.description} />
+  <meta property="og:title" content={guide.search.title} />
+  <meta property="og:description" content={guide.search.description} />
   <meta property="og:url" content={url} />
   <meta property="og:image" content={`${siteUrl}${image}`} />
   <meta name="twitter:card" content="summary_large_image" />
