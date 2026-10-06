@@ -6,7 +6,7 @@
    * A schedule at a glance, for its card on the Schedule page: its day as one
    * bar, periods in green and no-pass time striped, a red line at the time
    * now (as on the calendar, but standing up), then the periods in order,
-   * with the same red line beside the one the clock is in.
+   * with a red pill beside the one the clock is in.
    */
   let { schedule, classes }: { schedule: Schedule; classes: Class[] } = $props();
 
@@ -78,9 +78,8 @@
     position: relative;
   }
 
-  /* The time now: the calendar's red line, standing up across the bar, and beside the period it's in. */
-  .now,
-  .now-period::before {
+  /* The time now: the calendar's red line, standing up across the bar. */
+  .now {
     position: absolute;
     top: -4px;
     bottom: -4px;
@@ -90,8 +89,7 @@
     pointer-events: none;
   }
 
-  .now::before,
-  .now-period::after {
+  .now::before {
     content: '';
     position: absolute;
     top: -4px;
@@ -147,21 +145,22 @@
 
   li {
     position: relative;
-    padding-left: 12px;
+    padding-left: 18px;
     display: flex;
     justify-content: space-between;
     gap: 10px;
   }
 
+  /* The period the clock is in: a red pill, in the same red as the line. */
   .now-period::before {
     content: '';
-    top: 3px;
-    bottom: 1px;
-    left: 2px;
-  }
-
-  .now-period::after {
-    top: 0;
+    position: absolute;
+    top: 50%;
     left: 0;
+    width: 12px;
+    height: 7px;
+    border-radius: 999px;
+    background: #c2412d;
+    transform: translateY(-50%);
   }
 </style>
