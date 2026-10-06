@@ -18,6 +18,8 @@
   {#if account.classes.length}<StatusWidget />{/if}
 
   <nav class="nav" aria-label="Main">
+    <a class="nav-link" class:active={path === '/'} href="/"><Icon name="home" />Home</a>
+
     <button class="nav-toggle" aria-expanded={classesOpen} onclick={() => (classesOpen = !classesOpen)}>
       <Icon name="users" />Classes
       <span class="chevron"><Icon name="chevron-down" size={16} /></span>

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { page } from '$app/state';
   import {
     account,
     activeClassLabel,
@@ -27,13 +26,12 @@
   const requests = $derived(waitingRequests().length);
 </script>
 
-<a class="status-box" class:active={page.url.pathname === '/'} href="/" data-tip="tip-status">
+<a class="status-box {status}" href="/" data-tip="tip-status">
   <span class="pass-status {status}" role="img" title={passStatusText[status]} aria-label={passStatusText[status]}>
     <Icon name={passStatusIcon[status]} size={16} />
   </span>
-  <span class="eyebrow-row"><Icon name="home" size={14} />Home</span>
   <strong class="class-name">{activeClassLabel()}</strong>
-  <span class="row-line"><Icon name="tablet" size={14} />{kiosk.text}<span class="status-dot {kiosk.dot}" aria-hidden="true"></span></span>
+  <span class="row-line"><Icon name="tablet" size={14} />{kiosk.text}</span>
   <span class="row-line"><Icon name="calendar" size={14} />{schedule}</span>
   {#if account.kiosk?.kind === 'device'}
     <span class="row-line requests" class:waiting={requests}>
@@ -59,20 +57,20 @@
     border-color: var(--border-strong);
   }
 
-  .status-box.active {
-    border-color: #a9c9b2;
+  /* The whole box takes the color of whether students may leave right now. */
+  .status-box.open {
+    border-color: #b9d6c1;
     background: var(--accent-wash);
   }
 
-  .eyebrow-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--accent);
-    font-size: 11.5px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+  .status-box.no-pass {
+    border-color: #ecd3ac;
+    background: var(--warn-wash);
+  }
+
+  .status-box.between,
+  .status-box.no-class {
+    background: var(--surface-sunk);
   }
 
   .class-name {
@@ -90,17 +88,17 @@
     width: 30px;
     height: 30px;
     border-radius: 50%;
-    background: var(--surface-sunk);
+    background: var(--surface);
     color: var(--muted);
   }
 
   .pass-status.open {
-    background: #dcebe0;
+    background: var(--surface);
     color: var(--accent);
   }
 
   .pass-status.no-pass {
-    background: var(--warn-wash);
+    background: var(--surface);
     color: var(--warn);
   }
 
@@ -115,10 +113,6 @@
     color: var(--muted);
     font-size: 13px;
     font-weight: 600;
-  }
-
-  .row-line .status-dot {
-    margin-left: auto;
   }
 
   .requests.waiting {
