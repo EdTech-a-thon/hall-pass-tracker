@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import Icon from '#lib/Icon.svelte';
+  import { supportEmail, supportMailto } from '#lib/support.ts';
   import SiteFooter from '#lib/SiteFooter.svelte';
   import WelcomeHeader from '#lib/welcome/WelcomeHeader.svelte';
 
@@ -15,6 +17,14 @@
 
   <main>
     {@render children()}
+
+    <!-- Every guide ends with a way to reach a person. -->
+    {#if page.url.pathname !== '/guides'}
+      <p class="still-stuck">
+        Still running into trouble? Feel free to email us at
+        <a href={supportMailto('Happy Hallways help')}>{supportEmail}</a>, and we can help.
+      </p>
+    {/if}
   </main>
 
   <SiteFooter />
@@ -30,5 +40,18 @@
     width: min(760px, calc(100% - 32px));
     margin: 0 auto;
     padding: 32px 0 64px;
+  }
+
+  .still-stuck {
+    margin: 44px 0 0;
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .still-stuck a {
+    font-weight: 700;
+    text-underline-offset: 4px;
   }
 </style>
