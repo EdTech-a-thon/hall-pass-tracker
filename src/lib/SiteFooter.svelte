@@ -3,6 +3,7 @@
     <img src="/edtechathon-logo.svg" alt="" width="24" height="24" />
     Built by teacher.dev
   </a>
+  <a href="/guides">guides</a>
   <a href="/about">about</a>
   <a href="/privacy">privacy</a>
 </footer>

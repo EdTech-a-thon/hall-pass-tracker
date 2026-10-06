@@ -16,6 +16,7 @@
 <div class="landing">
   <WelcomeHeader>
     <a href="#how-it-works">How it works</a>
+    <a href="/guides">Guides</a>
     <a href="/about">About</a>
     {#if returning}<a href="/">Open the app</a>{/if}
     <a class="cta small" href="/welcome/tour">Get started <Icon name="arrow-right" size={15} /></a>
