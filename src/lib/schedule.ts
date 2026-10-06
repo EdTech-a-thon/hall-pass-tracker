@@ -77,37 +77,59 @@ export function periodProblem(schedule: Schedule, period: ClockRange & { id?: st
 
 /** One stretch of No-Pass Time a schedule makes, and where it came from. */
 export type ScheduledNoPass = ClockRange & {
-  /** A rule's stretch applies only to its period's class; a drawn one to whichever class is on the kiosk. */
+  /** A period's stretch applies only to its class; a drawn one to whichever class is on the kiosk. */
   classId: string | null;
-  from: { rule: string } | { drawn: string };
+  from: { period: string } | { drawn: string };
 };
 
+/** A period's own first and last minutes of No-Pass Time, as clock times. Longer than the period covers it and no more. */
+export function periodNoPass(period: Period, edges = period.noPass): ClockRange[] {
+  if (!period.classId || !edges) return [];
+  const start = toMinutes(period.start);
+  const end = toMinutes(period.end);
+  const times: ClockRange[] = [];
+  if (edges.first > 0) times.push({ start: period.start, end: toClock(Math.min(end, start + edges.first)) });
+  if (edges.last > 0) times.push({ start: toClock(Math.max(start, end - edges.last)), end: period.end });
+  return times;
+}
+
 /**
- * Every No-Pass Time a schedule makes in a day: each rule laid over the
- * periods it covers, plus the times drawn on it. A rule longer than its
- * period covers the whole period and no more.
+ * Moves a schedule's old rules onto its periods: each period takes the
+ * longest "first" and "last" that applied to its class. See EdgeRule.
+ */
+export function withRulesOnPeriods(schedule: Schedule): Schedule {
+  if (!schedule.rules?.length) return { ...schedule, rules: [] };
+  const longest = (period: Period, edge: 'first' | 'last') =>
+    Math.max(
+      period.noPass?.[edge] ?? 0,
+      ...schedule.rules
+        .filter((rule) => rule.edge === edge && (rule.classId === null || rule.classId === period.classId))
+        .map((rule) => rule.minutes),
+    );
+  return {
+    ...schedule,
+    rules: [],
+    periods: schedule.periods.map((period) =>
+      period.classId ? { ...period, noPass: { first: longest(period, 'first'), last: longest(period, 'last') } } : period,
+    ),
+  };
+}
+
+/**
+ * Every No-Pass Time a schedule makes in a day: each period's first and last
+ * minutes, plus the times drawn on it.
  */
 export function scheduledNoPassTimes(schedule: Schedule): ScheduledNoPass[] {
-  const fromRules = schedule.periods.flatMap((period) => {
-    if (!period.classId) return [];
-    const start = toMinutes(period.start);
-    const end = toMinutes(period.end);
-    return schedule.rules
-      .filter((rule) => rule.minutes > 0 && (rule.classId === null || rule.classId === period.classId))
-      .map((rule) => ({
-        start: rule.edge === 'first' ? period.start : toClock(Math.max(start, end - rule.minutes)),
-        end: rule.edge === 'first' ? toClock(Math.min(end, start + rule.minutes)) : period.end,
-        classId: period.classId,
-        from: { rule: rule.id },
-      }));
-  });
+  const fromPeriods = withRulesOnPeriods(schedule).periods.flatMap((period) =>
+    periodNoPass(period).map((time) => ({ ...time, classId: period.classId, from: { period: period.id } })),
+  );
   const drawn = schedule.noPassTimes.map((time) => ({
     start: time.start,
     end: time.end,
     classId: null,
     from: { drawn: time.id },
   }));
-  return [...fromRules, ...drawn];
+  return [...fromPeriods, ...drawn];
 }
 
 /** What decides No-Pass Time, as the laptop and the kiosk each hold it. */

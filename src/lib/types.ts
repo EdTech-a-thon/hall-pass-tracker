@@ -68,9 +68,19 @@ export type PermissionKind = Permission['kind'];
 export type ClockRange = { start: string; end: string };
 
 /** One stretch of the clock in a Schedule, belonging to one class, or to none (lunch, planning). */
-export type Period = ClockRange & { id: string; classId: string | null };
+export type Period = ClockRange & {
+  id: string;
+  classId: string | null;
+  /** No-Pass Time in the first and last minutes of this period. Only a period with a class has any. */
+  noPass?: { first: number; last: number };
+};
 
-/** "First 10 minutes of every class": a No-Pass Time at the start or end of a schedule's periods. */
+/**
+ * Older versions kept "first 10 minutes of every class" as rules across a
+ * schedule's periods. They are moved onto each period when an account loads,
+ * so a teacher's own list is always empty; a kiosk still reads them from a
+ * laptop that hasn't updated yet.
+ */
 export type EdgeRule = {
   id: string;
   edge: 'first' | 'last';
@@ -87,6 +97,7 @@ export type Schedule = {
   id: string;
   name: string;
   periods: Period[];
+  /** Always sent, empty, so a kiosk on an older version can still read the schedule. */
   rules: EdgeRule[];
   /** Fixed No-Pass Times drawn on this schedule. They apply to whichever class is on the kiosk. */
   noPassTimes: (ClockRange & { id: string })[];
@@ -173,7 +184,8 @@ export type Account = {
   /** Always at least one. */
   schedules: Schedule[];
   /** The schedule the teacher last picked. It stays picked until they pick another. */
-  currentScheduleId: string;
+  /** The Current Schedule, or null when the teacher has none. */
+  currentScheduleId: string | null;
   manualNoPass: ManualNoPass | null;
   /** Permissions given from the laptop and not used yet. */
   permissions: Permission[];

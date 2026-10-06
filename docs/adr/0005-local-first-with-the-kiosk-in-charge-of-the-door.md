@@ -5,7 +5,7 @@ kiosk talks to that laptop directly, device to device, after a one-time pairing.
 A small matchmaking server of our own (a standard PeerJS server) introduces the
 two devices and stores nothing. Pass data normally travels directly between
 them; on networks that forbid that, it is relayed, still encrypted, through
-PeerJS's public relay until we run one of our own. We dropped the hosted database because accounts, passwords and a
+Cloudflare's TURN relay. We dropped the hosted database because accounts, passwords and a
 server holding a class list of minors were costs teachers never asked for, and
 the export file gives them a way back if a browser is lost.
 

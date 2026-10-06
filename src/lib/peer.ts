@@ -17,23 +17,38 @@ const server = {
   port: Number(env.VITE_PEER_PORT || 443),
   path: (env.VITE_PEER_PATH as string) || '/peerjs',
   secure: env.VITE_PEER_SECURE !== 'false',
-  /**
-   * Google's public STUN server only tells each device its own network
-   * address. When a network blocks direct connections, the encrypted data is
-   * relayed through PeerJS's public TURN servers, which can't read it.
-   * TEMPORARY: replace the relay with one we run, then drop this entry.
-   */
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      {
-        urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
-        username: 'peerjs',
-        credential: 'peerjsp',
-      },
-    ],
-  },
 };
+
+/**
+ * Google's public STUN server only tells each device its own network address.
+ * When a network blocks direct connections, the encrypted data is relayed
+ * through Cloudflare's TURN servers, which can't read it. /api/turn hands out
+ * logins for them that expire, so they are fetched again every few hours.
+ */
+const stun: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
+const refreshRelayMs = 4 * 60 * 60_000;
+
+/**
+ * Set VITE_FORCE_TURN=true in .env.local to send everything through the relay,
+ * even when a direct connection would work. Only for testing the relay.
+ */
+const iceTransportPolicy: RTCIceTransportPolicy = env.VITE_FORCE_TURN === 'true' ? 'relay' : 'all';
+
+let relay: { servers: RTCIceServer[]; fetchedAt: number } | null = null;
+let relayProblem = '';
+
+async function iceServers(): Promise<RTCIceServer[]> {
+  if (relay && Date.now() - relay.fetchedAt < refreshRelayMs) return [stun, ...relay.servers];
+  try {
+    const response = await fetch('/api/turn', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (response.ok) relay = { servers: (await response.json()).iceServers, fetchedAt: Date.now() };
+    relayProblem = response.ok ? '' : `answered ${response.status}`;
+  } catch (error) {
+    // No relay this time; devices can still connect directly where the network allows.
+    relayProblem = String(error);
+  }
+  return relay ? [stun, ...relay.servers] : [stun];
+}
 
 /**
  * Finds the first matchmaking server name this device can reach, by asking it
@@ -56,6 +71,16 @@ async function pickHost(): Promise<string> {
     }
   }
   return hosts[hosts.length - 1];
+}
+
+/** How this page is set up to connect, for a support report. */
+export function connectionSetup() {
+  const relayRoutes = relay?.servers.flatMap((server) => [server.urls].flat()) ?? [];
+  return {
+    matchmakingServer: reachableHost ?? hosts.join(' or ') + ' (not reached yet)',
+    relay: relay ? `${relayRoutes.length} routes` : `no logins (${relayProblem || 'not asked yet'})`,
+    relayOnly: iceTransportPolicy === 'relay',
+  };
 }
 
 /** Every connection this page opened, so they can all be closed when it goes away. */
@@ -82,9 +107,14 @@ import.meta.hot?.dispose(releaseAll);
  */
 export async function createPeer(id?: string): Promise<Peer> {
   const { Peer } = await import('peerjs');
-  const options = { ...server, host: await pickHost() };
+  const options = { ...server, host: await pickHost(), config: { iceServers: await iceServers(), iceTransportPolicy } };
   const peer = id ? new Peer(id, options) : new Peer(options);
   live.add(peer);
+
+  // Pages stay open for days, so swap in fresh relay logins before the old ones expire.
+  const refreshRelay = window.setInterval(async () => {
+    options.config.iceServers = await iceServers();
+  }, refreshRelayMs);
 
   let delay = 3000;
   let timer = 0;
@@ -98,6 +128,7 @@ export async function createPeer(id?: string): Promise<Peer> {
   });
   peer.on('close', () => {
     clearTimeout(timer);
+    clearInterval(refreshRelay);
     live.delete(peer);
   });
   return peer;

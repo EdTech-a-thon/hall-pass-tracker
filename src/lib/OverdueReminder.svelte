@@ -4,10 +4,11 @@
   import Icon from './Icon.svelte';
   import { link } from './link.svelte';
   import { duration, isOverdue } from './passes';
+  import Toast from './Toast.svelte';
 
   /**
-   * The Overdue Reminder: every teacher page shows each overdue student until
-   * they are back. It can't be dismissed while they are still out. The kiosk
+   * The Overdue Reminder: every teacher page shows each overdue student, as a
+   * toast, until they are back. It can't be dismissed while they are still out. The kiosk
    * never shows it. See CONTEXT.md and docs/adr/0003.
    */
 
@@ -42,9 +43,8 @@
 </script>
 
 {#if overdue.length}
-  <div class="notice-bar overdue-reminder" role="status">
-    <Icon name="clock" />
-    <div class="stack" style="gap:8px; flex:1">
+  <Toast icon="clock" tone="warn" class="overdue-reminder">
+    <div class="stack" style="gap:8px">
       <ul class="overdue-list">
         {#each overdue as pass (pass.id)}
           <li>
@@ -63,18 +63,10 @@
         </span>
       {/if}
     </div>
-  </div>
+  </Toast>
 {/if}
 
 <style>
-  .overdue-reminder {
-    position: sticky;
-    top: 12px;
-    z-index: 5;
-    margin-bottom: 22px;
-    box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
-  }
-
   .overdue-list {
     display: grid;
     gap: 6px;

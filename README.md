@@ -19,8 +19,8 @@ entirely in the browser:
 - A paired kiosk talks **directly** to the laptop using
   [PeerJS](https://peerjs.com) (WebRTC). Our matchmaking server,
   `peer.happyhallways.com` (or `peer.teacher.dev` where that is blocked), only introduces the two devices. On networks that block
-  direct connections, the encrypted data is relayed through PeerJS's public
-  relay for now (see SECURITY.md).
+  direct connections, the encrypted data is relayed through Cloudflare's TURN
+  relay, which can't read it (see SECURITY.md).
 - The kiosk is in charge of the door. It decides who may leave, and it keeps
   working while the laptop is closed, saving passes on the device and sending
   them when the two reconnect. If the school network blocks devices from
@@ -65,6 +65,15 @@ VITE_PEER_PORT=9000
 VITE_PEER_PATH=/hallway
 VITE_PEER_SECURE=false
 ```
+
+### The relay
+
+`api/turn.ts` hands the browser short-lived logins for Cloudflare's relay. It
+needs `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` (from the TURN key in Cloudflare
+Realtime) in the hosting environment, and in `.env.local` to use
+the relay during `bun run dev`. Without them, devices still connect wherever
+the network allows a direct connection. Add `VITE_FORCE_TURN=true` to
+`.env.local` to send every connection through the relay, to test it.
 
 To try a laptop and a kiosk in one browser, open them at two different
 addresses, e.g. `http://127.0.0.1:8000` and `http://192.168.0.29:8000`. Each

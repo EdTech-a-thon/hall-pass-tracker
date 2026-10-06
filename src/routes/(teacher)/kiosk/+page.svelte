@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import {
     account,
-    currentSchedule,
+    liveSchedule,
     findClass,
     moveWarning,
     removeKiosk,
@@ -167,9 +167,9 @@
         </label>
         {#if !account.classes.length}
           <p class="muted small">Create a class first, and it will show here.</p>
-        {:else if account.activeClass?.onSchedule}
+        {:else if liveSchedule()}
           <p class="muted small">
-            Following <a href="/schedule">{currentSchedule().name}</a>: the kiosk changes class by itself as each period starts.
+            Following <a href="/schedule/{liveSchedule()?.id}">{liveSchedule()?.name}</a>: the kiosk changes class by itself as each period starts.
           </p>
         {:else}
           <p class="muted small">Want it to change class by itself? Set up your <a href="/schedule">schedule</a>.</p>

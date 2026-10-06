@@ -32,7 +32,8 @@
     </p>
     <p>
       Some school networks block devices from talking directly. Then the encrypted data is passed along by a relay run
-      by <a href="https://peerjs.com" target="_blank" rel="noopener noreferrer">PeerJS</a>, which can't read it.
+      by <a href="https://developers.cloudflare.com/realtime/turn/" target="_blank" rel="noopener noreferrer">Cloudflare</a>,
+      which can't read it.
       Google's public connection service helps each device learn its own network address; it sees no class data.
     </p>
     <p>The kiosk keeps a copy of your students' short names and holds passes only until your computer receives them.</p>

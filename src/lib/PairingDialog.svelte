@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { account, setNetworkBlocked } from './account.svelte';
+  import { account } from './account.svelte';
   import Icon from './Icon.svelte';
   import { beginPairing, cancelPairing, link } from './link.svelte';
   import Modal from './Modal.svelte';
   import QrCode from './QrCode.svelte';
+  import SupportDetails from './SupportDetails.svelte';
 
   /**
    * Pairing takes over the screen: show the code, follow the device as it
@@ -19,7 +20,7 @@
 
   let clock = $state(Date.now());
   onMount(() => {
-    if (!account.networkBlocked) beginPairing();
+    beginPairing();
     const timer = setInterval(() => (clock = Date.now()), 1000);
     return () => clearInterval(timer);
   });
@@ -57,14 +58,9 @@
       </p>
       <div class="row" style="justify-content:center">
         <button class="btn btn-primary" onclick={onUseThisComputer}><Icon name="monitor" size={16} />Use this computer</button>
-        <button
-          class="btn"
-          onclick={() => {
-            setNetworkBlocked(false);
-            beginPairing();
-          }}>Try pairing again</button
-        >
+        <button class="btn" onclick={beginPairing}>Try pairing again</button>
       </div>
+      {#if link.problem}<SupportDetails {...link.problem} />{/if}
     {:else if link.pairing?.state === 'failed'}
       <span class="big-tile warn"><Icon name="alert-triangle" size={36} /></span>
       <h1 id="pairing-title">Couldn't get a pairing code</h1>
@@ -73,6 +69,7 @@
         <button class="btn btn-primary" onclick={beginPairing}>Try again</button>
         <button class="btn" onclick={close}>Cancel</button>
       </div>
+      {#if link.problem}<SupportDetails {...link.problem} />{/if}
     {:else}
       <p class="eyebrow">Pair a device</p>
       <h1 id="pairing-title">On the door device, scan this or type the code</h1>

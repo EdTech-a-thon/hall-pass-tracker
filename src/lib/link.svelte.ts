@@ -12,6 +12,7 @@ import {
   setLine,
   setNetworkBlocked,
 } from './account.svelte';
+import { connectionReport, watchConnection } from './diagnostics';
 import { newId } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
 import type { KioskMessage, LaptopMessage } from './types';
@@ -20,7 +21,7 @@ import type { KioskMessage, LaptopMessage } from './types';
  * The laptop's end of the kiosk connection. The two devices talk directly
  * (PeerJS over WebRTC); our matchmaking server only introduces them, and pass
  * data never passes through it. A network that blocks direct connections
- * relays the encrypted data through PeerJS's public relay (see peer.ts). See docs/adr/0005.
+ * relays the encrypted data through Cloudflare's relay (see peer.ts). See docs/adr/0005.
  */
 
 const pairingMinutes = 10;
@@ -31,6 +32,8 @@ export const link = $state({
   /** live: the kiosk is connected. offline: we are listening, but it is not. taken: another tab holds this account. */
   status: 'off' as 'off' | 'offline' | 'live' | 'taken',
   pairing: null as null | { code: string; expiresAt: number; state: 'starting' | 'waiting' | 'connecting' | 'failed' },
+  /** Why the last pairing attempt failed, for the teacher to send to support. */
+  problem: null as null | { code: string; text: string },
 });
 
 let peer: Peer | null = null;
@@ -197,6 +200,9 @@ function sixDigits() {
  */
 export async function beginPairing() {
   cancelPairing();
+  // Every attempt is a fresh try: the network (or our relay) may have changed since the last one failed.
+  link.problem = null;
+  if (account.networkBlocked) setNetworkBlocked(false);
   const code = sixDigits();
   link.pairing = { code, expiresAt: Date.now() + pairingMinutes * 60_000, state: 'starting' };
   const temporary = await createPeer(pairingPrefix + code);
@@ -204,17 +210,31 @@ export async function beginPairing() {
   temporary.on('open', () => {
     if (link.pairing?.code === code) link.pairing.state = 'waiting';
   });
-  temporary.on('error', (error) => {
+  temporary.on('error', async (error) => {
     if (pairingPeer !== temporary) return;
-    if (error.type === 'unavailable-id') beginPairing();
-    else if (link.pairing) link.pairing.state = 'failed';
+    if (error.type === 'unavailable-id') return beginPairing();
+    if (!link.pairing) return;
+    link.pairing.state = 'failed';
+    link.problem = await connectionReport({
+      problem: "Couldn't get a pairing code from the matchmaking server",
+      side: 'teacher laptop',
+      peerError: `${error.type}: ${error.message}`,
+    });
   });
   temporary.on('connection', (connection) => {
     if (link.pairing?.code !== code) return;
     link.pairing.state = 'connecting';
+    const watch = watchConnection(connection.peerConnection);
     // The device found the code but the network will not let the two talk
     // directly. Then only this computer can be the kiosk. See docs/adr/0005.
-    const giveUp = setTimeout(() => {
+    const giveUp = setTimeout(async () => {
+      // Read the connection's details before cancelling closes it.
+      link.problem = await connectionReport({
+        problem: `The door device found the code, but they couldn't connect within ${connectSeconds} seconds`,
+        side: 'teacher laptop',
+        connection: connection.peerConnection,
+        watch,
+      });
       setNetworkBlocked(true);
       cancelPairing();
     }, connectSeconds * 1000);

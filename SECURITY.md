@@ -24,10 +24,16 @@ storage. See `docs/adr/0005-local-first-with-the-kiosk-in-charge-of-the-door.md`
   stores nothing and never receives pass data.
 - Pass data travels over WebRTC's encrypted channel, directly between the
   devices where the network allows. Where it doesn't, it is relayed through
-  PeerJS's public TURN servers (`turn.peerjs.com`), which pass the encrypted
-  data along without being able to read it. This relay is temporary, until we
-  run our own. Google's public STUN server helps each device learn its own
-  network address; it sees no pass data.
+  Cloudflare's TURN servers (`turn.cloudflare.com`), which pass the encrypted
+  data along without being able to read it. The browser gets relay logins
+  from `/api/turn` that expire after 12 hours; the Cloudflare token that
+  creates them stays on the server. Anyone can ask `/api/turn` for logins, so
+  someone could use the relay at our expense; a Cloudflare usage alert would catch
+  that. Google's public STUN server helps each device learn its own network
+  address; it sees no pass data.
+- When pairing fails, the teacher can copy a connection report to send to
+  support. It holds the browser, app version, connection states and error
+  messages, but no student data, network addresses or relay logins.
 - The 6-digit pairing code is a temporary address. It works once and expires
   after 10 minutes. A code could, rarely, be guessed by someone else in those
   minutes, and their device would become the kiosk. Pairing again replaces it.
