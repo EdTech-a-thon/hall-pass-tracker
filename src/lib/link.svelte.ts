@@ -1,6 +1,7 @@
 import type { DataConnection, Peer } from 'peerjs';
 import {
   account,
+  answered,
   doorSetup,
   forgetReplacedKiosk,
   markKioskSeen,
@@ -11,11 +12,12 @@ import {
   setActiveClass,
   setLine,
   setNetworkBlocked,
+  setRequests,
 } from './account.svelte';
 import { connectionReport, watchConnection } from './diagnostics';
 import { newId } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
-import type { KioskMessage, LaptopMessage } from './types';
+import type { KioskMessage, LaptopMessage, PassRequest } from './types';
 
 /**
  * The laptop's end of the kiosk connection. The two devices talk directly
@@ -44,6 +46,28 @@ let pairingTimer = 0;
 
 function send(connection: DataConnection | null, message: LaptopMessage) {
   if (connection?.open) connection.send(message);
+}
+
+/** One line saying whether the kiosk is working, for the status box and Home. */
+export function kioskState(): { text: string; dot: '' | 'live' | 'warn' } {
+  const kiosk = account.kiosk;
+  if (!kiosk) return { text: 'Kiosk not set up', dot: '' };
+  if (kiosk.kind === 'this-computer') return { text: 'Kiosk on this computer', dot: 'live' };
+  if (link.status === 'live') return { text: 'Kiosk online', dot: 'live' };
+  if (link.status === 'taken') return { text: 'Open in another tab', dot: 'warn' };
+  return { text: 'Kiosk offline', dot: 'warn' };
+}
+
+/** Only the tab connected to the kiosk can answer a student, and only while it is. */
+export function canAnswer() {
+  return link.status === 'live';
+}
+
+/** Approve or deny a student's Request. The kiosk starts the pass, or tells them no. */
+export function answerRequest(request: PassRequest, approve: boolean) {
+  if (!canAnswer()) return;
+  send(kioskConnection, { type: 'answer', requestId: request.id, approve });
+  answered(request, approve);
 }
 
 /** Keeps the kiosk's copy current whenever the teacher changes anything. */
@@ -159,6 +183,7 @@ function acceptCurrent(connection: DataConnection) {
     }
     if (message.type === 'active-class') setActiveClass(message.activeClass);
     if (message.type === 'line') setLine(message.line);
+    if (message.type === 'requests') setRequests(message.requests);
   });
   connection.on('close', () => {
     if (kioskConnection !== connection) return;

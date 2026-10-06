@@ -6,6 +6,9 @@
   import {
     activeDoorClass,
     allowanceFor,
+    askTeacher,
+    canAsk,
+    cancelRequest,
     changeClass,
     checkPin,
     clearLine,
@@ -26,7 +29,9 @@
     openPassFor,
     outCount,
     pairWithCode,
+    requestFor,
     requestPass,
+    settleRequests,
     setup,
     signBackIn,
     undoPass,
@@ -56,6 +61,13 @@
   $effect(() => {
     if (local || paired) followSchedule(clock);
   });
+  // A Request ends by itself once nothing stops the student any more.
+  $effect(() => {
+    void clock;
+    if (paired) settleRequests();
+  });
+  /** For a minute after the teacher says no, the student's name says so. */
+  const deniedRecently = (studentId: string) => clock - (door.denied[studentId] ?? 0) < 60_000;
   const following = $derived(onSchedule());
   /** Between periods: the next class the schedule puts on today. */
   const next = $derived.by(() => {
@@ -81,6 +93,8 @@
   let choosingFor = $state(null as { id: string; name: string } | null);
   /** A student in the Line who tapped their name before it was their turn. */
   let waitingFor = $state(null as { id: string; name: string } | null);
+  /** A student waiting for the teacher to answer their Request, who tapped their name again. */
+  let askedFor = $state(null as { id: string; name: string } | null);
   /** The teacher menu: closed, asking for the PIN, or open. */
   let teacher = $state('closed' as 'closed' | 'pin' | 'menu');
   /** Set while the PIN is asked for to let a student go past whatever is stopping them. */
@@ -106,7 +120,7 @@
   // survive the refresh.
   let lastTouch = $state(Date.now());
   $effect(() => {
-    const idle = !door.notice && !choosingFor && !waitingFor && teacher === 'closed';
+    const idle = !door.notice && !choosingFor && !waitingFor && !askedFor && teacher === 'closed';
     if (updated.current && idle && clock - lastTouch >= 60_000) leaveTo(location.href);
   });
 
@@ -123,6 +137,10 @@
   function tap(student: { id: string; name: string }) {
     if (openPassFor(student.id)) {
       signBackIn(student.id);
+      return;
+    }
+    if (requestFor(student.id)) {
+      askedFor = student;
       return;
     }
     const spot = lineSpotFor(student.id);
@@ -154,7 +172,7 @@
   function submitPin(event: SubmitEvent) {
     event.preventDefault();
     if (checkPin(pin) && lettingGo) {
-      requestPass(lettingGo.studentId, lettingGo.destination, true);
+      requestPass(lettingGo.studentId, lettingGo.destination, 'pin');
       lettingGo = null;
       teacher = 'closed';
     } else if (checkPin(pin)) {
@@ -165,11 +183,17 @@
     }
   }
 
-  /** "Teacher: let them go", wherever a rule has stopped a student. */
+  /** "Teacher PIN", wherever a rule has stopped a student: the teacher lets them go right here. */
   function askToLetGo(offer: { studentId: string; destination: string }) {
     dismissNotice();
     openTeacher();
     lettingGo = offer;
+  }
+
+  /** "Ask my teacher", wherever a rule has stopped a student: the teacher answers on Home. */
+  function ask(offer: { studentId: string; destination: string }) {
+    dismissNotice();
+    askTeacher(offer.studentId, offer.destination);
   }
 
   function switchTo(classId: string) {
@@ -184,7 +208,7 @@
 
   function exitToTeacher() {
     setDoorLocked(false);
-    goto('/kiosk');
+    goto('/');
   }
 
   function stopBeingKiosk() {
@@ -287,12 +311,17 @@
           {@const pass = openPassFor(student.id)}
           {@const spot = pass ? null : lineSpotFor(student.id)}
           {@const isNext = isUpNext(student.id)}
+          {@const asked = pass ? null : requestFor(student.id)}
           <!-- Where they went, never how long: the door carries no clock. See docs/adr/0003. -->
-          <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} onclick={() => tap(student)}>
+          <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} class:asked onclick={() => tap(student)}>
             <span class="name-text">{student.name}</span>
             {#if pass}
               <span class="name-status out-status">
                 <DestinationIcon label={pass.destination} list={destinations} size={22} />Out · {pass.destination}
+              </span>
+            {:else if asked}
+              <span class="name-status asked-status">
+                <DestinationIcon label={asked.destination} list={destinations} size={22} />Asked your teacher
               </span>
             {:else if isNext && spot}
               <span class="name-status next-status">
@@ -302,6 +331,8 @@
               <span class="name-status waiting-status">
                 <DestinationIcon label={spot.destination} list={destinations} size={22} />{ordinal(spot.position)} in line
               </span>
+            {:else if deniedRecently(student.id)}
+              <span class="name-status denied-status">Not right now</span>
             {:else}
               <span class="name-status">In class</span>
             {/if}
@@ -334,9 +365,7 @@
         <p class="lede">Where are you going?</p>
         {#if allowanceFor(choosingFor.id)}
           {@const allowance = allowanceFor(choosingFor.id)!}
-          <p class="allowance" class:used-up={allowance.usedUp && !allowance.gift}>
-            {allowance.usedUp && allowance.gift ? 'Your teacher gave you an extra pass.' : allowance.text}
-          </p>
+          <p class="allowance" class:used-up={allowance.usedUp}>{allowance.text}</p>
         {/if}
         <div class="choices">
           {#each destinations as destination (destination.id)}
@@ -388,14 +417,51 @@
           >
         </div>
         {#if spot}
-          <button
-            class="quiet-link"
-            onclick={() => {
-              waitingFor = null;
-              askToLetGo({ studentId: spot.studentId, destination: spot.destination });
-            }}><Icon name="lock" size={14} /> Teacher: let them go now</button
-          >
+          {@const offer = { studentId: spot.studentId, destination: spot.destination }}
+          <div class="choices">
+            {#if canAsk()}
+              <button
+                class="door-btn"
+                onclick={() => {
+                  waitingFor = null;
+                  ask(offer);
+                }}><Icon name="hand" size={16} />Ask my teacher</button
+              >
+            {/if}
+            <button
+              class="door-btn"
+              onclick={() => {
+                waitingFor = null;
+                askToLetGo(offer);
+              }}><Icon name="lock" size={16} />Teacher PIN</button
+            >
+          </div>
         {/if}
+      </div>
+    </Modal>
+  {/if}
+
+  {#if askedFor}
+    {@const asked = requestFor(askedFor.id)}
+    <Modal overlay="overlay" labelledby="asked-title" onClose={() => (askedFor = null)}>
+      <div class="sheet">
+        <p class="door-eyebrow">Asked your teacher</p>
+        <h2 id="asked-title">{askedFor.name}</h2>
+        {#if asked}
+          <p class="lede">
+            You asked to go to {asked.destination}. If your teacher says yes, your name will say you’re out. Then go.
+          </p>
+        {/if}
+        <div class="choices">
+          <button class="door-btn primary" onclick={() => (askedFor = null)}>Keep waiting</button>
+          <button
+            class="door-btn"
+            onclick={() => {
+              if (askedFor) cancelRequest(askedFor.id);
+              askedFor = null;
+            }}>Never mind</button
+          >
+        </div>
       </div>
     </Modal>
   {/if}
@@ -422,7 +488,10 @@
         {/if}
         {#if door.notice.offerTeacher}
           {@const offer = door.notice.offerTeacher}
-          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher: let them go</button>
+          {#if canAsk()}
+            <button class="door-btn" onclick={() => ask(offer)}><Icon name="hand" size={16} />Ask my teacher</button>
+          {/if}
+          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher PIN</button>
         {/if}
       </div>
     </div>
@@ -433,7 +502,7 @@
       <div class="sheet">
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
-          {#if lettingGo}<p class="lede small">Enter your PIN to let this student go now. Their pass will show you let them go.</p>{/if}
+          {#if lettingGo}<p class="lede small">Enter your PIN to let this student go now. Their pass will show you approved it.</p>{/if}
           <form onsubmit={submitPin}>
             <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} {@attach focusOnShow} />
             <button class="door-btn primary">Unlock</button>
@@ -623,7 +692,13 @@
     background: #e9f4ec;
   }
 
+  .name.asked {
+    border-color: #d9c6ef;
+    background: #f6f1fc;
+  }
+
   .waiting-status,
+  .asked-status,
   .next-status {
     display: flex;
     align-items: center;
@@ -636,6 +711,14 @@
 
   .next-status {
     color: var(--accent);
+  }
+
+  .asked-status {
+    color: #6a4cbb;
+  }
+
+  .denied-status {
+    color: var(--door-out);
   }
 
   /* Readable from across the room, so students can see it isn't time without asking. */

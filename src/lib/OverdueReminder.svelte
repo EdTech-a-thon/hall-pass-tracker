@@ -29,7 +29,7 @@
   const mayBeOutOfDate = $derived(account.kiosk?.kind === 'device' && link.status !== 'live');
 
   // Put the count at the front of the tab's title, so a teacher in another tab still sees it.
-  const titlePrefix = /^\(\d+\) Overdue · /;
+  const titlePrefix = /\(\d+\) Overdue · /;
   let navigated = $state(0);
   afterNavigate(() => navigated++);
   $effect(() => {

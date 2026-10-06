@@ -33,7 +33,7 @@ _Avoid_: Reason, location, place
 **Pass**:
 One round trip — a student left for a destination and has, or has not yet, come
 back.
-_Avoid_: Trip, hall pass, request
+_Avoid_: Trip, hall pass
 
 **Pass Limit**:
 The most students who may be at one destination at the same time, such as one
@@ -52,29 +52,33 @@ stops them or warns them and lets them go, as the teacher chooses. Off unless
 the teacher turns it on.
 _Avoid_: Pass Limit (that is how many may be out at once), quota, budget, cap
 
+**Request**:
+A blocked student asking the teacher to let them go, made at the kiosk. The
+teacher sees what the student wants to do and answers yes or no, either on Home
+or with their PIN at the kiosk; a yes starts the pass at once. Whatever was
+blocking them, the teacher's choice is the same.
+A student has at most one waiting Request. It ends unanswered if they cancel
+it, the Active Class changes, or nothing blocks them any more. Asking needs the
+kiosk to reach the teacher's laptop; otherwise only the PIN will do.
+_Avoid_: Override, ask, permission
+
 **Extra Pass**:
 A pass taken after a student has used up their Pass Allowance, because the
-teacher let them go or because the allowance only warns. The teacher lets a
-student go at the kiosk with their PIN, or gives them one from the laptop for
-the student to use at the kiosk before the day ends. An Extra Pass lifts only
-the allowance; No-Pass Time and a full destination each need their own
-permission, a No-Pass Exception or a Line Skip. When the teacher lets a student
-go, they get whichever of the three they need, each recorded on its own. It is recorded and counted like any other pass, and marked as
-extra so the teacher can see it later. A pass cancelled at the door is never
-extra, because it never counts.
+teacher approved their Request or because the allowance only warns. It is
+recorded and counted like any other pass, and marked as extra so the teacher
+can see it later. A pass cancelled at the door is never extra, because it never
+counts.
 _Avoid_: Override, excused pass, bonus pass
 
 **No-Pass Exception**:
-The teacher's permission for one student to start one pass during No-Pass
-Time. It lifts only the No-Pass Time, and lasts until it is used or that
-stretch of No-Pass Time ends. A pass taken with one is marked so the teacher
-can see it later.
+A pass taken during No-Pass Time because the teacher approved the student's
+Request. It is marked so the teacher can see it later.
 _Avoid_: Extra Pass (that lifts the Pass Allowance), override, excused pass
 
 **Line Skip**:
-The teacher's permission for one student to leave for a destination that has
-reached its Pass Limit, ahead of anyone in its Line. Those in line keep their
-places. A pass taken with one is marked so the teacher can see it later.
+A pass taken at a destination that has reached its Pass Limit, ahead of anyone
+in its Line, because the teacher approved the student's Request. Those in line
+keep their places. It is marked so the teacher can see it later.
 _Avoid_: Cutting, priority, override
 
 **Exempt Student**:
@@ -155,9 +159,21 @@ laptop, or at the kiosk with the teacher's PIN — and moving it by hand takes t
 teacher off schedule. Browsing a different class on the laptop does not move it.
 _Avoid_: Current class, selected class
 
+**Home**:
+The teacher's one page for the school day, showing the Active Class right now:
+who is out, each Line, open Requests and any No-Pass Time. From it the teacher
+switches the Active Class or the Current Schedule, and steps off or back on
+schedule.
+_Avoid_: Dashboard, Now tab, class page
+
+**History**:
+Every pass and every answered Request, across all classes, for looking back
+afterwards. Corrections are made there.
+_Avoid_: Audit log, pass log, records
+
 **Overdue**:
-A pass that has lasted longer than its destination's expected minutes. Only the
-teacher's dashboard says a pass is overdue; kiosk mode never does.
+A pass that has lasted longer than its destination's expected minutes. Only Home and
+History say a pass is overdue; kiosk mode never does.
 _Avoid_: Late, over time, flagged
 
 **Overdue Reminder**:
@@ -166,7 +182,7 @@ becomes Overdue, naming the student, where they went and how long they have been
 gone. It lasts until the student is back, whether they signed in or the teacher
 marked them back; it cannot be waved away while they are still out. It never
 appears on the kiosk, so when the teacher's own computer is the kiosk there is
-no reminder, and overdue passes are reviewed afterwards in the class's history.
+no reminder, and overdue passes are reviewed afterwards in History.
 _Avoid_: Alert, alarm, notification, flag
 
 **Correction**:

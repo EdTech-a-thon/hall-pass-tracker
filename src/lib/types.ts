@@ -46,23 +46,26 @@ export type PassAllowance = {
   since: string;
 };
 
+/** What can stop a student from leaving: a used-up Pass Allowance, No-Pass Time, or a full destination (or others ahead in its Line). */
+export type Block = 'allowance' | 'no-pass' | 'full';
+
 /**
- * The teacher's go-ahead from the laptop, for one student's next pass at the
- * kiosk. Each kind lifts one rule and is recorded on its own: an Extra Pass
- * lifts the Pass Allowance, a No-Pass Exception the No-Pass Time, and a Line
- * Skip a destination's Pass Limit and Line.
+ * A Request: a blocked student asking the teacher to let them go. The kiosk
+ * keeps them, as it keeps the Line, and tells the laptop. See docs/adr/0009.
  */
-export type Permission = {
+export type PassRequest = {
   id: string;
-  kind: 'extra-pass' | 'no-pass-exception' | 'line-skip';
   classId: string;
   studentId: string;
-  givenAt: string;
-  /** Unused, it stops working at this time: the end of the day, or of the No-Pass Time it was for. */
-  expiresAt: string;
+  studentName: string;
+  destination: string;
+  /** What was stopping them when they asked. */
+  blocks: Block[];
+  askedAt: string;
 };
 
-export type PermissionKind = Permission['kind'];
+/** A Request the teacher said no to, kept for History. */
+export type DeniedRequest = PassRequest & { deniedAt: string };
 
 /** A stretch of the clock, as "HH:MM" (24-hour) times, from `start` up to (not including) `end`. */
 export type ClockRange = { start: string; end: string };
@@ -135,10 +138,8 @@ export type Pass = {
   noPassException?: boolean;
   /** Taken while the destination was full, ahead of its Line, with the teacher's permission. */
   lineSkip?: boolean;
-  /** The laptop's Permissions this pass used up, if any. */
-  permissionIds?: string[];
-  /** The one Extra Pass an older kiosk recorded using, from before there were Permissions. */
-  giftId?: string;
+  /** Where the teacher approved the student's Request: on Home, or with the PIN at the kiosk. */
+  approvedBy?: 'home' | 'pin';
   outAt: string;
   inAt?: string;
   endedBy?: EndedBy;
@@ -187,10 +188,11 @@ export type Account = {
   /** The Current Schedule, or null when the teacher has none. */
   currentScheduleId: string | null;
   manualNoPass: ManualNoPass | null;
-  /** Permissions given from the laptop and not used yet. */
-  permissions: Permission[];
-  /** The newest "What's changed" entry this teacher has seen. Missing on accounts from before there was one. */
-  seenUpdate?: string;
+  /** Every waiting Request as the kiosk last reported it. The kiosk is in charge of them. */
+  requests: PassRequest[];
+  deniedRequests: DeniedRequest[];
+  /** Each Popup this teacher has closed, and when. */
+  seenPopups: Record<string, string>;
   /** The teacher's PIN, needed at the kiosk to change class or unpair. */
   pin: string;
   kiosk: Kiosk | null;
@@ -220,7 +222,6 @@ export type DoorSetup = {
   passAllowance: PassAllowance;
   /** Every pass that uses up the Pass Allowance in its current window, so the kiosk can count without the laptop. */
   countedPasses: CountedPass[];
-  permissions: Permission[];
   activeClass: ActiveClass | null;
   /** The Current Schedule. Missing from a laptop on the version before schedules. */
   schedule?: Schedule;
@@ -228,12 +229,10 @@ export type DoorSetup = {
   pin: string;
   /**
    * What a kiosk still running the version before per-destination limits
-   * reads, until it refreshes: one Pass Limit for every destination, and the
-   * Extra Passes. A laptop on that version sends these instead of `limit` and
-   * `permissions`.
+   * reads, until it refreshes: one Pass Limit for every destination. A laptop
+   * on that version sends this instead of `limit`.
    */
   passLimit?: number;
-  extraPassGifts?: { id: string; classId: string; studentId: string; givenAt: string }[];
   /** Passes still open, plus today's, so both sides agree on who is out. */
   passes: Pass[];
 };
@@ -243,6 +242,7 @@ export type KioskMessage =
   | { type: 'passes'; passes: Pass[] }
   | { type: 'active-class'; activeClass: ActiveClass }
   | { type: 'line'; line: LineSpot[] }
+  | { type: 'requests'; requests: PassRequest[] }
   | { type: 'ping' };
 
 export type LaptopMessage =
@@ -250,4 +250,5 @@ export type LaptopMessage =
   | { type: 'setup'; setup: DoorSetup }
   | { type: 'ack'; passes: { id: string; updatedAt: string }[] }
   | { type: 'replaced' }
+  | { type: 'answer'; requestId: string; approve: boolean }
   | { type: 'ping' };
