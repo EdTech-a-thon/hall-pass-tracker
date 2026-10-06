@@ -7,22 +7,19 @@
 
   /**
    * "What's changed": shown once to a returning teacher after an update, on
-   * the laptop only. Closing it in any way counts as having seen it.
+   * the laptop only. Closing it in any way counts as having seen it. A teacher
+   * who missed more than one update sees them all, newest on top, each with
+   * its own way to act on it.
    */
-  const unseen = $derived(unseenUpdates(account.seenUpdate));
-  const items = $derived(unseen.flatMap((update) => update.items));
-  /** The newest news decides where the teacher is offered to go. */
-  const action = $derived(unseen[unseen.length - 1]?.action);
+  const unseen = $derived([...unseenUpdates(account.seenUpdate)].reverse());
 
-  function act() {
-    // Read it first: once seen, there is no news left to take it from.
-    const href = action?.href;
+  function act(href: string) {
     markUpdatesSeen();
-    if (href) goto(href);
+    goto(href);
   }
 </script>
 
-{#if items.length}
+{#if unseen.length}
   <Modal onClose={markUpdatesSeen} labelledby="whats-changed-title">
     <div class="dialog whats-changed">
       <div>
@@ -31,20 +28,30 @@
         <p class="muted">Here's what's new in Happy Hallways.</p>
       </div>
 
-      <ol class="changes">
-        {#each items as item (item.title)}
-          <li>
-            <div>
-              <h3>{item.title}</h3>
-              <p class="muted">{item.text}</p>
-            </div>
-            <UpdateArt art={item.art} />
-          </li>
-        {/each}
-      </ol>
+      {#each unseen as update (update.id)}
+        <section class="update">
+          {#if unseen.length > 1}<p class="eyebrow">{update.title}</p>{/if}
+          <ol class="changes">
+            {#each update.items as item (item.title)}
+              <li>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p class="muted">{item.text}</p>
+                </div>
+                <UpdateArt art={item.art} />
+              </li>
+            {/each}
+          </ol>
+          {#if unseen.length > 1}
+            <div><button class="btn" onclick={() => act(update.action.href)}>{update.action.label}</button></div>
+          {/if}
+        </section>
+      {/each}
 
       <div class="dialog-actions">
-        {#if action}<button class="btn" onclick={act}>{action.label}</button>{/if}
+        {#if unseen.length === 1}
+          <button class="btn" onclick={() => act(unseen[0].action.href)}>{unseen[0].action.label}</button>
+        {/if}
         <button class="btn btn-primary" onclick={markUpdatesSeen}>Got it</button>
       </div>
     </div>
@@ -56,6 +63,16 @@
     width: min(860px, 100%);
     max-height: calc(100vh - 32px);
     overflow-y: auto;
+  }
+
+  .update {
+    display: grid;
+    gap: 14px;
+  }
+
+  .update + .update {
+    padding-top: 22px;
+    border-top: 2px solid var(--border-strong);
   }
 
   .changes {

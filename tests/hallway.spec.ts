@@ -574,6 +574,8 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Each destination has its own limit' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'The kiosk can follow your schedule' })).toBeVisible();
+  // Both updates stack, each with its own button.
+  await expect(page.getByRole('button', { name: 'Review destinations' })).toBeVisible();
   await page.getByRole('button', { name: 'Set up your schedule' }).click();
   await expect(page).toHaveURL(/\/schedule$/);
   // The class's no-pass time moved to the schedule.

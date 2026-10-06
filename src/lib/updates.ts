@@ -7,6 +7,8 @@ export type UpdateArt = 'destination-limits' | 'let-go' | 'check-destinations' |
 
 export type Update = {
   id: string;
+  /** Heads this news when it's shown along with older news the teacher hasn't seen. */
+  title: string;
   items: { title: string; text: string; art: UpdateArt }[];
   /** Where the teacher should go to act on the news. */
   action: { label: string; href: string };
@@ -15,6 +17,7 @@ export type Update = {
 export const updates: Update[] = [
   {
     id: '2026-10-destination-limits',
+    title: 'Destinations and letting students go',
     items: [
       {
         title: 'Each destination has its own limit',
@@ -36,6 +39,7 @@ export const updates: Update[] = [
   },
   {
     id: '2026-10-schedule',
+    title: 'Your schedule',
     items: [
       {
         title: 'The kiosk can follow your schedule',
