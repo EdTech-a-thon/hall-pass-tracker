@@ -6,6 +6,7 @@
     currentSchedule,
     liveSchedule,
     passStatus,
+    passStatusIcon,
     passStatusText,
     waitingRequests,
   } from './account.svelte';
@@ -27,9 +28,11 @@
 </script>
 
 <a class="status-box" class:active={page.url.pathname === '/'} href="/" data-tip="tip-status">
+  <span class="pass-status {status}" role="img" title={passStatusText[status]} aria-label={passStatusText[status]}>
+    <Icon name={passStatusIcon[status]} size={16} />
+  </span>
   <span class="eyebrow-row"><Icon name="home" size={14} />Home</span>
   <strong class="class-name">{activeClassLabel()}</strong>
-  <span class="pass-status {status}"><span class="dot"></span>{passStatusText[status]}</span>
   <span class="row-line"><Icon name="tablet" size={14} />{kiosk.text}<span class="status-dot {kiosk.dot}" aria-hidden="true"></span></span>
   <span class="row-line"><Icon name="calendar" size={14} />{schedule}</span>
   {#if account.kiosk?.kind === 'device'}
@@ -41,6 +44,7 @@
 
 <style>
   .status-box {
+    position: relative;
     display: grid;
     gap: 4px;
     padding: 12px 14px;
@@ -76,25 +80,18 @@
     line-height: 1.3;
   }
 
+  /* Whether students may leave right now, as one colored icon in the corner. */
   .pass-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    justify-self: start;
-    margin-bottom: 4px;
-    padding: 1px 9px;
-    border-radius: 999px;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
     background: var(--surface-sunk);
     color: var(--muted);
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .pass-status .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
   }
 
   .pass-status.open {
@@ -105,6 +102,10 @@
   .pass-status.no-pass {
     background: var(--warn-wash);
     color: var(--warn);
+  }
+
+  .class-name {
+    padding-right: 30px;
   }
 
   .row-line {

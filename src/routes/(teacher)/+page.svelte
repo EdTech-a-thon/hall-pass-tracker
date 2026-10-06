@@ -4,7 +4,6 @@
     account,
     activeClassLabel,
     createClass,
-    currentSchedule,
     endNoPassTime,
     findClass,
     findSchedule,
@@ -14,6 +13,7 @@
     noPassNow,
     openPasses,
     passStatus,
+    passStatusIcon,
     passStatusText,
     setActiveClass,
     setDoorLocked,
@@ -27,11 +27,12 @@
   import ConfirmDialog from '#lib/ConfirmDialog.svelte';
   import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
+  import MenuSelect from '#lib/MenuSelect.svelte';
   import { answerRequest, canAnswer, link } from '#lib/link.svelte.ts';
   import PassMarks from '#lib/PassMarks.svelte';
+  import SiteFooter from '#lib/SiteFooter.svelte';
   import { duration, hasRealDuration, isOverdue, now, time } from '#lib/passes.ts';
   import { nextClassPeriod, periodAt, toMinutes } from '#lib/schedule.ts';
-  import { minutesOut } from '#lib/stats.ts';
   import type { Block, PassRequest } from '#lib/types.ts';
 
   /**
@@ -65,7 +66,8 @@
     if (status === 'no-class') return 'Choose a class to put on the kiosk';
     if (noPass) return noPass.end ? `Passes open in ${until(noPass.end)}` : 'Passes stay closed until you open them';
     const period = live ? periodAt(live, at) : null;
-    return period ? `Ends in ${until(period.end)}` : 'Off schedule';
+    // Off schedule nothing changes by itself, so there's nothing to say; the schedule menu says it's off.
+    return period ? `Ends in ${until(period.end)}` : '';
   });
 
   const requests = $derived(waitingRequests());
@@ -89,6 +91,23 @@
   const thisClass = $derived(
     account.passes.filter((pass) => pass.classId === classId && pass.outAt >= since && pass.endedBy !== 'cancelled'),
   );
+  const classOptions = $derived([
+    ...(classId ? [] : [{ value: '', label: activeClassLabel(), disabled: true }]),
+    ...account.classes.map((cls) => ({ value: cls.id, label: cls.name })),
+  ]);
+  const scheduleOptions = $derived([
+    ...account.schedules.map((schedule) => ({
+      value: schedule.id,
+      label: schedule.name,
+      disabled: !schedule.periods.length,
+      hint: schedule.periods.length ? undefined : 'Add a period first',
+    })),
+    {
+      value: '',
+      label: account.schedules.length ? 'Off schedule' : 'No schedule',
+      hint: 'You choose the class by hand',
+    },
+  ]);
 
   type Activity = { id: string; at: string; text: string; pass?: (typeof account.passes)[number]; denied?: boolean };
   /** What has happened in this class so far, newest first. */
@@ -119,13 +138,7 @@
   /** A change that needs the teacher's OK first: taking the kiosk off schedule, or ending passes. */
   let confirming = $state(null as null | { title: string; message: string; label: string; run: () => void });
 
-  /**
-   * The menus show what's true, not what was picked: until the teacher
-   * confirms, they snap back, and once it changes they follow.
-   */
-  function chooseClass(menu: HTMLSelectElement) {
-    const id = menu.value;
-    menu.value = classId ?? '';
+  function chooseClass(id: string) {
     if (id === classId) return;
     const cls = findClass(id);
     const move = () => setActiveClass({ id, changedAt: now() });
@@ -139,9 +152,7 @@
     };
   }
 
-  function chooseSchedule(menu: HTMLSelectElement) {
-    const id = menu.value;
-    menu.value = live?.id ?? '';
+  function chooseSchedule(id: string) {
     if (!id) return stopFollowingSchedule();
     const warning = useWarning(id);
     if (!warning) return useSchedule(id);
@@ -208,55 +219,15 @@
       <header class="home-head">
         <div class="title-row">
           <h1>{today}</h1>
-          <span class="badge status-badge {tone}" role="status"><span class="dot"></span>{passStatusText[status]}</span>
-          <div class="head-actions">
-            {#if noPass && !noPass.end}
-              <button class="btn" onclick={endNoPassTime}><Icon name="check" size={16} />Open passes</button>
-            {:else if status === 'open'}
-              <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
-                <Icon name="ban" size={16} />No passes now
-              </button>
-            {/if}
-            {#if account.kiosk?.kind === 'this-computer'}
-              <button class="btn btn-primary" onclick={openDoor} disabled={!account.activeClass}>
-                <Icon name="lock" size={16} />Open kiosk screen
-              </button>
-            {/if}
-          </div>
-        </div>
-
-        <div class="context-row" data-tip="tip-switch">
-          <span class="picker class-picker">
-            <select
-              aria-label="Class on the kiosk"
-              value={classId ?? ''}
-              onchange={(event) => chooseClass(event.currentTarget)}
-            >
-              {#if !classId}<option value="" disabled>{activeClassLabel()}</option>{/if}
-              {#each account.classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
-            </select>
-            <Icon name="chevron-down" size={18} />
-          </span>
-          <span class="timing">· {timing}</span>
-          <span class="picker schedule-picker">
-            <Icon name="calendar" size={16} />
-            <select aria-label="Schedule" value={live?.id ?? ''} onchange={(event) => chooseSchedule(event.currentTarget)}>
-              {#each account.schedules as schedule (schedule.id)}
-                <option value={schedule.id} disabled={!schedule.periods.length}>{schedule.name}</option>
-              {/each}
-              <option value="">{account.schedules.length ? 'Off schedule' : 'No schedule'}</option>
-            </select>
-            <Icon name="chevron-down" size={16} />
+          <span class="badge status-badge {tone}" role="status"><Icon name={passStatusIcon[status]} size={15} />{passStatusText[status]}</span>
+          <span class="schedule-menu" data-tip="tip-switch">
+            <MenuSelect label="Schedule" icon="calendar" value={live?.id ?? ''} options={scheduleOptions} onchoose={chooseSchedule} />
           </span>
         </div>
-        {#if !live && currentSchedule()?.periods.length && account.activeClass}
-          <p class="muted small">
-            Off schedule, so the class won't change by itself.
-            <button class="link-button" onclick={() => useSchedule(currentSchedule()!.id)}>Back to {currentSchedule()!.name}</button>
-          </p>
-        {:else if !account.schedules.length}
-          <p class="muted small"><a href="/schedule">Set up a schedule</a> and the class changes by itself as each period starts.</p>
-        {/if}
+        <div class="context-row">
+          <MenuSelect label="Class on the kiosk" value={classId ?? ''} options={classOptions} onchoose={chooseClass} />
+          {#if timing}<span class="timing">{timing}</span>{/if}
+        </div>
       </header>
 
       {#if !account.kiosk}
@@ -271,18 +242,14 @@
       {/if}
 
       {#if classId}
-        <section class="stats this-class" aria-label="This class">
+        <section class="stats this-class" aria-label="Right now">
           <div class="stat"><strong>{out.length}</strong><span>Out of class now</span></div>
           <div class="stat"><strong>{waiting.length}</strong><span>Waiting in line</span></div>
-          <div class="stat"><strong>{thisClass.length}</strong><span>Passes this class</span></div>
-          <div class="stat"><strong>{minutesOut(thisClass)}</strong><span>Minutes out this class</span></div>
         </section>
 
         <section class="card">
-          <div>
-            <p class="eyebrow">Right now</p>
-            <h2>{out.length ? `${out.length} out` : "Everyone's in class"}</h2>
-          </div>
+          <h2>Right now</h2>
+          {#if !out.length && !lines.length}<p class="muted">Everyone's in class.</p>{/if}
           {#if out.length}
             <div class="table-wrap">
               <table>
@@ -326,13 +293,10 @@
           {/each}
         </section>
 
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow">This class</p>
-              <h2>What's happened so far</h2>
-            </div>
-            <a class="btn btn-quiet" href="/history">All history<Icon name="arrow-right" size={16} /></a>
+        <section class="this-class-log">
+          <div class="log-head">
+            <h2>This class</h2>
+            <a class="btn btn-quiet btn-small" href="/history">All history<Icon name="arrow-right" size={14} /></a>
           </div>
           {#if activity.length}
             <ol class="activity">
@@ -349,8 +313,26 @@
           {/if}
         </section>
       {/if}
+      <div class="footer-slot"><SiteFooter /></div>
     </div>
 
+    <div class="side">
+    {#if status === 'open' || (noPass && !noPass.end) || account.kiosk?.kind === 'this-computer'}
+      <div class="actions">
+        {#if noPass && !noPass.end}
+          <button class="btn" onclick={endNoPassTime}><Icon name="check" size={16} />Open passes</button>
+        {:else if status === 'open'}
+          <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
+            <Icon name="ban" size={16} />No passes now
+          </button>
+        {/if}
+        {#if account.kiosk?.kind === 'this-computer'}
+          <button class="btn btn-primary" onclick={openDoor} disabled={!account.activeClass}>
+            <Icon name="lock" size={16} />Open kiosk screen
+          </button>
+        {/if}
+      </div>
+    {/if}
     <aside class="requests-panel" aria-labelledby="requests-title" data-tip="tip-requests">
       <div class="panel-head">
         <h2 id="requests-title"><Icon name="hand" size={18} />Requests</h2>
@@ -398,6 +380,7 @@
         {/if}
       {/if}
     </aside>
+    </div>
   </div>
 {/if}
 
@@ -416,10 +399,16 @@
 {/if}
 
 <style>
+  /*
+   * Home fits the window: the side column fills it top to bottom, and the
+   * footer sits at the foot of the middle column, so nothing scrolls until the
+   * middle column outgrows the window.
+   */
   .home {
+    --fit: calc(100vh - 40px - 24px);
     flex: 1;
     display: grid;
-    margin-bottom: 48px;
+    margin-bottom: 24px;
     grid-template-columns: minmax(0, 1fr) 320px;
     align-items: start;
     gap: 24px;
@@ -427,9 +416,18 @@
   }
 
   .home-main {
-    display: grid;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
     gap: 22px;
+    min-height: var(--fit);
+  }
+
+  .footer-slot {
+    margin-top: auto;
+  }
+
+  .footer-slot :global(.site-footer) {
+    padding-bottom: 0;
   }
 
   .home-head {
@@ -453,17 +451,11 @@
     font-size: 13.5px;
   }
 
-  .status-badge .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: currentColor;
-  }
 
-  .head-actions {
-    display: flex;
-    gap: 8px;
+  .schedule-menu {
     margin-left: auto;
+    color: var(--muted);
+    font-size: 15px;
   }
 
   .context-row {
@@ -471,6 +463,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 10px;
+    margin-left: -8px;
     font-size: 17px;
   }
 
@@ -479,73 +472,19 @@
     font-weight: 600;
   }
 
-  /* A menu that reads as part of the sentence until it's clicked. */
-  .picker {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    border-radius: 8px;
-    color: var(--text);
-  }
-
-  .picker:hover,
-  .picker:focus-within {
-    background: var(--surface-sunk);
-  }
-
-  .picker select {
-    width: auto;
-    padding: 0 22px 0 0;
-    margin-right: -22px;
-    border: 0;
-    background: transparent;
-    font-weight: 800;
-    appearance: none;
-    cursor: pointer;
-  }
-
-  .picker select:focus {
-    outline: none;
-    box-shadow: none;
-  }
-
-  .picker :global(svg) {
-    pointer-events: none;
-  }
-
-  .class-picker {
-    margin-left: -8px;
-    font-size: 19px;
-  }
-
-  .schedule-picker {
-    margin-left: auto;
-    color: var(--muted);
-    font-size: 15px;
-  }
-
   .this-class {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  @media (max-width: 760px) {
-    .this-class {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+  .this-class-log {
+    display: grid;
+    gap: 6px;
   }
 
-  .link-button {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--accent);
-    font: inherit;
-    font-weight: 700;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    cursor: pointer;
+  .log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .setup-kiosk {
@@ -594,14 +533,26 @@
     color: var(--danger);
   }
 
-  .requests-panel {
+  /* The live column: what the teacher can do right now, then what students are asking. */
+  .side {
     position: sticky;
-    top: 24px;
+    top: 40px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+    height: var(--fit);
+  }
+
+  .actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .requests-panel {
     display: grid;
     align-content: start;
     gap: 14px;
-    min-height: calc(100vh - 48px);
-    max-height: calc(100vh - 48px);
+    grid-row: -2;
     padding: 18px;
     overflow-y: auto;
     border: 1px solid var(--border);
@@ -669,10 +620,9 @@
       grid-template-columns: 1fr;
     }
 
-    .requests-panel {
+    .side {
       position: static;
-      min-height: 0;
-      max-height: none;
+      height: auto;
       grid-row: 2;
     }
   }

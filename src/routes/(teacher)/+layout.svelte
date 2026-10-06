@@ -1,6 +1,6 @@
 <script lang="ts">
   import { afterNavigate, goto } from '$app/navigation';
-  import { updated } from '$app/state';
+  import { page, updated } from '$app/state';
   import { account, keepToSchedule, waitingRequests } from '#lib/account.svelte.ts';
   import { isPairedDevice } from '#lib/door.svelte.ts';
   import GettingStarted from '#lib/GettingStarted.svelte';
@@ -78,7 +78,8 @@
     <Sidebar />
     <main class="main">
       {@render children()}
-      <SiteFooter />
+      <!-- Home places the footer itself, under its middle column, so the page fits the window without scrolling. -->
+      {#if page.url.pathname !== '/' || !account.classes.length}<SiteFooter />{/if}
     </main>
   </div>
   <!-- Messages for every page float in this corner, above the checklist, so the page never shifts. -->

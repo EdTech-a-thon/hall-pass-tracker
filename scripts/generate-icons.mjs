@@ -39,6 +39,8 @@ const interfaceIcons = {
   filter: 'list-filter',
   'arrow-up': 'arrow-up',
   'arrow-down': 'arrow-down',
+  pause: 'circle-pause',
+  'circle-slash': 'circle-slash',
 };
 
 /** Icons a teacher can give a destination, in the groups the picker shows. */

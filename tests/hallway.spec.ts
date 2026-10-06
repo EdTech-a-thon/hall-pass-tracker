@@ -34,13 +34,19 @@ test.beforeEach(async ({ page }) => {
 /** The status box at the top of the sidebar leads Home. */
 async function goHome(page: Page) {
   await page.locator('.status-box').click();
-  await expect(page.getByLabel('Class on the kiosk')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Class on the kiosk:/ })).toBeVisible();
+}
+
+/** Chooses from one of Home's menus: the class on the kiosk, or the schedule. */
+async function choose(page: Page, menu: 'Class on the kiosk' | 'Schedule', option: string) {
+  await page.getByRole('button', { name: new RegExp(`^${menu}:`) }).click();
+  await page.getByRole('menuitemradio', { name: option }).click();
 }
 
 /** Picks the schedule the kiosk follows today, on Home. */
 async function useScheduleOnHome(page: Page, name = 'Schedule 1') {
   await goHome(page);
-  await page.getByRole('combobox', { name: 'Schedule' }).selectOption({ label: name });
+  await choose(page, 'Schedule', name);
   await expect(page.locator('.status-box')).toContainText(name);
 }
 
@@ -117,7 +123,7 @@ test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText("Everyone's in class")).toBeVisible();
-  await expect(page.locator('.stat', { hasText: 'Passes this class' })).toContainText('1');
+  await expect(page.locator('.activity')).toContainText('Jordan E. came back');
 
   await page.getByRole('link', { name: /^Period 1/ }).click();
   await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('1');
@@ -162,7 +168,7 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
   await expect(tablet.getByText('Pass approved', { exact: true })).toBeVisible();
 
   await goHome(laptop);
-  await expect(laptop.getByText('1 out', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(laptop.locator('.stat', { hasText: 'Out of class now' })).toContainText('1', { timeout: 15_000 });
 
   // The teacher marks the student back from the laptop; the door hears about it.
   await laptop.getByRole('button', { name: 'Mark back' }).click();
@@ -202,7 +208,7 @@ test('a device paired from a second tab connects to the tab already holding the 
   await newTablet.getByRole('button', { name: /^Bathroom/ }).click();
   await expect(newTablet.getByText('Pass approved', { exact: true })).toBeVisible();
   await goHome(newerTab);
-  await expect(newerTab.getByText('1 out', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(newerTab.locator('.stat', { hasText: 'Out of class now' })).toContainText('1', { timeout: 15_000 });
 });
 
 test('students line up when the pass limit is reached', async ({ page }) => {
@@ -305,7 +311,6 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   // Once welcomed, the app opens straight to Home.
   await page.goto('/');
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('combobox', { name: 'Class on the kiosk' })).toHaveValue(/.+/);
   await expect(page.locator('.status-box')).toContainText('Period 5');
 });
 
@@ -566,7 +571,7 @@ test('a blocked student asks, and the teacher approves or denies on Home', async
   await expect(laptop.locator('.status-box')).toContainText('1 request');
   await request.getByRole('button', { name: 'Approve' }).click();
   await expect(tablet.getByRole('button', { name: /Maya Ch\..*Out · Bathroom/ })).toBeVisible({ timeout: 15_000 });
-  await expect(laptop.getByText('2 out', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(laptop.locator('.stat', { hasText: 'Out of class now' })).toContainText('2', { timeout: 15_000 });
   await expect(laptop).not.toHaveTitle(/Request/);
 
   // During a No-Pass Time the teacher started, Maya Ca. asks, and is told no.
@@ -741,17 +746,15 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
 
   // Home puts the kiosk back on the schedule, at whatever period the clock is in.
   await goHome(page);
-  await page.getByRole('button', { name: 'Back to Schedule 1' }).click();
+  await choose(page, 'Schedule', 'Schedule 1');
   await expect(page.locator('.status-box')).toContainText('Schedule 1');
   await expect(page.locator('.status-box')).toContainText('Period 2');
 
   // Switching by hand from Home asks first; saying no leaves everything as it was.
-  await page.getByRole('combobox', { name: 'Class on the kiosk' }).selectOption({ label: 'Period 1' });
+  await choose(page, 'Class on the kiosk', 'Period 1');
   await expect(page.getByRole('heading', { name: "You're on Schedule 1. Switch to Period 1 by hand?" })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByRole('combobox', { name: 'Class on the kiosk' })).toHaveValue(
-    await page.getByRole('combobox', { name: 'Class on the kiosk' }).locator('option', { hasText: 'Period 2' }).getAttribute('value') ?? '',
-  );
+  await expect(page.getByRole('button', { name: 'Class on the kiosk: Period 2' })).toBeVisible();
   await expect(page.locator('.status-box')).toContainText('Schedule 1');
 });
 
@@ -769,7 +772,7 @@ test('dragging on the calendar adds a no-pass time, and the teacher can stop pas
   await goHome(page);
   await page.getByRole('button', { name: 'No passes now' }).click();
   await expect(page.getByText('Passes stay closed until you open them')).toBeVisible();
-  await expect(page.locator('.status-box')).toContainText('No passes');
+  await expect(page.locator('.status-box').getByRole('img', { name: 'No passes' })).toBeVisible();
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
   await expect(page.getByText('Your teacher will open passes again.')).toBeVisible();
 });
@@ -835,7 +838,7 @@ test('a teacher with no schedules draws one: a period appears as they drag, and 
   await page.getByRole('link', { name: 'All schedules' }).click();
   await expect(page.locator('.schedule-card')).toContainText('9:30');
   await useScheduleOnHome(page);
-  await page.getByRole('combobox', { name: 'Schedule' }).selectOption({ label: 'Off schedule' });
+  await choose(page, 'Schedule', 'Off schedule');
   await expect(page.locator('.status-box')).toContainText('Off schedule');
 });
 

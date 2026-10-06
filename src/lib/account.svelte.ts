@@ -1,5 +1,6 @@
 import { defaultAllowance, passCounts, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
+import type { IconName } from './icons';
 import { endUnseen, mergeInto, newId, now } from './passes';
 import { displayName, type ImportPlan } from './roster';
 import { blankSchedule, noPassAt, scheduledClassAt, withRulesOnPeriods } from './schedule';
@@ -376,6 +377,14 @@ export const passStatusText: Record<PassStatus, string> = {
   'no-pass': 'No passes',
   between: 'Between classes',
   'no-class': 'No class',
+};
+
+/** Each status's icon, for the badge on Home and the corner of the sidebar box. */
+export const passStatusIcon: Record<PassStatus, IconName> = {
+  open: 'door',
+  'no-pass': 'ban',
+  between: 'pause',
+  'no-class': 'circle-slash',
 };
 
 /** Whose passes picking a schedule would end, when it moves the kiosk to another class. */

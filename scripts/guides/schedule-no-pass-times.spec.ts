@@ -66,8 +66,9 @@ test('a schedule with no-pass times', async ({ page }) => {
 
   // 6. Use it, from Home.
   await page.locator('.status-box').click();
-  const pick = page.getByRole('combobox', { name: 'Schedule' });
-  await pick.selectOption({ label: 'Regular Day' });
+  const pick = page.getByRole('button', { name: /^Schedule:/ });
+  await pick.click();
+  await page.getByRole('menuitemradio', { name: 'Regular Day' }).click();
   await expect(page.locator('.status-box')).toContainText('Regular Day');
   await page.locator('.tip').getByRole('button', { name: 'Skip' }).click();
   await circle(page.locator('.status-box'));
