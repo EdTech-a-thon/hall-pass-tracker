@@ -94,13 +94,13 @@ export const tips: Tip[] = [
     id: 'tip-requests',
     page: '/',
     title: 'Students’ requests land here',
-    text: 'When something stops a student at the kiosk, they can ask you. Approve, and their pass starts right away; deny, and the kiosk tells them “not right now”.',
+    text: 'When something stops a student at the kiosk, they can ask you, and the request shows up here as it happens. Approve, and their pass starts right away; deny, and the kiosk tells them “not right now”.',
   },
   {
     id: 'tip-switch',
     page: '/',
     title: 'Early release? Switch here',
-    text: 'Pick a different schedule for today, or choose a class by hand. “Back to schedule” puts the kiosk back on track.',
+    text: 'Click the class to put a different one on the kiosk by hand, or the schedule on the right to switch to another one for today.',
   },
   {
     id: 'tip-roster',

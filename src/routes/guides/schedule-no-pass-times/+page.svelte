@@ -42,10 +42,10 @@
     },
     {
       name: 'Use it on Home',
-      text: 'Click the box at the top of the sidebar to go to Home, and pick your schedule under Schedule. From now on, the kiosk changes to each class as its period starts, and follows the no-pass times by itself.',
+      text: 'Click the box at the top of the sidebar to go to Home, and pick your schedule from the menu at the right, under the date. From now on, the kiosk changes to each class as its period starts, and follows the no-pass times by itself.',
       tip: 'An early-release day? Pick that day’s schedule on Home in the morning, then switch back the next day.',
       image: `${pictures}/6-use-schedule.png`,
-      alt: 'Home, with the status box at the top of the sidebar and the Schedule menu, set to Regular Day, both circled',
+      alt: 'Home, with the status box at the top of the sidebar and the schedule menu, set to Regular Day, both circled',
     },
   ];
 </script>

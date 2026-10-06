@@ -1,6 +1,15 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { account, activeClassLabel, currentSchedule, liveSchedule, waitingRequests } from './account.svelte';
+  import {
+    account,
+    activeClassLabel,
+    currentSchedule,
+    liveSchedule,
+    passStatus,
+    passStatusText,
+    waitingRequests,
+  } from './account.svelte';
+  import { clock } from './clock.svelte';
   import Icon from './Icon.svelte';
   import { kioskState } from './link.svelte';
 
@@ -8,6 +17,7 @@
    * The status box at the top of the sidebar: the day at a glance, on every
    * page. Clicking it goes to Home, where all of it can be changed.
    */
+  const status = $derived(passStatus(clock.now));
   const kiosk = $derived(kioskState());
   const schedule = $derived.by(() => {
     if (liveSchedule()) return liveSchedule()!.name;
@@ -19,7 +29,8 @@
 <a class="status-box" class:active={page.url.pathname === '/'} href="/" data-tip="tip-status">
   <span class="eyebrow-row"><Icon name="home" size={14} />Home</span>
   <strong class="class-name">{activeClassLabel()}</strong>
-  <span class="row-line"><span class="status-dot {kiosk.dot}" aria-hidden="true"></span>{kiosk.text}</span>
+  <span class="pass-status {status}"><span class="dot"></span>{passStatusText[status]}</span>
+  <span class="row-line"><Icon name="tablet" size={14} />{kiosk.text}<span class="status-dot {kiosk.dot}" aria-hidden="true"></span></span>
   <span class="row-line"><Icon name="calendar" size={14} />{schedule}</span>
   {#if account.kiosk?.kind === 'device'}
     <span class="row-line requests" class:waiting={requests}>
@@ -65,6 +76,37 @@
     line-height: 1.3;
   }
 
+  .pass-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-self: start;
+    margin-bottom: 4px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    background: var(--surface-sunk);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .pass-status .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .pass-status.open {
+    background: #dcebe0;
+    color: var(--accent);
+  }
+
+  .pass-status.no-pass {
+    background: var(--warn-wash);
+    color: var(--warn);
+  }
+
   .row-line {
     display: flex;
     align-items: center;
@@ -75,7 +117,7 @@
   }
 
   .row-line .status-dot {
-    margin: 0 3px;
+    margin-left: auto;
   }
 
   .requests.waiting {

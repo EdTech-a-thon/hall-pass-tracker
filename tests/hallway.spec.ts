@@ -117,7 +117,7 @@ test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText("Everyone's in class")).toBeVisible();
-  await expect(page.getByRole('link', { name: '1 pass today' })).toBeVisible();
+  await expect(page.locator('.stat', { hasText: 'Passes this class' })).toContainText('1');
 
   await page.getByRole('link', { name: /^Period 1/ }).click();
   await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('1');
@@ -136,7 +136,7 @@ test('export and import put the teacher back where they were', async ({ page }) 
   await page.goto('/settings');
   await page.locator('input[type=file]').setInputFiles(file!);
   await page.getByRole('button', { name: 'Replace everything' }).click();
-  await expect(page.getByRole('heading', { name: 'Period 2' })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Period 2');
   await page.getByRole('link', { name: /^Period 2/ }).click();
   await expect(page.getByText(/3 students/)).toBeVisible();
 });
@@ -305,7 +305,8 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   // Once welcomed, the app opens straight to Home.
   await page.goto('/');
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { name: 'Period 5' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Class on the kiosk' })).toHaveValue(/.+/);
+  await expect(page.locator('.status-box')).toContainText('Period 5');
 });
 
 test('a destination can have a time limit', async ({ page }) => {
@@ -441,7 +442,7 @@ test('a paired kiosk keeps counting passes the laptop already has', async ({ bro
   await tablet.getByRole('button', { name: /Maya Ca\..*Out/ }).click();
   await tablet.getByRole('button', { name: 'Done' }).click();
   // Wait until the laptop has the trip, so the tablet has let go of its own copy.
-  await laptop.getByRole('link', { name: 'History' }).click();
+  await laptop.getByRole('link', { name: 'History', exact: true }).click();
   await expect(laptop.getByText('Signed back in')).toBeVisible({ timeout: 15_000 });
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
@@ -579,10 +580,10 @@ test('a blocked student asks, and the teacher approves or denies on Home', async
   await expect(second).toContainText('No-pass time', { timeout: 15_000 });
   await second.getByRole('button', { name: 'Deny' }).click();
   await expect(tablet.getByRole('button', { name: /Maya Ca\..*Not right now/ })).toBeVisible({ timeout: 15_000 });
-  await expect(laptop.getByRole('heading', { name: 'No requests' })).toBeVisible();
+  await expect(laptop.getByText('No requests right now')).toBeVisible();
 
   // History keeps both answers.
-  await laptop.getByRole('link', { name: 'History' }).click();
+  await laptop.getByRole('link', { name: 'History', exact: true }).click();
   const approved = laptop.getByRole('row', { name: /Maya Ch\./ });
   await expect(approved).toContainText('Skipped line');
   await expect(approved).toContainText('Approved');
@@ -697,7 +698,8 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await addPeriod(page, 'Period 1', '09:00', '09:50');
   await addPeriod(page, 'Period 2', '09:55', '10:45');
   await useScheduleOnHome(page);
-  await expect(page.getByRole('heading', { name: 'Period 1' })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Period 1');
+  await expect(page.getByText('Ends in 10 min')).toBeVisible();
   await page.getByRole('link', { name: /^Schedule/ }).click();
   // The card marks the period the clock is in, in the same red as the line on its day.
   await expect(page.locator('.schedule-card li', { hasText: 'Period 1' })).toHaveClass(/now-period/);
@@ -734,14 +736,23 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await expect(page.locator('.status-box')).toContainText('Off schedule');
 
   // Jordan's pass ended when Period 1 left the kiosk.
-  await page.getByRole('link', { name: 'History' }).click();
+  await page.getByRole('link', { name: 'History', exact: true }).click();
   await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('Class changed');
 
   // Home puts the kiosk back on the schedule, at whatever period the clock is in.
   await goHome(page);
   await page.getByRole('button', { name: 'Back to Schedule 1' }).click();
   await expect(page.locator('.status-box')).toContainText('Schedule 1');
-  await expect(page.getByRole('heading', { name: 'Period 2' })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Period 2');
+
+  // Switching by hand from Home asks first; saying no leaves everything as it was.
+  await page.getByRole('combobox', { name: 'Class on the kiosk' }).selectOption({ label: 'Period 1' });
+  await expect(page.getByRole('heading', { name: "You're on Schedule 1. Switch to Period 1 by hand?" })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('combobox', { name: 'Class on the kiosk' })).toHaveValue(
+    await page.getByRole('combobox', { name: 'Class on the kiosk' }).locator('option', { hasText: 'Period 2' }).getAttribute('value') ?? '',
+  );
+  await expect(page.locator('.status-box')).toContainText('Schedule 1');
 });
 
 test('dragging on the calendar adds a no-pass time, and the teacher can stop passes by hand', async ({ page }) => {
@@ -757,7 +768,8 @@ test('dragging on the calendar adds a no-pass time, and the teacher can stop pas
   await page.getByRole('button', { name: 'Use this computer' }).click();
   await goHome(page);
   await page.getByRole('button', { name: 'No passes now' }).click();
-  await expect(page.getByText(/Students can't start passes until you open them/)).toBeVisible();
+  await expect(page.getByText('Passes stay closed until you open them')).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('No passes');
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
   await expect(page.getByText('Your teacher will open passes again.')).toBeVisible();
 });
@@ -823,7 +835,7 @@ test('a teacher with no schedules draws one: a period appears as they drag, and 
   await page.getByRole('link', { name: 'All schedules' }).click();
   await expect(page.locator('.schedule-card')).toContainText('9:30');
   await useScheduleOnHome(page);
-  await page.getByRole('combobox', { name: 'Schedule' }).selectOption({ label: "No schedule: I'll choose the class" });
+  await page.getByRole('combobox', { name: 'Schedule' }).selectOption({ label: 'Off schedule' });
   await expect(page.locator('.status-box')).toContainText('Off schedule');
 });
 

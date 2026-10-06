@@ -359,6 +359,25 @@ export function activeClassLabel() {
   return findClass(active?.id)?.name ?? 'No class chosen';
 }
 
+/**
+ * Whether students may leave right now, in a word: passes are open, it's a
+ * No-Pass Time, it's between periods, or no class is on the kiosk.
+ */
+export type PassStatus = 'open' | 'no-pass' | 'between' | 'no-class';
+
+export function passStatus(at = Date.now()): PassStatus {
+  const active = account.activeClass;
+  if (!active?.id) return active?.onSchedule ? 'between' : 'no-class';
+  return noPassNow(active.id, at) ? 'no-pass' : 'open';
+}
+
+export const passStatusText: Record<PassStatus, string> = {
+  open: 'Passes open',
+  'no-pass': 'No passes',
+  between: 'Between classes',
+  'no-class': 'No class',
+};
+
 /** Whose passes picking a schedule would end, when it moves the kiosk to another class. */
 export function useWarning(scheduleId: string) {
   const leaving = findClass(account.activeClass?.id);
