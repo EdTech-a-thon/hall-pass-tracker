@@ -2,7 +2,7 @@ import { defaultAllowance, passCounts, usedBy, windowStart } from './allowance';
 import { defaultDestinations, knownIcon } from './destinations';
 import { endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { displayName, type ImportPlan } from './roster';
-import { blankSchedule, noPassAt, scheduledClassAt } from './schedule';
+import { blankSchedule, noPassAt, scheduledClassAt, withRulesOnPeriods } from './schedule';
 import type {
   Account,
   ActiveClass,
@@ -26,7 +26,6 @@ import { latestUpdate } from './updates';
 const storageKey = 'hallway.account';
 
 function blankAccount(): Account {
-  const schedule = blankSchedule(newId(), 'My Schedule');
   return {
     version: 1,
     laptopPeerId: `hallway-${newId()}`,
@@ -36,8 +35,8 @@ function blankAccount(): Account {
     lineEnabled: false,
     line: [],
     passAllowance: defaultAllowance(),
-    schedules: [schedule],
-    currentScheduleId: schedule.id,
+    schedules: [],
+    currentScheduleId: null,
     manualNoPass: null,
     permissions: [],
     // Nothing changed under a brand-new teacher, so there is no news to show them.
@@ -59,6 +58,8 @@ function blankAccount(): Account {
  * - Extra Passes given from the laptop became one kind of Permission.
  * - No-pass times used to be clock times on each class; they moved to the
  *   teacher's first schedule. See docs/adr/0008.
+ * - "First N minutes of every class" used to be rules across a schedule; each
+ *   period now has its own. See EdgeRule.
  */
 type SavedAccount = Omit<Account, 'destinations' | 'classes' | 'permissions' | 'schedules'> & {
   schedules?: Schedule[];
@@ -100,7 +101,7 @@ function upgrade(saved: SavedAccount): Account {
     expiresAt: endOfDay(gift.givenAt),
   }));
   delete saved.extraPassGifts;
-  if (!saved.schedules?.length) {
+  if (!saved.schedules) {
     const schedule = blankSchedule(newId(), 'My Schedule');
     const copied = new Set<string>();
     for (const time of saved.classes.flatMap((cls) => cls.noPassTimes ?? [])) {
@@ -108,11 +109,11 @@ function upgrade(saved: SavedAccount): Account {
       copied.add(time.start + time.end);
       schedule.noPassTimes.push({ id: newId(), start: time.start, end: time.end });
     }
-    saved.schedules = [schedule];
-    saved.currentScheduleId = schedule.id;
+    saved.schedules = schedule.noPassTimes.length ? [schedule] : [];
   }
+  saved.schedules = saved.schedules.map(withRulesOnPeriods);
   if (!saved.schedules.some((schedule) => schedule.id === saved.currentScheduleId)) {
-    saved.currentScheduleId = saved.schedules[0].id;
+    saved.currentScheduleId = saved.schedules[0]?.id ?? null;
   }
   saved.manualNoPass ??= null;
   for (const cls of saved.classes) {
@@ -214,14 +215,17 @@ export function updateClass(id: string, changes: Partial<Pick<Class, 'name'>>) {
 
 /**
  * Deleting a class deletes its history too. The page asks before calling
- * this. Its periods stay, with no class in them, and rules just for it go.
+ * this. Its periods stay, with no class in them.
  */
 export function deleteClass(id: string) {
   account.classes = account.classes.filter((cls) => cls.id !== id);
   account.passes = account.passes.filter((pass) => pass.classId !== id);
   for (const schedule of account.schedules) {
-    for (const period of schedule.periods) if (period.classId === id) period.classId = null;
-    schedule.rules = schedule.rules.filter((rule) => rule.classId !== id);
+    for (const period of schedule.periods) {
+      if (period.classId !== id) continue;
+      period.classId = null;
+      delete period.noPass;
+    }
   }
   if (account.activeClass?.onSchedule) {
     account.activeClass = { id: scheduledClassAt(currentSchedule()), changedAt: now(), onSchedule: true };
@@ -236,8 +240,14 @@ export function deleteClass(id: string) {
 // Schedules
 // ---------------------------------------------------------------------------
 
-export function currentSchedule() {
+/** The schedule the teacher last picked, if they have any. */
+export function currentSchedule(): Schedule | undefined {
   return account.schedules.find((schedule) => schedule.id === account.currentScheduleId) ?? account.schedules[0];
+}
+
+/** The schedule the kiosk is following right now, if any. */
+export function liveSchedule() {
+  return account.activeClass?.onSchedule ? currentSchedule() : undefined;
 }
 
 export function findSchedule(id: string) {
@@ -261,7 +271,7 @@ export function duplicateSchedule(id: string) {
     id: newId(),
     name: `${original.name} (copy)`,
   };
-  for (const each of [...copy.periods, ...copy.rules, ...copy.noPassTimes]) each.id = newId();
+  for (const each of [...copy.periods, ...copy.noPassTimes]) each.id = newId();
   account.schedules.push(copy);
   save();
   return copy.id;
@@ -276,20 +286,24 @@ export function saveSchedule(schedule: Schedule) {
   save();
 }
 
-/** The last schedule can't go: a teacher always has one. */
+/** Deleting the schedule the kiosk follows takes the kiosk off schedule, on the class it has now. */
 export function deleteSchedule(id: string) {
-  if (account.schedules.length < 2) return;
+  if (liveSchedule()?.id === id) stopFollowingSchedule();
   account.schedules = account.schedules.filter((schedule) => schedule.id !== id);
-  if (account.currentScheduleId === id) {
-    account.currentScheduleId = account.schedules[0].id;
-    followSchedule();
-  }
+  if (account.currentScheduleId === id) account.currentScheduleId = account.schedules[0]?.id ?? null;
   save();
+}
+
+/** Off schedule: the kiosk keeps the class it has, and the teacher changes it by hand. */
+export function stopFollowingSchedule() {
+  const active = account.activeClass;
+  if (!active?.onSchedule) return;
+  setActiveClass({ id: active.id, changedAt: now() });
 }
 
 /** The class a schedule would put on the kiosk right now. */
 export function classScheduledNow(scheduleId = account.currentScheduleId) {
-  return scheduledClassAt(findSchedule(scheduleId));
+  return scheduledClassAt(scheduleId ? findSchedule(scheduleId) : undefined);
 }
 
 /**

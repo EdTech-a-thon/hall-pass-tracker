@@ -1,7 +1,7 @@
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
-import { GET as turnLogins } from './api/turn';
+import { GET as turnLogins } from './api/turn.ts';
 
 /**
  * On Vercel, api/turn.ts runs as its own function. During `vite dev` there is

@@ -18,3 +18,10 @@ rules timed to periods that are no longer running would be guesses.
   schedule puts on the kiosk then, not only the class it came from.
 - A teacher with no schedule, or off schedule, has no automatic No-Pass Time
   at all.
+- The first and last minutes started as rules across a whole schedule ("first
+  10 minutes of every class"). Teachers wanted to see and change them on each
+  period, so they now belong to each period, with one click to copy a period's
+  minutes to the rest. Old rules are copied onto each period they covered. A
+  schedule still carries an empty `rules` list, so a kiosk that hasn't
+  updated yet can read it; until it refreshes, that kiosk doesn't apply the
+  periods' own no-pass minutes.

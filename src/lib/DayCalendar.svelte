@@ -1,22 +1,18 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import type { IconName } from './icons';
   import { newId } from './passes';
-  import {
-    clockOf,
-    formatClock,
-    formatRange,
-    periodProblem,
-    scheduledNoPassTimes,
-    toClock,
-    toMinutes,
-  } from './schedule';
-  import type { Class, ClockRange, Schedule } from './types';
+  import { clockOf, formatClock, formatRange, periodNoPass, periodProblem, toClock, toMinutes } from './schedule';
+  import type { Class, ClockRange, Period, Schedule } from './types';
 
   /**
    * One school day as a single calendar column, like a day view in Google
-   * Calendar. Periods are blocks; No-Pass Times are striped, beside them. Drag
-   * across empty time to add a period or a no-pass time, drag a block's top or
-   * bottom edge to change its times, or click a block to change or remove it.
+   * Calendar. Periods are blocks, with their first and last no-pass minutes
+   * striped inside them; No-Pass Times drawn on the schedule are striped
+   * blocks of their own. A tool decides what dragging across empty time does:
+   * Select only picks and moves blocks, Period draws a period, No-pass draws a
+   * no-pass time (even across periods). In any tool, a block can be clicked to
+   * open its card, dragged to move it, or dragged by its top or bottom edge.
    * The list beside the calendar does everything this does, by keyboard.
    */
   let {
@@ -28,6 +24,26 @@
 
   const pixelsPerMinute = 1.5;
   const snapMinutes = 5;
+
+  type Tool = 'select' | 'period' | 'no-pass';
+  const tools: { id: Tool; label: string; key: string; icon: IconName; hint: string }[] = [
+    {
+      id: 'select',
+      label: 'Select',
+      key: 'v',
+      icon: 'pointer',
+      hint: 'Click a period to change it. Drag it to move it, or drag its top or bottom edge.',
+    },
+    { id: 'period', label: 'Period', key: 'p', icon: 'plus', hint: 'Drag across empty time to add a period.' },
+    {
+      id: 'no-pass',
+      label: 'No-pass',
+      key: 'n',
+      icon: 'ban',
+      hint: 'Drag across any time, even during a period, to stop passes then.',
+    },
+  ];
+  let tool = $state<Tool>('period');
 
   let clock = $state(Date.now());
   $effect(() => {
@@ -52,7 +68,6 @@
   const top = (clock: string) => (toMinutes(clock) - range.start) * pixelsPerMinute;
   const height = (each: ClockRange) => (toMinutes(each.end) - toMinutes(each.start)) * pixelsPerMinute;
   const className = (id: string | null) => classes.find((cls) => cls.id === id)?.name ?? 'No class';
-  const ruleNoPass = $derived(scheduledNoPassTimes(schedule).filter((time) => 'rule' in time.from));
 
   // ---------------------------------------------------------------------------
   // Dragging
@@ -60,18 +75,14 @@
 
   let grid = $state<HTMLDivElement>();
 
-  /**
-   * A stretch being drawn, then waiting for "period or no-pass time?". It may
-   * start on a period, since a no-pass time usually sits inside one; a press on
-   * a block that never moves just opens that block.
-   */
-  let drawing = $state<{ anchor: number; at: number; done: boolean; pressed: Block | null } | null>(null);
-  type Block = { kind: 'period' | 'no-pass'; id: string };
-  /** A block whose edge is being dragged. */
-  let resizing = $state<{ kind: 'period' | 'no-pass'; id: string; edge: 'start' | 'end'; at: number } | null>(null);
-  /** The block whose details are open. */
+  type Kind = 'period' | 'no-pass';
+  type Block = { kind: Kind; id: string };
+  /** A new period or no-pass time being drawn. It is added as soon as the mouse is let go. */
+  let drawing = $state<{ kind: Kind; anchor: number; at: number } | null>(null);
+  /** A block being pressed: let go without moving to open it, drag to move it, or drag an edge to resize it. */
+  let dragging = $state<(Block & { grab: 'start' | 'end' | 'body'; anchor: number; at: number }) | null>(null);
+  /** The block whose card is open. */
   let selected = $state<Block | null>(null);
-  let newClassId = $state('');
 
   function minuteAt(event: PointerEvent) {
     const offset = event.clientY - (grid?.getBoundingClientRect().top ?? 0);
@@ -79,45 +90,46 @@
     return Math.max(range.start, Math.min(range.end, Math.round(minute / snapMinutes) * snapMinutes));
   }
 
-  function startDrawing(event: PointerEvent, pressed: Block | null = null) {
-    if (event.button !== 0 || (!pressed && event.target !== grid)) return;
+  function pressGrid(event: PointerEvent) {
+    if (event.button !== 0 || event.target !== grid) return;
     event.preventDefault();
     selected = null;
+    if (tool === 'select') return;
     const at = minuteAt(event);
-    drawing = { anchor: at, at, done: false, pressed };
+    drawing = { kind: tool, anchor: at, at };
     grid?.setPointerCapture(event.pointerId);
   }
 
-  function startResizing(event: PointerEvent, kind: 'period' | 'no-pass', id: string, edge: 'start' | 'end') {
+  function pressBlock(event: PointerEvent, block: Block, grab: 'start' | 'end' | 'body') {
     if (event.button !== 0) return;
     event.stopPropagation();
-    selected = null;
-    drawing = null;
-    resizing = { kind, id, edge, at: minuteAt(event) };
+    event.preventDefault();
+    const at = minuteAt(event);
+    // A no-pass time usually sits inside a period, so with that tool a period is somewhere to draw.
+    if (tool === 'no-pass' && block.kind === 'period' && grab === 'body') {
+      selected = null;
+      drawing = { kind: 'no-pass', anchor: at, at };
+    } else {
+      dragging = { ...block, grab, anchor: at, at };
+    }
     grid?.setPointerCapture(event.pointerId);
   }
 
   function move(event: PointerEvent) {
-    if (drawing && !drawing.done) drawing.at = minuteAt(event);
-    if (resizing) resizing.at = minuteAt(event);
+    if (drawing) drawing.at = minuteAt(event);
+    if (dragging) dragging.at = minuteAt(event);
   }
 
-  function finish() {
-    if (drawing && !drawing.done) {
-      const still = Math.abs(drawing.at - drawing.anchor) < snapMinutes;
-      if (still && drawing.pressed) {
-        selected = drawing.pressed;
-        drawing = null;
-        return;
-      }
-      // A click on empty time with no drag draws half an hour.
-      if (still) drawing.at = Math.min(range.end, drawing.anchor + 30);
-      drawing.done = true;
-      newClassId = classes.find((cls) => !schedule.periods.some((period) => period.classId === cls.id))?.id ?? '';
+  function letGo() {
+    if (drawing) {
+      if (drawn && toMinutes(drawn.end) - toMinutes(drawn.start) >= snapMinutes) add(drawing.kind, drawn);
+      drawing = null;
     }
-    if (resizing) {
-      commitResize(resizing);
-      resizing = null;
+    if (dragging) {
+      const block = dragging;
+      dragging = null;
+      if (block.at === block.anchor) selected = { kind: block.kind, id: block.id };
+      else commitDrag(block);
     }
   }
 
@@ -126,64 +138,55 @@
       ? { start: toClock(Math.min(drawing.anchor, drawing.at)), end: toClock(Math.max(drawing.anchor, drawing.at)) }
       : null,
   );
-  const drawnProblem = $derived(drawn ? periodProblem(schedule, drawn) : null);
+  /** A period drawn over another can't be added; it shows in red until it's moved clear. */
+  const drawnClash = $derived(drawing?.kind === 'period' && drawn ? !!periodProblem(schedule, drawn) : false);
 
-  /** A block's times while its edge is being dragged; otherwise as saved. */
-  function shown<T extends ClockRange & { id: string }>(each: T, kind: 'period' | 'no-pass'): ClockRange {
-    if (resizing?.kind !== kind || resizing.id !== each.id) return each;
-    const moved = toClock(resizing.at);
-    return resizing.edge === 'start'
-      ? { start: moved < each.end ? moved : each.start, end: each.end }
-      : { start: each.start, end: moved > each.start ? moved : each.end };
+  /** A block's times while it's being dragged; otherwise as saved. */
+  function shown(each: ClockRange & { id: string }, drag = dragging): ClockRange {
+    if (drag?.id !== each.id) return each;
+    const start = toMinutes(each.start);
+    const end = toMinutes(each.end);
+    const by = drag.at - drag.anchor;
+    if (drag.grab === 'start') return { start: toClock(Math.min(start + by, end - snapMinutes)), end: each.end };
+    if (drag.grab === 'end') return { start: each.start, end: toClock(Math.max(end + by, start + snapMinutes)) };
+    const moved = Math.max(range.start - start, Math.min(range.end - end, by));
+    return { start: toClock(start + moved), end: toClock(end + moved) };
   }
 
-  function commitResize(change: NonNullable<typeof resizing>) {
+  /** Whether a period being dragged has landed on another one, and so will go back. */
+  function clashes(period: Period) {
+    return dragging?.id === period.id && !!periodProblem(schedule, { ...shown(period), id: period.id });
+  }
+
+  function commitDrag(block: NonNullable<typeof dragging>) {
     const draft = $state.snapshot(schedule) as Schedule;
-    const list = change.kind === 'period' ? draft.periods : draft.noPassTimes;
-    const target = list.find((each) => each.id === change.id);
+    const list: (ClockRange & { id: string })[] = block.kind === 'period' ? draft.periods : draft.noPassTimes;
+    const target = list.find((each) => each.id === block.id);
     if (!target) return;
-    const next = shown(target, change.kind);
-    if (next.start === target.start && next.end === target.end) {
-      selected = { kind: change.kind, id: change.id };
-      return;
-    }
-    // A period can't be stretched over its neighbour; it stays as it was.
-    if (change.kind === 'period' && periodProblem(draft, { ...next, id: target.id })) return;
+    const next = shown(target, block);
+    // A period can't land on its neighbour; it stays where it was.
+    if (block.kind === 'period' && periodProblem(draft, { ...next, id: target.id })) return;
     Object.assign(target, next);
     onsave(draft);
   }
 
-  function addPeriod() {
-    if (!drawn || drawnProblem) return;
+  function add(kind: Kind, times: ClockRange) {
     const draft = $state.snapshot(schedule) as Schedule;
-    draft.periods.push({ id: newId(), classId: newClassId || null, ...drawn });
+    const id = newId();
+    if (kind === 'period') {
+      if (periodProblem(draft, times)) return;
+      const unused = classes.find((cls) => !schedule.periods.some((period) => period.classId === cls.id));
+      draft.periods.push({ id, classId: unused?.id ?? null, ...times, noPass: { first: 0, last: 0 } });
+    } else {
+      draft.noPassTimes.push({ id, ...times });
+    }
     onsave(draft);
-    drawing = null;
+    selected = { kind, id };
   }
 
-  function addNoPass() {
-    if (!drawn) return;
-    const draft = $state.snapshot(schedule) as Schedule;
-    draft.noPassTimes.push({ id: newId(), ...drawn });
-    onsave(draft);
-    drawing = null;
-  }
-
-  function setClass(periodId: string, classId: string) {
-    const draft = $state.snapshot(schedule) as Schedule;
-    const period = draft.periods.find((each) => each.id === periodId);
-    if (!period) return;
-    period.classId = classId || null;
-    onsave(draft);
-  }
-
-  function remove(kind: 'period' | 'no-pass', id: string) {
-    const draft = $state.snapshot(schedule) as Schedule;
-    if (kind === 'period') draft.periods = draft.periods.filter((each) => each.id !== id);
-    else draft.noPassTimes = draft.noPassTimes.filter((each) => each.id !== id);
-    onsave(draft);
-    selected = null;
-  }
+  // ---------------------------------------------------------------------------
+  // The open card
+  // ---------------------------------------------------------------------------
 
   const selectedPeriod = $derived(
     selected?.kind === 'period' ? schedule.periods.find((each) => each.id === selected?.id) : undefined,
@@ -191,17 +194,114 @@
   const selectedNoPass = $derived(
     selected?.kind === 'no-pass' ? schedule.noPassTimes.find((each) => each.id === selected?.id) : undefined,
   );
+  /** Why the open card's last change was refused. */
+  let cardProblem = $state('');
+  $effect(() => {
+    void selected;
+    cardProblem = '';
+  });
+
+  function edit(change: (draft: Schedule) => string | void) {
+    const draft = $state.snapshot(schedule) as Schedule;
+    const problem = change(draft);
+    cardProblem = problem ?? '';
+    if (!problem) onsave(draft);
+  }
+
+  function setTime(input: HTMLInputElement, block: Block, field: 'start' | 'end') {
+    edit((draft) => {
+      const list: (ClockRange & { id: string })[] = block.kind === 'period' ? draft.periods : draft.noPassTimes;
+      const target = list.find((each) => each.id === block.id);
+      if (!target) return;
+      const next = { ...target, [field]: input.value };
+      const problem =
+        block.kind === 'period'
+          ? periodProblem(draft, next)
+          : !next.start || !next.end || next.start >= next.end
+            ? 'A no-pass time needs to start before it ends.'
+            : null;
+      if (problem) {
+        input.value = target[field];
+        return problem;
+      }
+      target[field] = input.value;
+    });
+  }
+
+  function setNoPass(input: HTMLInputElement, periodId: string, edge: 'first' | 'last') {
+    const minutes = Math.round(Number(input.value || 0));
+    edit((draft) => {
+      const period = draft.periods.find((each) => each.id === periodId);
+      if (!period) return;
+      if (!(minutes >= 0 && minutes <= 120)) {
+        input.value = String(period.noPass?.[edge] ?? 0);
+        return 'Pick between 0 and 120 minutes.';
+      }
+      period.noPass = { first: 0, last: 0, ...period.noPass, [edge]: minutes };
+    });
+  }
+
+  /** Copies one period's first and last no-pass minutes onto every period with a class. */
+  function applyToEvery(periodId: string) {
+    edit((draft) => {
+      const noPass = draft.periods.find((each) => each.id === periodId)?.noPass ?? { first: 0, last: 0 };
+      for (const period of draft.periods) if (period.classId) period.noPass = { ...noPass };
+    });
+  }
+
+  function setClass(periodId: string, classId: string) {
+    edit((draft) => {
+      const period = draft.periods.find((each) => each.id === periodId);
+      if (period) period.classId = classId || null;
+    });
+  }
+
+  function remove(block: Block) {
+    edit((draft) => {
+      if (block.kind === 'period') draft.periods = draft.periods.filter((each) => each.id !== block.id);
+      else draft.noPassTimes = draft.noPassTimes.filter((each) => each.id !== block.id);
+    });
+    selected = null;
+  }
+
+  const otherClassPeriods = $derived(
+    schedule.periods.filter((each) => each.classId && each.id !== selectedPeriod?.id).length,
+  );
   const nowClock = $derived(clockOf(clock));
   const nowShown = $derived(showNow && toMinutes(nowClock) >= range.start && toMinutes(nowClock) < range.end);
+
+  function shortcut(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      drawing = null;
+      dragging = null;
+      selected = null;
+      return;
+    }
+    const typing = event.target instanceof HTMLElement && event.target.closest('input, select, textarea');
+    if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+    const picked = tools.find((each) => each.key === event.key.toLowerCase());
+    if (picked) tool = picked.id;
+  }
 </script>
 
-<svelte:window
-  onkeydown={(event) => {
-    if (event.key !== 'Escape') return;
-    drawing = null;
-    selected = null;
-  }}
-/>
+<svelte:window onkeydown={shortcut} />
+
+<div class="calendar-tools">
+  <p class="muted small">{tools.find((each) => each.id === tool)?.hint}</p>
+  <div class="tool-tabs" role="radiogroup" aria-label="What dragging on the calendar does">
+    {#each tools as each (each.id)}
+      <button
+        role="radio"
+        aria-checked={tool === each.id}
+        class:active={tool === each.id}
+        title="{each.label} ({each.key.toUpperCase()})"
+        onclick={() => (tool = each.id)}
+      >
+        <Icon name={each.icon} size={14} />{each.label}
+      </button>
+    {/each}
+  </div>
+</div>
 
 <div class="calendar" style:--hour="{60 * pixelsPerMinute}px">
   <div class="hours" aria-hidden="true">
@@ -212,67 +312,70 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="grid"
+    class="grid tool-{tool}"
     bind:this={grid}
     style:height="{(range.end - range.start) * pixelsPerMinute}px"
-    onpointerdown={startDrawing}
+    onpointerdown={pressGrid}
     onpointermove={move}
-    onpointerup={finish}
+    onpointerup={letGo}
     onpointercancel={() => {
       drawing = null;
-      resizing = null;
+      dragging = null;
     }}
-    aria-label="{schedule.name}, drag across empty time to add a period or a no-pass time"
+    aria-label="{schedule.name} calendar"
   >
     {#each schedule.periods as period (period.id)}
-      {@const times = shown(period, 'period')}
+      {@const times = shown(period)}
+      {@const length = toMinutes(times.end) - toMinutes(times.start)}
       <div
         class="block period"
         class:empty-period={!period.classId}
         class:chosen={selected?.id === period.id}
+        class:clash={clashes(period)}
+        class:moving={dragging?.id === period.id}
         style:top="{top(times.start)}px"
         style:height="{height(times)}px"
       >
-        <!-- A mouse press goes through startDrawing; the click here is for the keyboard. -->
+        {#each periodNoPass({ ...period, ...times }) as band, index (index)}
+          <span
+            class="band"
+            class:at-start={band.start === times.start}
+            style:top="{((toMinutes(band.start) - toMinutes(times.start)) / length) * 100}%"
+            style:height="{((toMinutes(band.end) - toMinutes(band.start)) / length) * 100}%"
+            title="No passes {formatRange(band)}"
+          ></span>
+        {/each}
+        <!-- A mouse press goes through pressBlock; the click here is for the keyboard. -->
         <button
           class="block-body"
-          onpointerdown={(event) => startDrawing(event, { kind: 'period', id: period.id })}
+          onpointerdown={(event) => pressBlock(event, { kind: 'period', id: period.id }, 'body')}
           onclick={(event) => {
             if (event.detail === 0) selected = { kind: 'period', id: period.id };
           }}
         >
-          <strong>{className(period.classId)}</strong>
-          <span>{formatRange(times)}</span>
+          <span class="label"><strong>{className(period.classId)}</strong><span>{formatRange(times)}</span></span>
         </button>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span class="handle start" onpointerdown={(event) => startResizing(event, 'period', period.id, 'start')}></span>
+        <span class="handle start" onpointerdown={(event) => pressBlock(event, { kind: 'period', id: period.id }, 'start')}
+        ></span>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span class="handle end" onpointerdown={(event) => startResizing(event, 'period', period.id, 'end')}></span>
-      </div>
-    {/each}
-
-    {#each ruleNoPass as time, index (index)}
-      <div
-        class="no-pass from-rule"
-        style:top="{top(time.start)}px"
-        style:height="{height(time)}px"
-        title="No passes {formatRange(time)}, from a rule on the left"
-      >
-        <span>No passes</span>
+        <span class="handle end" onpointerdown={(event) => pressBlock(event, { kind: 'period', id: period.id }, 'end')}
+        ></span>
       </div>
     {/each}
 
     {#each schedule.noPassTimes as time (time.id)}
-      {@const times = shown(time, 'no-pass')}
+      {@const times = shown(time)}
       <div
-        class="no-pass drawn"
+        class="no-pass"
         class:chosen={selected?.id === time.id}
+        class:moving={dragging?.id === time.id}
         style:top="{top(times.start)}px"
         style:height="{height(times)}px"
       >
         <button
           class="block-body"
-          onpointerdown={(event) => startDrawing(event, { kind: 'no-pass', id: time.id })}
+          onpointerdown={(event) => pressBlock(event, { kind: 'no-pass', id: time.id }, 'body')}
           onclick={(event) => {
             if (event.detail === 0) selected = { kind: 'no-pass', id: time.id };
           }}
@@ -280,70 +383,125 @@
           <span>No passes · {formatRange(times)}</span>
         </button>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span class="handle start" onpointerdown={(event) => startResizing(event, 'no-pass', time.id, 'start')}></span>
+        <span class="handle start" onpointerdown={(event) => pressBlock(event, { kind: 'no-pass', id: time.id }, 'start')}
+        ></span>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span class="handle end" onpointerdown={(event) => startResizing(event, 'no-pass', time.id, 'end')}></span>
+        <span class="handle end" onpointerdown={(event) => pressBlock(event, { kind: 'no-pass', id: time.id }, 'end')}
+        ></span>
       </div>
     {/each}
 
-    {#if drawn}
-      <div class="ghost" style:top="{top(drawn.start)}px" style:height="{height(drawn)}px">
-        {formatRange(drawn)}
-      </div>
+    {#if drawing && drawn}
+      {#if drawing.kind === 'period'}
+        <div
+          class="block period drawing"
+          class:clash={drawnClash}
+          style:top="{top(drawn.start)}px"
+          style:height="{height(drawn)}px"
+        >
+          <span class="block-body"><strong>{drawnClash ? 'Overlaps a period' : 'New period'}</strong><span>{formatRange(drawn)}</span></span>
+        </div>
+      {:else}
+        <div class="no-pass drawing" style:top="{top(drawn.start)}px" style:height="{height(drawn)}px">
+          <span class="block-body"><span>No passes · {formatRange(drawn)}</span></span>
+        </div>
+      {/if}
     {/if}
 
     {#if nowShown}
       <div class="now" style:top="{top(nowClock)}px" aria-label="Now, {formatClock(nowClock)}"></div>
     {/if}
 
-    {#if drawing?.done && drawn}
-      <div class="popover" style:top="{top(drawn.end) + 8}px" role="dialog" aria-label="Add {formatRange(drawn)}">
-        <p class="eyebrow">{formatRange(drawn)}</p>
-        {#if drawnProblem}
-          <button class="btn btn-primary btn-small" onclick={addNoPass}><Icon name="ban" size={14} />Make it a no-pass time</button>
-          <p class="muted small">It overlaps a period, so it can only be a no-pass time.</p>
-        {:else}
-        <div class="choice">
-          <label class="field">
-            A period for
-            <select bind:value={newClassId}>
-              <option value="">No class (lunch, planning…)</option>
-              {#each classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
-            </select>
-          </label>
-          <button class="btn btn-primary btn-small" onclick={addPeriod}>Add period</button>
-        </div>
-        <div class="or"><span>or</span></div>
-        <button class="btn btn-small" onclick={addNoPass}><Icon name="ban" size={14} />Make it a no-pass time</button>
-        {/if}
-        <button class="btn btn-quiet btn-small" onclick={() => (drawing = null)}>Cancel</button>
-      </div>
-    {/if}
-
     {#if selectedPeriod}
-      <div class="popover" style:top="{top(selectedPeriod.end) + 8}px" role="dialog" aria-label="Period">
-        <p class="eyebrow">Period · {formatRange(selectedPeriod)}</p>
+      {@const period = selectedPeriod}
+      <div class="popover" style:top="{top(period.end) + 8}px" role="dialog" aria-label="Period">
+        <div class="popover-head">
+          <p class="eyebrow">Period</p>
+          <button class="btn btn-quiet btn-small" aria-label="Close" onclick={() => (selected = null)}>
+            <Icon name="x" size={14} />
+          </button>
+        </div>
         <label class="field">
           Class
-          <select value={selectedPeriod.classId ?? ''} onchange={(event) => setClass(selectedPeriod.id, event.currentTarget.value)}>
+          <select value={period.classId ?? ''} onchange={(event) => setClass(period.id, event.currentTarget.value)}>
             <option value="">No class (lunch, planning…)</option>
             {#each classes as cls (cls.id)}<option value={cls.id}>{cls.name}</option>{/each}
           </select>
         </label>
-        <p class="muted small">Drag the top or bottom edge to change its times.</p>
+        <div class="times">
+          <label class="field">
+            Starts
+            <input type="time" value={period.start} onchange={(event) => setTime(event.currentTarget, selected!, 'start')} />
+          </label>
+          <label class="field">
+            Ends
+            <input type="time" value={period.end} onchange={(event) => setTime(event.currentTarget, selected!, 'end')} />
+          </label>
+        </div>
+        {#if period.classId}
+          <div class="times">
+            <label class="field">
+              No passes, first
+              <span class="minutes">
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={period.noPass?.first ?? 0}
+                  onchange={(event) => setNoPass(event.currentTarget, period.id, 'first')}
+                />min
+              </span>
+            </label>
+            <label class="field">
+              No passes, last
+              <span class="minutes">
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={period.noPass?.last ?? 0}
+                  onchange={(event) => setNoPass(event.currentTarget, period.id, 'last')}
+                />min
+              </span>
+            </label>
+          </div>
+          {#if otherClassPeriods}
+            <button class="btn btn-small" onclick={() => applyToEvery(period.id)}>
+              <Icon name="copy" size={14} />Use these no-pass minutes in every period
+            </button>
+          {/if}
+        {/if}
+        {#if cardProblem}<p class="form-error" role="alert">{cardProblem}</p>{/if}
         <div class="row">
-          <button class="btn btn-danger btn-small" onclick={() => remove('period', selectedPeriod.id)}>
+          <button class="btn btn-danger btn-small" onclick={() => remove(selected!)}>
             <Icon name="trash" size={14} />Remove
           </button>
           <button class="btn btn-quiet btn-small" onclick={() => (selected = null)}>Done</button>
         </div>
       </div>
     {:else if selectedNoPass}
-      <div class="popover" style:top="{top(selectedNoPass.end) + 8}px" role="dialog" aria-label="No-pass time">
-        <p class="eyebrow">No-pass time · {formatRange(selectedNoPass)}</p>
-        <p class="muted small">Applies to whichever class is on the kiosk. Drag an edge to change its times.</p>
+      {@const time = selectedNoPass}
+      <div class="popover" style:top="{top(time.end) + 8}px" role="dialog" aria-label="No-pass time">
+        <div class="popover-head">
+          <p class="eyebrow">No-pass time</p>
+          <button class="btn btn-quiet btn-small" aria-label="Close" onclick={() => (selected = null)}>
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+        <p class="muted small">Applies to whichever class is on the kiosk.</p>
+        <div class="times">
+          <label class="field">
+            From
+            <input type="time" value={time.start} onchange={(event) => setTime(event.currentTarget, selected!, 'start')} />
+          </label>
+          <label class="field">
+            Until
+            <input type="time" value={time.end} onchange={(event) => setTime(event.currentTarget, selected!, 'end')} />
+          </label>
+        </div>
+        {#if cardProblem}<p class="form-error" role="alert">{cardProblem}</p>{/if}
         <div class="row">
-          <button class="btn btn-danger btn-small" onclick={() => remove('no-pass', selectedNoPass.id)}>
+          <button class="btn btn-danger btn-small" onclick={() => remove(selected!)}>
             <Icon name="trash" size={14} />Remove
           </button>
           <button class="btn btn-quiet btn-small" onclick={() => (selected = null)}>Done</button>
@@ -354,6 +512,49 @@
 </div>
 
 <style>
+  .calendar-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .calendar-tools p {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .tool-tabs {
+    display: inline-flex;
+    flex: none;
+    margin-left: auto;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface-sunk);
+  }
+
+  .tool-tabs button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .tool-tabs button.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgb(60 45 20 / 0.14);
+  }
+
   .calendar {
     position: relative;
     display: grid;
@@ -386,13 +587,16 @@
       transparent 1px,
       transparent var(--hour)
     );
-    cursor: crosshair;
     touch-action: none;
   }
 
+  .grid.tool-period,
+  .grid.tool-no-pass {
+    cursor: crosshair;
+  }
+
   .block,
-  .no-pass,
-  .ghost {
+  .no-pass {
     position: absolute;
     border-radius: 7px;
   }
@@ -403,7 +607,6 @@
     overflow: hidden;
     border: 1px solid #b9d6c3;
     background: #e3f1e9;
-    cursor: default;
   }
 
   .block.empty-period {
@@ -412,7 +615,36 @@
     background: var(--surface-sunk);
   }
 
+  .block.drawing,
+  .no-pass.drawing,
+  .moving {
+    z-index: 2;
+    box-shadow: 0 6px 18px rgb(60 45 20 / 0.18);
+    pointer-events: none;
+  }
+
+  .block.clash {
+    border-color: var(--danger);
+    background: var(--danger-wash);
+  }
+
+  /* A period's first or last no-pass minutes: construction stripes across the whole card, edged by a dashed line. */
+  .band {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: repeating-linear-gradient(-45deg, #f7e3bd 0 6px, #fbf1dc 6px 12px);
+    border-top: 2px dashed #d39b45;
+    pointer-events: none;
+  }
+
+  .band.at-start {
+    border-top: 0;
+    border-bottom: 2px dashed #d39b45;
+  }
+
   .block-body {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;
@@ -424,11 +656,34 @@
     background: none;
     text-align: left;
     font-size: 12.5px;
-    cursor: pointer;
+    cursor: grab;
+  }
+
+  .tool-no-pass .period .block-body {
+    cursor: crosshair;
   }
 
   .block-body span {
     color: var(--muted);
+  }
+
+  /* The name sits on the card's own color, so a no-pass band's dashed line passes behind it. */
+  .label {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 0 4px;
+    margin-left: -4px;
+    border-radius: 4px;
+    background: #e3f1e9;
+  }
+
+  .empty-period .label {
+    background: var(--surface-sunk);
+  }
+
+  .clash .label {
+    background: var(--danger-wash);
   }
 
   .chosen {
@@ -437,31 +692,15 @@
   }
 
   .no-pass {
-    left: 62%;
-    right: 10px;
-    border: 1px solid #ecd3ac;
-    background: repeating-linear-gradient(-45deg, #f7ecd9 0 6px, #fbf4e7 6px 12px);
-    color: var(--warn);
-    font-size: 11.5px;
-    font-weight: 800;
-    overflow: hidden;
-  }
-
-  .no-pass > span {
-    padding: 2px 8px;
-  }
-
-  .no-pass.from-rule {
-    pointer-events: none;
-    opacity: 0.85;
-  }
-
-  .no-pass.drawn {
     left: 50%;
-    border-color: #e0b878;
+    right: 10px;
+    overflow: hidden;
+    border: 1px solid #e0b878;
+    background: repeating-linear-gradient(-45deg, #f7ecd9 0 6px, #fbf4e7 6px 12px);
+    font-size: 11.5px;
   }
 
-  .no-pass.drawn .block-body span {
+  .no-pass .block-body span {
     color: var(--warn);
     font-weight: 800;
   }
@@ -482,18 +721,6 @@
     bottom: -2px;
   }
 
-  .ghost {
-    left: 6px;
-    right: 6px;
-    padding: 4px 10px;
-    border: 2px dashed var(--accent);
-    background: color-mix(in srgb, var(--accent-wash) 70%, transparent);
-    color: var(--accent);
-    font-size: 12.5px;
-    font-weight: 800;
-    pointer-events: none;
-  }
-
   .now {
     position: absolute;
     left: -5px;
@@ -501,7 +728,7 @@
     height: 2px;
     background: #c2412d;
     pointer-events: none;
-    z-index: 2;
+    z-index: 3;
   }
 
   .now::before {
@@ -518,10 +745,10 @@
   .popover {
     position: absolute;
     left: 16px;
-    z-index: 3;
+    z-index: 4;
     display: grid;
     gap: 10px;
-    width: min(320px, calc(100% - 32px));
+    width: min(340px, calc(100% - 32px));
     padding: 14px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
@@ -531,24 +758,25 @@
     user-select: text;
   }
 
-  .choice {
+  .popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .times {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
 
-  .or {
+  .minutes {
     display: flex;
     align-items: center;
-    gap: 10px;
-    color: var(--faint);
-    font-size: 12px;
-    font-weight: 700;
+    gap: 6px;
   }
 
-  .or::before,
-  .or::after {
-    content: '';
-    flex: 1;
-    border-top: 1px solid var(--border);
+  .minutes input {
+    width: 100%;
   }
 </style>

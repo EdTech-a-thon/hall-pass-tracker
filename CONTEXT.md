@@ -86,9 +86,9 @@ _Avoid_: Unlimited student, special student, accommodation
 **No-Pass Time**:
 A stretch of the clock when the class on the kiosk may not start passes. Most
 come from the Current Schedule and apply only while the teacher is On Schedule:
-each schedule has its own, either the first or last minutes of its periods,
-such as the first and last ten minutes of every class, or a fixed time drawn on
-it. The teacher can also start one by hand from the laptop, on or off schedule,
+each schedule has its own, either the first or last minutes of a period
+(set on each period, and copied to the rest in one click), or a fixed time
+drawn on it. The teacher can also start one by hand from the laptop, on or off schedule,
 which lasts until they end it or the class on the kiosk changes. Students already out can always come back,
 and if the Line is on, students may join it and go once the No-Pass Time ends.
 _Avoid_: Blackout, lockout, quiet time
@@ -112,12 +112,14 @@ _Avoid_: Bell schedule, timetable, rotation
 
 **Period**:
 One stretch of the clock in a Schedule, belonging to one class or to none, such
-as lunch or planning.
+as lunch or planning. A period with a class may have No-Pass Time in its first
+and last minutes.
 _Avoid_: Class (that is the students), block, slot
 
 **Current Schedule**:
-The schedule the teacher last picked. It stays picked, day after day, until the
-teacher picks another; Happy Hallways never works out which day it is.
+The schedule the teacher last picked with "Use this". It stays picked, day
+after day, until the teacher picks another; Happy Hallways never works out which
+day it is. A teacher may have no schedules at all.
 _Avoid_: Today's schedule, default schedule
 
 **On Schedule**:

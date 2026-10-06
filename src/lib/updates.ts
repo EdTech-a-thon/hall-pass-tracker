@@ -48,7 +48,7 @@ export const updates: Update[] = [
       },
       {
         title: 'No-pass times live in your schedule now',
-        text: 'Block the first or last few minutes of every class in one line, or draw a no-pass time right on the calendar. They work while the kiosk is following your schedule. If you’d set no-pass times on a class, we moved them to your schedule: turn it on to use them. Off schedule, start a no-pass time by hand from the Now tab.',
+        text: 'Block the first or last few minutes of a period (and copy them to every period in one click), or draw a no-pass time right on the calendar. They work while the kiosk is following your schedule. If you’d set no-pass times on a class, we moved them to a schedule: choose “Use this” on it to use them. Off schedule, start a no-pass time by hand from the Now tab.',
         art: 'no-pass-rules',
       },
     ],

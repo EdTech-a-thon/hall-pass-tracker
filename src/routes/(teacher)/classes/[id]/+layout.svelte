@@ -19,7 +19,8 @@
   const onKiosk = $derived(account.activeClass?.id === cls?.id);
   const warning = $derived(cls ? moveWarning(cls.id) : null);
   /** When the Current Schedule puts this class on the kiosk. */
-  const periods = $derived(sortedPeriods(currentSchedule()).filter((period) => period.classId === cls?.id));
+  const schedule = $derived(currentSchedule());
+  const periods = $derived(schedule ? sortedPeriods(schedule).filter((period) => period.classId === cls?.id) : []);
 
   let adding = $state(false);
   let settings = $state(false);
@@ -64,7 +65,7 @@
         <p class="muted small">
           {current} {current === 1 ? 'student' : 'students'}
           {#if periods.length}
-            · <a href="/schedule">{currentSchedule().name}: {periods.map(formatRange).join(', ')}</a>
+            · <a href="/schedule/{schedule?.id}">{schedule?.name}: {periods.map(formatRange).join(', ')}</a>
           {/if}
         </p>
       </div>

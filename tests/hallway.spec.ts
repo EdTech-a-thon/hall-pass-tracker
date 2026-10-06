@@ -9,13 +9,29 @@ async function createClassWithRoster(page: Page, name: string) {
   await expect(page.getByText(/3 students/)).toBeVisible();
 }
 
+/** Drags down the open schedule's calendar, from and to so many pixels below its top (7 AM, a minute and a half to the pixel). */
+async function dragOnCalendar(page: Page, from: number, to: number) {
+  const box = (await page.locator('.grid').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 4, box.y + from);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 4, box.y + to, { steps: 5 });
+  await page.mouse.up();
+}
+
 async function setPin(page: Page) {
   await page.getByRole('link', { name: /Kiosk/ }).click();
   await page.getByLabel('PIN (4 to 8 digits)').fill('2468');
   await page.getByRole('button', { name: 'Save PIN' }).click();
 }
 
-/** One period on the teacher's schedule, from the Schedule tab's list. */
+/** A brand-new schedule, open in its editor. */
+async function newSchedule(page: Page) {
+  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await page.getByRole('button', { name: /^(No schedules|New schedule)/ }).click();
+  await expect(page.getByRole('heading', { name: 'Create new schedule' })).toBeVisible();
+}
+
+/** One period on the open schedule, from the list beside the calendar. */
 async function addPeriod(page: Page, className: string, start: string, end: string) {
   await page.getByRole('button', { name: 'Add a period' }).click();
   const row = page.locator('.time-row').last();
@@ -26,12 +42,14 @@ async function addPeriod(page: Page, className: string, start: string, end: stri
 
 /** A schedule where the class runs 9:00 to 10:00, with no passes in its first half hour, turned on. */
 async function scheduleNoPassesUntil930(page: Page, className: string) {
-  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await newSchedule(page);
   await addPeriod(page, className, '09:00', '10:00');
-  await page.getByRole('button', { name: 'First or last minutes of class' }).click();
-  await page.getByLabel('Minutes').fill('30');
-  await page.getByRole('button', { name: 'Turn on My Schedule' }).click();
-  await expect(page.getByText('Following My Schedule.')).toBeVisible();
+  // A period's card, opened from the calendar, holds its no-pass minutes.
+  await page.locator('.grid .period .block-body').click();
+  await page.getByLabel('No passes, first').fill('30');
+  await page.getByLabel('No passes, first').press('Tab');
+  await page.getByRole('button', { name: 'Use this schedule' }).click();
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
 }
 
 test('a teacher runs the kiosk on their own computer', async ({ page }) => {
@@ -578,13 +596,13 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await expect(page.getByRole('button', { name: 'Review destinations' })).toBeVisible();
   await page.getByRole('button', { name: 'Set up your schedule' }).click();
   await expect(page).toHaveURL(/\/schedule$/);
-  // The class's no-pass time moved to the schedule.
-  await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
-  await expect(page.getByLabel('No passes until')).toHaveValue('09:10');
-
   await page.reload();
   await expect(page.getByRole('heading', { name: 'When each class is on the kiosk' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeHidden();
+  // The class's no-pass time moved to a schedule.
+  await page.getByRole('link', { name: /My Schedule/ }).click();
+  await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
+  await expect(page.getByLabel('No passes until')).toHaveValue('09:10');
   await page.getByRole('link', { name: 'Destinations' }).click();
   await expect(page.getByRole('button', { name: /Nurse.*2 at a time/ })).toBeVisible();
 });
@@ -638,10 +656,11 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await page.clock.install({ time: new Date('2026-10-05T09:40:00') });
   await createClassWithRoster(page, 'Period 1');
   await createClassWithRoster(page, 'Period 2');
-  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await newSchedule(page);
   await addPeriod(page, 'Period 1', '09:00', '09:50');
   await addPeriod(page, 'Period 2', '09:55', '10:45');
-  await page.getByRole('button', { name: 'Turn on My Schedule' }).click();
+  await page.getByRole('button', { name: 'Use this schedule' }).click();
+  await page.getByRole('link', { name: 'All schedules' }).click();
   await expect(page.getByText('Right now: Period 1')).toBeVisible();
 
   await setPin(page);
@@ -681,15 +700,9 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
 
 test('dragging on the calendar adds a no-pass time, and the teacher can stop passes by hand', async ({ page }) => {
   await createClassWithRoster(page, 'Period 1');
-  await page.getByRole('link', { name: /^Schedule/ }).click();
-  // The calendar starts at 7 AM, a minute and a half to the pixel: 9 AM is 180px down.
-  const grid = page.locator('.grid');
-  const box = (await grid.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + 180);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2, box.y + 225, { steps: 5 });
-  await page.mouse.up();
-  await page.getByRole('button', { name: 'Make it a no-pass time' }).click();
+  await newSchedule(page);
+  await page.getByRole('radio', { name: 'No-pass' }).click();
+  await dragOnCalendar(page, 180, 225);
   await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
   await expect(page.getByLabel('No passes until')).toHaveValue('09:30');
 
@@ -737,4 +750,63 @@ test('when the network blocks pairing, both screens offer details for support, a
   await laptop.getByRole('button', { name: 'Close', exact: true }).click();
   await laptop.getByRole('button', { name: 'Pair a device' }).click();
   await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+});
+
+test('a teacher with no schedules draws one: a period appears as they drag, and moves as a whole', async ({ page }) => {
+  await createClassWithRoster(page, 'Period 1');
+  await page.getByRole('link', { name: /^Schedule/ }).click();
+  await expect(page.getByText('You have no schedules right now. Click here to create one.')).toBeVisible();
+  await newSchedule(page);
+
+  // Dragging with the Period tool adds the period straight away and opens its card.
+  await dragOnCalendar(page, 180, 270);
+  const row = page.locator('.time-row').first();
+  await expect(row.getByLabel('Starts')).toHaveValue('09:00');
+  await expect(row.getByLabel('Ends')).toHaveValue('10:00');
+  await expect(row.getByLabel('Class', { exact: true })).toHaveValue(/.+/);
+  await page.getByLabel('No passes, last').fill('10');
+  await page.getByLabel('No passes, last').press('Tab');
+  await expect(page.locator('.grid .band')).toHaveCount(1);
+  await page.getByRole('dialog', { name: 'Period' }).getByRole('button', { name: 'Done' }).click();
+
+  // The Select tool moves the whole period, keeping its length.
+  await page.getByRole('radio', { name: 'Select' }).click();
+  await dragOnCalendar(page, 200, 245);
+  await expect(row.getByLabel('Starts')).toHaveValue('09:30');
+  await expect(row.getByLabel('Ends')).toHaveValue('10:30');
+
+  // It shows on the schedule's card, ready to use.
+  await page.getByRole('link', { name: 'All schedules' }).click();
+  await expect(page.locator('.schedule-card')).toContainText('9:30');
+  await page.getByRole('button', { name: 'Use this' }).click();
+  await expect(page.locator('.schedule-card').getByText('Live')).toBeVisible();
+  await page.getByRole('button', { name: 'Stop using' }).click();
+  await expect(page.getByText('No schedule in use.')).toBeVisible();
+});
+
+test("a schedule's old first and last minutes rules move onto its periods", async ({ page }) => {
+  await createClassWithRoster(page, 'Period 1');
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('hallway.account')!);
+    const classId = saved.classes[0].id;
+    saved.schedules = [
+      {
+        id: 'old',
+        name: 'A Day',
+        periods: [{ id: 'p1', classId, start: '09:00', end: '10:00' }],
+        rules: [
+          { id: 'r1', edge: 'first', minutes: 10, classId: null },
+          { id: 'r2', edge: 'last', minutes: 5, classId },
+        ],
+        noPassTimes: [],
+      },
+    ];
+    saved.currentScheduleId = 'old';
+    localStorage.setItem('hallway.account', JSON.stringify(saved));
+  });
+  await page.goto('/schedule/old');
+  await page.locator('.grid .period .block-body').click();
+  await expect(page.getByLabel('No passes, first')).toHaveValue('10');
+  await expect(page.getByLabel('No passes, last')).toHaveValue('5');
+  await expect(page.locator('.grid .band')).toHaveCount(2);
 });
