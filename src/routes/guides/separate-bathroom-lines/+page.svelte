@@ -45,7 +45,7 @@
 <GuideHead {guide} image={steps[3].image} {steps} />
 
 <article class="guide">
-  <header>
+  <header class="guide-header">
     <p class="eyebrow"><a href="/guides">Guides</a></p>
     <h1>{guide.title}</h1>
     <p class="lede">
@@ -60,13 +60,12 @@
   </header>
 
   {#each steps as step, index (step.name)}
-    <GuideStep number={index + 1} title={step.name} image={step.image} alt={step.alt}>
+    <GuideStep number={index + 1} title={step.name} image={step.image} alt={step.alt} tip={step.tip}>
       <p>{step.text}</p>
-      {#if step.tip}<p class="tip"><strong>Tip:</strong> {step.tip}</p>{/if}
     </GuideStep>
   {/each}
 
-  <section class="step-like">
+  <section class="guide-section">
     <h2>What students see at the kiosk</h2>
     <p>
       Each bathroom shows up as its own choice. When one is full, the kiosk marks it <strong>Full</strong>, and a
@@ -96,7 +95,7 @@
     </figure>
   </section>
 
-  <section class="step-like">
+  <section class="guide-section">
     <h2>If it isn’t working</h2>
     <dl>
       <dt>Students waiting for one bathroom hold up the other.</dt>
@@ -121,84 +120,3 @@
   </section>
 </article>
 
-<style>
-  .guide {
-    display: grid;
-    gap: 44px;
-  }
-
-  header {
-    display: grid;
-    gap: 10px;
-  }
-
-  h1 {
-    font-size: clamp(30px, 4.4vw, 42px);
-    line-height: 1.1;
-    letter-spacing: -0.03em;
-  }
-
-  .eyebrow a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .lede {
-    margin: 0;
-    color: var(--muted);
-    font-size: 18px;
-    line-height: 1.6;
-  }
-
-  .tip {
-    padding: 12px 14px;
-    border-radius: var(--radius);
-    background: var(--accent-wash);
-  }
-
-  .step-like {
-    display: grid;
-    gap: 12px;
-  }
-
-  .step-like h2 {
-    font-size: 21px;
-  }
-
-  .step-like p,
-  dd {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.65;
-  }
-
-  figure {
-    margin: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgb(42 38 31 / 8%);
-  }
-
-  figure img {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-
-  dl {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-  }
-
-  dt {
-    margin-top: 10px;
-    font-weight: 800;
-  }
-
-  dd {
-    margin: 0;
-    color: var(--muted);
-  }
-</style>

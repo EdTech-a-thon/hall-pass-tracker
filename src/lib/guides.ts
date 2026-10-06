@@ -36,6 +36,18 @@ export const guides: Guide[] = [
     },
     updated: '2026-10-06',
   },
+  {
+    slug: 'schedule-no-pass-times',
+    title: 'Set up your schedule with no-pass times',
+    description:
+      'Enter your bell schedule once: the kiosk switches classes by itself, and nobody can leave in the first or last minutes of class.',
+    search: {
+      title: 'Block hall passes in the first and last minutes of class',
+      description:
+        'Set no-pass times in Happy Hallways, the free digital hall pass: block passes at the start and end of each period, or during an assembly, and let the kiosk follow your bell schedule.',
+    },
+    updated: '2026-10-06',
+  },
 ];
 
 export function guideNamed(slug: string): Guide {

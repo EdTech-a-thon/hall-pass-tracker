@@ -1,19 +1,23 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  /** One numbered step of a guide, with its screenshot. Clicking the picture opens it full size. */
+  /** One numbered step of a guide, with its screenshot and an optional tip. Clicking the picture opens it full size. */
   let {
     number,
     title,
     image,
     alt,
+    tip,
     children,
-  }: { number: number; title: string; image: string; alt: string; children: Snippet } = $props();
+  }: { number: number; title: string; image: string; alt: string; tip?: string; children: Snippet } = $props();
 </script>
 
 <section class="step" id="step-{number}">
   <h2><span class="number" aria-hidden="true">{number}</span>{title}</h2>
-  <div class="text">{@render children()}</div>
+  <div class="text">
+    {@render children()}
+    {#if tip}<p class="tip"><strong>Tip:</strong> {tip}</p>{/if}
+  </div>
   <a class="shot" href={image} target="_blank" rel="noopener">
     <img src={image} {alt} width="1280" height="800" loading={number === 1 ? 'eager' : 'lazy'} />
   </a>
@@ -54,6 +58,12 @@
   .text {
     display: grid;
     gap: 10px;
+  }
+
+  .tip {
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: var(--accent-wash);
   }
 
   .shot {

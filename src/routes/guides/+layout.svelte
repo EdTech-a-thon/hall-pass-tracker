@@ -42,6 +42,80 @@
     padding: 32px 0 64px;
   }
 
+  /* Shared by every guide page. */
+  main :global(.guide) {
+    display: grid;
+    gap: 44px;
+  }
+
+  main :global(.guide-header) {
+    display: grid;
+    gap: 10px;
+  }
+
+  main :global(.guide h1) {
+    font-size: clamp(30px, 4.4vw, 42px);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+  }
+
+  main :global(.guide .eyebrow a) {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  main :global(.lede) {
+    margin: 0;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.6;
+  }
+
+  main :global(.guide-section) {
+    display: grid;
+    gap: 12px;
+  }
+
+  main :global(.guide-section h2) {
+    font-size: 21px;
+  }
+
+  main :global(.guide-section p),
+  main :global(.guide dd) {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  main :global(.guide figure) {
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgb(42 38 31 / 8%);
+  }
+
+  main :global(.guide figure img) {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  main :global(.guide dl) {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+  }
+
+  main :global(.guide dt) {
+    margin-top: 10px;
+    font-weight: 800;
+  }
+
+  main :global(.guide dd) {
+    color: var(--muted);
+  }
+
   .still-stuck {
     margin: 44px 0 0;
     padding-top: 28px;

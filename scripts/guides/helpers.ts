@@ -52,15 +52,17 @@ export async function circle(target: Locator) {
 
 /**
  * Saves one step's picture, then takes the circles away. The picture zooms in
- * on what's circled, plus `alsoShow` (a heading, say), keeping the screen's
+ * on what's circled, plus anything in `alsoShow` (a heading, say), keeping the screen's
  * shape so every picture in a guide is the same size. With nothing circled,
  * it shows the whole screen.
  */
-export async function snap(page: Page, guide: string, name: string, alsoShow?: Locator) {
+export async function snap(page: Page, guide: string, name: string, alsoShow: Locator | Locator[] = []) {
+  // No blinking cursor or focus ring in the picture.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   // Let pop-ups finish opening before the picture is taken.
   await page.waitForTimeout(300);
-  const context = alsoShow ? await alsoShow.boundingBox() : null;
-  const clip = zoomOn([...marked, ...(context ? [context] : [])], page.viewportSize()!);
+  const context = await Promise.all([alsoShow].flat().map((each) => each.boundingBox()));
+  const clip = zoomOn([...marked, ...context.filter((box) => box !== null)], page.viewportSize()!);
   await page.screenshot({ path: `static/guides/${guide}/${name}.png`, clip });
   await page.evaluate(() => document.querySelectorAll('.guide-circle').forEach((ring) => ring.remove()));
   marked = [];
