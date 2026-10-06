@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { clockOf, formatClock, formatRange, periodNoPass, sortedPeriods, toClock, toMinutes } from './schedule';
+  import { clockOf, formatClock, formatRange, periodAt, periodNoPass, sortedPeriods, toClock, toMinutes } from './schedule';
   import type { Class, ClockRange, Schedule } from './types';
 
   /**
    * A schedule at a glance, for its card on the Schedule page: its day as one
    * bar, periods in green and no-pass time striped, a red line at the time
    * now (as on the calendar, but standing up), then the periods in order.
+   * On the live schedule, a green dot marks the period on the kiosk right now.
    */
-  let { schedule, classes }: { schedule: Schedule; classes: Class[] } = $props();
+  let { schedule, classes, live = false }: { schedule: Schedule; classes: Class[]; live?: boolean } = $props();
 
   const periods = $derived(sortedPeriods(schedule));
   const range = $derived.by(() => {
@@ -30,6 +31,7 @@
   });
   const now = $derived(clockOf(clock));
   const nowShown = $derived(toMinutes(now) >= range.start && toMinutes(now) < range.end);
+  const periodNow = $derived(live ? periodAt(schedule, clock) : null);
 
   const className = (id: string | null) => classes.find((cls) => cls.id === id)?.name ?? 'No class';
 </script>
@@ -54,7 +56,13 @@
   {#if periods.length}
     <ul>
       {#each periods.slice(0, 6) as period (period.id)}
-        <li><strong>{className(period.classId)}</strong><span class="muted">{formatRange(period)}</span></li>
+        <li>
+          <strong>
+            {className(period.classId)}
+            {#if period.id === periodNow?.id}<span class="status-dot live" title="On the kiosk now"></span>{/if}
+          </strong>
+          <span class="muted">{formatRange(period)}</span>
+        </li>
       {/each}
       {#if periods.length > 6}<li class="muted">and {periods.length - 6} more</li>{/if}
     </ul>
@@ -136,6 +144,12 @@
     padding: 0;
     list-style: none;
     font-size: 13px;
+  }
+
+  li strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
   li {
