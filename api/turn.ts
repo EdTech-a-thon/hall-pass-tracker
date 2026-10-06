@@ -26,7 +26,7 @@ export async function GET(): Promise<Response> {
     },
   );
   if (!response.ok)
-    return Response.json({ error: 'Relay did not answer' }, { status: 502 });
+    return Response.json({ error: `Relay answered ${response.status}` }, { status: 502 });
 
   const { iceServers } = (await response.json()) as {
     iceServers: RTCIceServer[];
