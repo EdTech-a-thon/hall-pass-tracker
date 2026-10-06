@@ -72,7 +72,7 @@ test('a separate line for each bathroom', async ({ page }) => {
   await snap(page, guide, '5-turn-on-lines', row);
 
   // At the kiosk: Ava is at the left hall bathroom, so Mia lines up for it while Liam goes straight to the right hall.
-  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await page.getByRole('link', { name: 'Kiosk', exact: true }).click();
   await page.getByLabel('PIN (4 to 8 digits)').fill('2468');
   await page.getByRole('button', { name: 'Save PIN' }).click();
   await page.getByRole('button', { name: 'Use this computer' }).click();

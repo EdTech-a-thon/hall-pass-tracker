@@ -17,11 +17,6 @@ export function endOfDay(at: string | Date) {
   return end.toISOString();
 }
 
-/** The laptop's Permissions a pass used up, including an older kiosk's Extra Pass. */
-export function permissionsUsedBy(pass: Pass) {
-  return [...(pass.permissionIds ?? []), ...(pass.giftId ? [pass.giftId] : [])];
-}
-
 /**
  * A pass whose end we invented rather than observed: the class changed, the
  * student undid a mis-tap, or they left the roster while out. Its duration is

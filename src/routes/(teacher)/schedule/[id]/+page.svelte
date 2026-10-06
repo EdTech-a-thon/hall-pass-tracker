@@ -3,16 +3,11 @@
   import { page } from '$app/state';
   import {
     account,
-    classScheduledNow,
     deleteSchedule,
     duplicateSchedule,
-    findClass,
     findSchedule,
     liveSchedule,
-    openPasses,
     saveSchedule,
-    stopFollowingSchedule,
-    useSchedule,
   } from '#lib/account.svelte.ts';
   import ConfirmDialog from '#lib/ConfirmDialog.svelte';
   import DayCalendar from '#lib/DayCalendar.svelte';
@@ -33,7 +28,6 @@
 
   /** A row whose change was refused, and why. */
   let problem = $state<{ id: string; text: string } | null>(null);
-  let confirmingUse = $state(false);
   let confirmingDelete = $state(false);
 
   /** Edits a copy of the schedule, then saves it whole. */
@@ -42,20 +36,6 @@
     const draft = $state.snapshot(schedule) as Schedule;
     edit(draft);
     saveSchedule(draft);
-  }
-
-  /** Whose passes using this schedule would end, when it moves the kiosk to another class. */
-  function useWarning(id: string) {
-    const leaving = findClass(account.activeClass?.id);
-    if (!leaving || classScheduledNow(id) === leaving.id) return null;
-    const out = openPasses(leaving.id).length;
-    if (!out) return null;
-    return `The kiosk will move from ${leaving.name} now. ${out} ${out === 1 ? 'student is' : 'students are'} still out there; their passes will end with an unknown return time.`;
-  }
-
-  function use(id: string) {
-    if (useWarning(id)) confirmingUse = true;
-    else useSchedule(id);
   }
 
   function duplicate(id: string) {
@@ -134,19 +114,9 @@
       <div class="stack" style="gap:4px">
         <a class="back" href="/schedule"><Icon name="arrow-left" size={16} />All schedules</a>
         <h1>{isNew ? 'Create new schedule' : 'Edit schedule'}</h1>
+        <p class="muted small">Changes save as you go. To use this schedule today, pick it on <a href="/">Home</a>.</p>
       </div>
       <div class="row">
-        {#if isLive}
-          <span class="badge ok"><span class="status-dot live"></span>Live</span>
-          <button class="btn btn-small" onclick={stopFollowingSchedule}>Stop using</button>
-        {:else}
-          <button
-            class="btn btn-primary btn-small"
-            onclick={() => use(schedule.id)}
-            disabled={!schedule.periods.length}
-            title={schedule.periods.length ? undefined : 'Add a period first'}>Use this schedule</button
-          >
-        {/if}
         <button class="btn btn-small" onclick={() => duplicate(schedule.id)}><Icon name="copy" size={14} />Duplicate</button>
         <button class="btn btn-small btn-danger" onclick={() => (confirmingDelete = true)}>
           <Icon name="trash" size={14} />Delete
@@ -269,23 +239,10 @@
       </div>
 
       <section class="card calendar-card" aria-label="{schedule.name} calendar">
-        <DayCalendar {schedule} {classes} showNow={isLive} onsave={saveSchedule} />
+        <DayCalendar {schedule} {classes} showNow onsave={saveSchedule} />
       </section>
     </div>
   </div>
-
-  {#if confirmingUse}
-    <ConfirmDialog
-      title="Use {schedule.name}?"
-      message={useWarning(schedule.id) ?? ''}
-      confirmLabel="Use this schedule"
-      onConfirm={() => {
-        useSchedule(schedule.id);
-        confirmingUse = false;
-      }}
-      onCancel={() => (confirmingUse = false)}
-    />
-  {/if}
 
   {#if confirmingDelete}
     <ConfirmDialog
@@ -441,10 +398,6 @@
   .no-pass-row input {
     width: 64px;
     padding-block: 4px;
-  }
-
-  .badge .status-dot {
-    margin-right: 4px;
   }
 
   @media (max-width: 900px) {

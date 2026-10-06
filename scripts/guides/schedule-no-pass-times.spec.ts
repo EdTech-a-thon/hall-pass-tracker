@@ -64,20 +64,25 @@ test('a schedule with no-pass times', async ({ page }) => {
   await circle(setTimes);
   await snap(page, guide, '5-set-time');
 
-  // 6. Use it.
-  const use = page.getByRole('button', { name: 'Use this schedule' });
-  await circle(use);
-  await snap(page, guide, '6-use-schedule', page.getByRole('heading', { name: 'Create new schedule' }));
-  await use.click();
-  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  // 6. Use it, from Home.
+  await page.locator('.status-box').click();
+  const pick = page.getByRole('button', { name: /^Schedule:/ });
+  await pick.click();
+  await page.getByRole('menuitemradio', { name: 'Regular Day' }).click();
+  await expect(page.locator('.status-box')).toContainText('Regular Day');
+  await page.locator('.tip').getByRole('button', { name: 'Skip' }).click();
+  await circle(page.locator('.status-box'));
+  await circle(pick);
+  await snap(page, guide, '6-use-schedule', page.getByRole('heading', { level: 1 }));
 
   // At the kiosk: Period 1 is on by itself, and it's still the first ten minutes.
   await page.getByRole('link', { name: 'Pass Options' }).click();
   await page.getByRole('switch', { name: 'Let students line up' }).check();
-  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await page.getByRole('link', { name: 'Kiosk', exact: true }).click();
   await page.getByLabel('PIN (4 to 8 digits)').fill('2468');
   await page.getByRole('button', { name: 'Save PIN' }).click();
   await page.getByRole('button', { name: 'Use this computer' }).click();
+  await page.locator('.status-box').click();
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
   await expect(page.getByText('No passes right now.')).toBeVisible();
   await page.getByRole('button', { name: /^Ava/ }).click();
@@ -86,7 +91,7 @@ test('a schedule with no-pass times', async ({ page }) => {
   await circle(page.getByRole('button', { name: 'Join the line' }));
   await snap(page, guide, '7-kiosk-no-passes', [
     page.getByRole('heading', { name: 'Join the line?' }),
-    page.getByRole('button', { name: /Teacher: let them go/ }),
+    page.getByRole('button', { name: 'Teacher PIN' }),
   ]);
   await page.getByRole('button', { name: 'Join the line' }).click();
   await page.getByRole('button', { name: 'Done' }).click();

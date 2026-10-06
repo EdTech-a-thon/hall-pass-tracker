@@ -1,6 +1,7 @@
 import type { DataConnection, Peer } from 'peerjs';
 import {
   account,
+  answered,
   doorSetup,
   forgetReplacedKiosk,
   markKioskSeen,
@@ -11,11 +12,14 @@ import {
   setActiveClass,
   setLine,
   setNetworkBlocked,
+  setRequests,
+  takeRelayedAnswers,
 } from './account.svelte';
+import { clock } from './clock.svelte';
 import { connectionReport, watchConnection } from './diagnostics';
 import { newId } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
-import type { KioskMessage, LaptopMessage } from './types';
+import type { KioskMessage, LaptopMessage, PassRequest } from './types';
 
 /**
  * The laptop's end of the kiosk connection. The two devices talk directly
@@ -46,6 +50,57 @@ function send(connection: DataConnection | null, message: LaptopMessage) {
   if (connection?.open) connection.send(message);
 }
 
+/**
+ * "Reconnect": the kiosk dials this laptop, so the laptop makes sure it's
+ * listening right now. It skips the growing wait between tries after an
+ * outage, and looks again if another tab seemed to hold the address.
+ */
+export function reconnectNow() {
+  if (account.kiosk?.kind !== 'device' || kioskOnline()) return;
+  if (link.status === 'taken') link.status = 'offline';
+  if (peer && !peer.destroyed && peer.disconnected) peer.reconnect();
+  else if (!peer || peer.destroyed) {
+    peer = null;
+    refreshLink();
+  }
+}
+
+/**
+ * Whether the paired kiosk is connected: to this tab, or to another tab of
+ * Happy Hallways on this computer, which passes everything on. That tab
+ * notes each time it hears from the kiosk, every few seconds.
+ */
+export function kioskOnline() {
+  if (link.status === 'live') return true;
+  const seen = account.kiosk?.kind === 'device' ? account.kiosk.lastSeenAt : undefined;
+  return link.status === 'taken' && !!seen && clock.now - new Date(seen).getTime() < 30_000;
+}
+
+/** One line saying whether the kiosk is working, for the status box and Home. */
+export function kioskState(): { text: string; dot: '' | 'live' | 'warn' } {
+  const kiosk = account.kiosk;
+  if (!kiosk) return { text: 'Kiosk not set up', dot: '' };
+  if (kiosk.kind === 'this-computer') return { text: 'Kiosk on this computer', dot: 'live' };
+  return kioskOnline() ? { text: 'Kiosk online', dot: 'live' } : { text: 'Kiosk offline', dot: 'warn' };
+}
+
+/** A student can be answered while the kiosk is online, from any tab. */
+export function canAnswer() {
+  return kioskOnline();
+}
+
+/** Approve or deny a student's Request. The kiosk starts the pass, or tells them no. */
+export function answerRequest(request: PassRequest, approve: boolean) {
+  if (!canAnswer()) return;
+  if (link.status === 'live') {
+    send(kioskConnection, { type: 'answer', requestId: request.id, approve });
+    answered(request, approve);
+  } else {
+    // Another tab holds the connection; it passes the answer on.
+    answered(request, approve, true);
+  }
+}
+
 /** Keeps the kiosk's copy current whenever the teacher changes anything. */
 let pushTimer = 0;
 function pushSetup() {
@@ -69,7 +124,14 @@ onReload(() => {
   }
   if (peer || starting) refreshLink();
   pushSetup();
+  passOnAnswers();
 });
+
+/** Answers the teacher gave in another tab reach the kiosk through this one. */
+function passOnAnswers() {
+  if (!kioskConnection?.open) return;
+  for (const answer of takeRelayedAnswers()) send(kioskConnection, { type: 'answer', ...answer });
+}
 
 /**
  * Listens for the kiosk when there is something to listen for: the paired
@@ -159,6 +221,7 @@ function acceptCurrent(connection: DataConnection) {
     }
     if (message.type === 'active-class') setActiveClass(message.activeClass);
     if (message.type === 'line') setLine(message.line);
+    if (message.type === 'requests') setRequests(message.requests);
   });
   connection.on('close', () => {
     if (kioskConnection !== connection) return;

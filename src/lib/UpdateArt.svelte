@@ -1,17 +1,18 @@
 <script lang="ts">
-  import type { UpdateArt } from './updates';
+  import type { PopupArt } from './popups';
 
   /** A drawing of the app's own screens for one "What's changed" item, in the style of the welcome tour. */
-  let { art }: { art: UpdateArt } = $props();
+  let { art }: { art: PopupArt } = $props();
 
   const restroom = { strong: '#2361a6', soft: '#e1ecf8' };
   const nurse = { strong: '#b03a68', soft: '#f8e2eb' };
   const counselor = { strong: '#6a4cbb', soft: '#ece6f8' };
 
-  const labels: Record<UpdateArt, string> = {
+  const labels: Record<PopupArt, string> = {
     'destination-limits':
       'The kiosk asking where a student is going: the Restroom is full with 2 waiting, while the Nurse and the Counselor are open',
-    'let-go': 'The Let a student go list: Maya is held by No-Pass Time and Jordan is waiting in line, each with a button to let them go',
+    home: 'The sidebar status box: Period 3, kiosk online, A Day, 1 request, above the list of settings',
+    requests: 'A request on Home: Maya C. asks to go to the Restroom, out of passes, with Deny and Approve buttons',
     'check-destinations': 'The destinations list: the Restroom is one at a time, the Nurse and the Counselor have no limit',
     schedule: 'A day calendar for A Day: Biology, then Chemistry, then lunch, with a line marking now inside Chemistry',
     'no-pass-rules': 'Schedule settings reading: First 10 minutes of every class, and Last 5 minutes of every class, are no-pass time',
@@ -42,29 +43,43 @@
         <text x="98" y={y + 23} class="name-text">{place.label}</text>
         {#if place.status}<text x="332" y={y + 23} class="out-text" text-anchor="end">{place.status}</text>{/if}
       {/each}
-    {:else if art === 'let-go'}
+    {:else if art === 'home'}
       <g filter="url(#update-shadow-{art})">
         <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />
       </g>
-      <text x="48" y="56" class="eyebrow-text">NOW · PERIOD 3</text>
-      <text x="48" y="82" class="title-text">Let a student go</text>
-      {#each [{ name: 'Maya C.', hold: 'No-pass time', given: false }, { name: 'Jordan E.', hold: 'Waiting for Restroom (1st)', given: true }, { name: 'Ava T.', hold: '', given: false }] as row, i (row.name)}
-        {@const y = 100 + i * 46}
-        <line x1="48" x2="352" y1={y} y2={y} stroke="var(--border)" />
-        <text x="48" y={y + 20} class="name-text">{row.name}</text>
-        {#if row.hold}
-          <rect x="48" y={y + 27} width={row.hold.length * 5.6 + 14} height="16" rx="8" fill={row.given ? '#e1f0e6' : '#fbefdc'} />
-          <text x="55" y={y + 39} class="badge-text" fill={row.given ? '#1e6b43' : '#a8620f'}>{row.hold}</text>
-        {:else}
-          <text x="48" y={y + 38} class="muted-text">Nothing's stopping them</text>
-        {/if}
-        {#if row.hold && !row.given}
-          <rect x="232" y={y + 10} width="120" height="28" rx="8" fill="var(--accent)" />
-          <text x="292" y={y + 29} class="button-text" text-anchor="middle">Let Maya C. go</text>
-        {:else if row.given}
-          <text x="352" y={y + 29} class="ok-text" text-anchor="end">✓ Let go</text>
-        {/if}
+      <text x="48" y="54" class="name-text">☀ Happy Hallways</text>
+      <rect x="44" y="68" width="200" height="104" rx="10" fill="var(--accent-wash)" stroke="#a9c9b2" />
+      <text x="58" y="88" class="eyebrow-text" style="fill:var(--accent)">HOME</text>
+      <text x="58" y="108" class="name-text">Period 3</text>
+      <circle cx="62" cy="124" r="4" fill="var(--live)" />
+      <text x="74" y="128" class="muted-text">Kiosk online</text>
+      <text x="58" y="146" class="muted-text">▦  A Day</text>
+      <text x="58" y="164" class="muted-text" style="fill:#6a4cbb;font-weight:800">✋ 1 request</text>
+      {#each ['Classes', 'Destinations', 'Schedule', 'History'] as item, i (item)}
+        <text x="58" y={196 + i * 15} class="muted-text" style="font-size:11px">{item}</text>
       {/each}
+      <text x="262" y="100" class="muted-text">Click it from</text>
+      <text x="262" y="116" class="muted-text">any page to</text>
+      <text x="262" y="132" class="muted-text">get back to</text>
+      <text x="262" y="148" class="name-text" style="fill:var(--accent)">Home</text>
+    {:else if art === 'requests'}
+      <g filter="url(#update-shadow-{art})">
+        <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />
+      </g>
+      <text x="48" y="56" class="eyebrow-text">REQUESTS</text>
+      <text x="48" y="82" class="title-text">1 waiting for you</text>
+      <line x1="48" x2="352" y1="100" y2="100" stroke="var(--border)" />
+      <text x="48" y="124" class="name-text">Maya C.</text>
+      <rect x="112" y="110" width="24" height="20" rx="6" fill={restroom.soft} />
+      <circle cx="124" cy="120" r="4.5" fill={restroom.strong} />
+      <text x="142" y="124" class="muted-text">Restroom · just now</text>
+      <rect x="48" y="136" width="92" height="18" rx="9" fill="#fbefdc" />
+      <text x="58" y="149" class="badge-text" fill="#a8620f">Out of passes</text>
+      <rect x="186" y="172" width="70" height="30" rx="8" fill="#fff" stroke="var(--border-strong)" />
+      <text x="221" y="192" class="name-text" text-anchor="middle" style="font-size:12.5px">Deny</text>
+      <rect x="264" y="172" width="88" height="30" rx="8" fill="var(--accent)" />
+      <text x="308" y="192" class="button-text" text-anchor="middle">✓ Approve</text>
+      <text x="48" y="230" class="muted-text">Approve, and her pass starts right away.</text>
     {:else if art === 'schedule'}
       <g filter="url(#update-shadow-{art})">
         <rect x="24" y="20" width="352" height="228" rx="16" fill="var(--surface)" stroke="var(--border)" />
@@ -168,11 +183,5 @@
     font-size: 12px;
     font-weight: 800;
     fill: #fff;
-  }
-
-  .ok-text {
-    font-size: 13px;
-    font-weight: 800;
-    fill: var(--accent);
   }
 </style>

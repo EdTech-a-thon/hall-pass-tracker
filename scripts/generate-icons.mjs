@@ -33,6 +33,14 @@ const interfaceIcons = {
   ban: 'ban',
   'shield-check': 'shield-check',
   'circle-play': 'circle-play',
+  hand: 'hand',
+  home: 'house',
+  history: 'rotate-ccw-clock',
+  filter: 'list-filter',
+  'arrow-up': 'arrow-up',
+  'arrow-down': 'arrow-down',
+  pause: 'circle-pause',
+  'circle-slash': 'circle-slash',
 };
 
 /** Icons a teacher can give a destination, in the groups the picker shows. */

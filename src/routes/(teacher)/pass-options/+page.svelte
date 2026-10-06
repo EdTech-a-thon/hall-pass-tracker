@@ -103,8 +103,8 @@
         <div>
           <h2>When a student has used them all</h2>
           <p class="muted small">
-            Either way, you can let them go with your PIN at the kiosk, or give them an Extra Pass from the Students
-            page. Extra Passes are marked so you can see them later.
+            If they're stopped, they can ask you from the kiosk and you approve it on Home, or you can let them go with
+            your PIN at the kiosk. Extra Passes are marked so you can see them later in History.
           </p>
         </div>
         <select

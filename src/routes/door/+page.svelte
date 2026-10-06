@@ -6,6 +6,9 @@
   import {
     activeDoorClass,
     allowanceFor,
+    askTeacher,
+    canAsk,
+    cancelRequest,
     changeClass,
     checkPin,
     clearLine,
@@ -26,7 +29,10 @@
     openPassFor,
     outCount,
     pairWithCode,
+    reconnectNow,
+    requestFor,
     requestPass,
+    settleRequests,
     setup,
     signBackIn,
     undoPass,
@@ -56,6 +62,13 @@
   $effect(() => {
     if (local || paired) followSchedule(clock);
   });
+  // A Request ends by itself once nothing stops the student any more.
+  $effect(() => {
+    void clock;
+    if (paired) settleRequests();
+  });
+  /** For a minute after the teacher says no, the student's name says so. */
+  const deniedRecently = (studentId: string) => clock - (door.denied[studentId] ?? 0) < 60_000;
   const following = $derived(onSchedule());
   /** Between periods: the next class the schedule puts on today. */
   const next = $derived.by(() => {
@@ -81,6 +94,8 @@
   let choosingFor = $state(null as { id: string; name: string } | null);
   /** A student in the Line who tapped their name before it was their turn. */
   let waitingFor = $state(null as { id: string; name: string } | null);
+  /** A student waiting for the teacher to answer their Request, who tapped their name again. */
+  let askedFor = $state(null as { id: string; name: string } | null);
   /** The teacher menu: closed, asking for the PIN, or open. */
   let teacher = $state('closed' as 'closed' | 'pin' | 'menu');
   /** Set while the PIN is asked for to let a student go past whatever is stopping them. */
@@ -88,6 +103,23 @@
   let pin = $state('');
   let pinError = $state('');
   let confirmForget = $state(false);
+  /**
+   * "Reconnect" on a kiosk that's offline: the same code screen a new device
+   * sees. The teacher shows a code on their laptop; this device keeps what
+   * it saved while offline. If it finds the laptop by itself meanwhile, the
+   * screen steps aside.
+   */
+  let reconnecting = $state(false);
+  let reconnectingFrom = '';
+  function reconnect() {
+    reconnectNow();
+    code = '';
+    reconnectingFrom = door.device?.kioskId ?? '';
+    reconnecting = true;
+  }
+  $effect(() => {
+    if (reconnecting && (door.status === 'live' || door.device?.kioskId !== reconnectingFrom)) reconnecting = false;
+  });
 
   onMount(() => {
     // Opening the door screen locks it (on the laptop) or connects it (on a paired device).
@@ -97,7 +129,8 @@
     // address so a later reload never retries a code that has been used up.
     if (page.url.searchParams.has('code')) replaceState('/door', {});
     else return;
-    if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
+    // A kiosk that's already paired can scan a new code too: that reconnects it.
+    if (!local && /^\d{6}$/.test(code)) pairWithCode(code);
   });
 
   // After an update, the kiosk refreshes itself once nobody has touched it for
@@ -106,7 +139,7 @@
   // survive the refresh.
   let lastTouch = $state(Date.now());
   $effect(() => {
-    const idle = !door.notice && !choosingFor && !waitingFor && teacher === 'closed';
+    const idle = !door.notice && !choosingFor && !waitingFor && !askedFor && teacher === 'closed';
     if (updated.current && idle && clock - lastTouch >= 60_000) leaveTo(location.href);
   });
 
@@ -123,6 +156,10 @@
   function tap(student: { id: string; name: string }) {
     if (openPassFor(student.id)) {
       signBackIn(student.id);
+      return;
+    }
+    if (requestFor(student.id)) {
+      askedFor = student;
       return;
     }
     const spot = lineSpotFor(student.id);
@@ -154,7 +191,7 @@
   function submitPin(event: SubmitEvent) {
     event.preventDefault();
     if (checkPin(pin) && lettingGo) {
-      requestPass(lettingGo.studentId, lettingGo.destination, true);
+      requestPass(lettingGo.studentId, lettingGo.destination, 'pin');
       lettingGo = null;
       teacher = 'closed';
     } else if (checkPin(pin)) {
@@ -165,11 +202,17 @@
     }
   }
 
-  /** "Teacher: let them go", wherever a rule has stopped a student. */
+  /** "Teacher PIN", wherever a rule has stopped a student: the teacher lets them go right here. */
   function askToLetGo(offer: { studentId: string; destination: string }) {
     dismissNotice();
     openTeacher();
     lettingGo = offer;
+  }
+
+  /** "Ask my teacher", wherever a rule has stopped a student: the teacher answers on Home. */
+  function ask(offer: { studentId: string; destination: string }) {
+    dismissNotice();
+    askTeacher(offer.studentId, offer.destination);
   }
 
   function switchTo(classId: string) {
@@ -184,7 +227,7 @@
 
   function exitToTeacher() {
     setDoorLocked(false);
-    goto('/kiosk');
+    goto('/');
   }
 
   function stopBeingKiosk() {
@@ -200,18 +243,26 @@
 <svelte:document onpointerdown={() => (lastTouch = Date.now())} onkeydown={() => (lastTouch = Date.now())} />
 
 <div class="door">
-  {#if !local && !paired}
-    <!-- Not a kiosk yet: pair with the teacher's laptop. -->
+  {#if (!local && !paired) || reconnecting}
+    <!-- Not a kiosk yet, or reconnecting one: pair with the teacher's laptop. -->
     <main class="pairing">
       <span class="mark"><BrandMark size={52} /></span>
-      <h1>Make this device the kiosk</h1>
-      {#if door.status === 'replaced'}
-        <p class="lede">This device is no longer the kiosk. A different one was paired on the teacher's laptop.</p>
+      {#if reconnecting}
+        <h1>Reconnect this kiosk</h1>
+        <p class="lede">
+          On the teacher's laptop, open Happy Hallways and choose <strong>Reconnect</strong> on Home. Then type the 6-digit
+          code here, or scan the QR code with this device's camera. Passes saved on this device are kept.
+        </p>
+      {:else}
+        <h1>Make this device the kiosk</h1>
+        {#if door.status === 'replaced'}
+          <p class="lede">This device is no longer the kiosk. A different one was paired on the teacher's laptop.</p>
+        {/if}
+        <p class="lede">
+          On the teacher's laptop, open Happy Hallways and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
+          code here, or scan the QR code with this device's camera.
+        </p>
       {/if}
-      <p class="lede">
-        On the teacher's laptop, open Happy Hallways and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
-        code here, or scan the QR code with this device's camera.
-      </p>
       <form onsubmit={submitCode}>
         <input
           class="code-input"
@@ -233,7 +284,11 @@
       {#if door.pairing.state === 'connecting' && door.pairing.slow}
         <p class="lede small" role="status">Still trying… Check that the code matches the one on the teacher's screen.</p>
       {/if}
-      <a class="quiet-link" href="/">This is the teacher's computer</a>
+      {#if reconnecting}
+        <button class="quiet-link" onclick={() => (reconnecting = false)}>Back to the kiosk</button>
+      {:else}
+        <a class="quiet-link" href="/">This is the teacher's computer</a>
+      {/if}
     </main>
   {:else}
     <header class="door-head">
@@ -241,17 +296,16 @@
         <p class="door-eyebrow">{cls?.name ?? 'Happy Hallways'}</p>
         <h1>{cls || !following ? 'Tap your name' : 'No class right now'}</h1>
       </div>
-      {#if paired}
-        <p class="connection" class:live={door.status === 'live'}>
+      {#if paired && door.status === 'live'}
+        <p class="connection live"><span class="dot"></span>Connected</p>
+      {:else if paired}
+        <div class="connection">
           <span class="dot"></span>
-          {#if door.status === 'live'}
-            Connected
-          {:else if waitingCount()}
-            Offline · {waitingCount()} {waitingCount() === 1 ? 'pass' : 'passes'} saved here
-          {:else}
-            Offline
-          {/if}
-        </p>
+          <span>
+            Offline{waitingCount() ? ` · ${waitingCount()} ${waitingCount() === 1 ? 'pass' : 'passes'} saved here` : ''}
+          </span>
+          <button class="reconnect" onclick={reconnect}>Reconnect</button>
+        </div>
       {/if}
     </header>
 
@@ -287,12 +341,17 @@
           {@const pass = openPassFor(student.id)}
           {@const spot = pass ? null : lineSpotFor(student.id)}
           {@const isNext = isUpNext(student.id)}
+          {@const asked = pass ? null : requestFor(student.id)}
           <!-- Where they went, never how long: the door carries no clock. See docs/adr/0003. -->
-          <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} onclick={() => tap(student)}>
+          <button class="name" class:out={pass} class:waiting={spot && !isNext} class:up-next={isNext} class:asked onclick={() => tap(student)}>
             <span class="name-text">{student.name}</span>
             {#if pass}
               <span class="name-status out-status">
                 <DestinationIcon label={pass.destination} list={destinations} size={22} />Out · {pass.destination}
+              </span>
+            {:else if asked}
+              <span class="name-status asked-status">
+                <DestinationIcon label={asked.destination} list={destinations} size={22} />Asked your teacher
               </span>
             {:else if isNext && spot}
               <span class="name-status next-status">
@@ -302,6 +361,8 @@
               <span class="name-status waiting-status">
                 <DestinationIcon label={spot.destination} list={destinations} size={22} />{ordinal(spot.position)} in line
               </span>
+            {:else if deniedRecently(student.id)}
+              <span class="name-status denied-status">Not right now</span>
             {:else}
               <span class="name-status">In class</span>
             {/if}
@@ -334,9 +395,7 @@
         <p class="lede">Where are you going?</p>
         {#if allowanceFor(choosingFor.id)}
           {@const allowance = allowanceFor(choosingFor.id)!}
-          <p class="allowance" class:used-up={allowance.usedUp && !allowance.gift}>
-            {allowance.usedUp && allowance.gift ? 'Your teacher gave you an extra pass.' : allowance.text}
-          </p>
+          <p class="allowance" class:used-up={allowance.usedUp}>{allowance.text}</p>
         {/if}
         <div class="choices">
           {#each destinations as destination (destination.id)}
@@ -388,14 +447,51 @@
           >
         </div>
         {#if spot}
-          <button
-            class="quiet-link"
-            onclick={() => {
-              waitingFor = null;
-              askToLetGo({ studentId: spot.studentId, destination: spot.destination });
-            }}><Icon name="lock" size={14} /> Teacher: let them go now</button
-          >
+          {@const offer = { studentId: spot.studentId, destination: spot.destination }}
+          <div class="choices">
+            {#if canAsk()}
+              <button
+                class="door-btn"
+                onclick={() => {
+                  waitingFor = null;
+                  ask(offer);
+                }}><Icon name="hand" size={16} />Ask my teacher</button
+              >
+            {/if}
+            <button
+              class="door-btn"
+              onclick={() => {
+                waitingFor = null;
+                askToLetGo(offer);
+              }}><Icon name="lock" size={16} />Teacher PIN</button
+            >
+          </div>
         {/if}
+      </div>
+    </Modal>
+  {/if}
+
+  {#if askedFor}
+    {@const asked = requestFor(askedFor.id)}
+    <Modal overlay="overlay" labelledby="asked-title" onClose={() => (askedFor = null)}>
+      <div class="sheet">
+        <p class="door-eyebrow">Asked your teacher</p>
+        <h2 id="asked-title">{askedFor.name}</h2>
+        {#if asked}
+          <p class="lede">
+            You asked to go to {asked.destination}. If your teacher says yes, your name will say you’re out. Then go.
+          </p>
+        {/if}
+        <div class="choices">
+          <button class="door-btn primary" onclick={() => (askedFor = null)}>Keep waiting</button>
+          <button
+            class="door-btn"
+            onclick={() => {
+              if (askedFor) cancelRequest(askedFor.id);
+              askedFor = null;
+            }}>Never mind</button
+          >
+        </div>
       </div>
     </Modal>
   {/if}
@@ -422,7 +518,10 @@
         {/if}
         {#if door.notice.offerTeacher}
           {@const offer = door.notice.offerTeacher}
-          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher: let them go</button>
+          {#if canAsk()}
+            <button class="door-btn" onclick={() => ask(offer)}><Icon name="hand" size={16} />Ask my teacher</button>
+          {/if}
+          <button class="door-btn" onclick={() => askToLetGo(offer)}><Icon name="lock" size={16} />Teacher PIN</button>
         {/if}
       </div>
     </div>
@@ -433,7 +532,7 @@
       <div class="sheet">
         {#if teacher === 'pin'}
           <h2>Teacher PIN</h2>
-          {#if lettingGo}<p class="lede small">Enter your PIN to let this student go now. Their pass will show you let them go.</p>{/if}
+          {#if lettingGo}<p class="lede small">Enter your PIN to let this student go now. Their pass will show you approved it.</p>{/if}
           <form onsubmit={submitPin}>
             <input class="code-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" bind:value={pin} {@attach focusOnShow} />
             <button class="door-btn primary">Unlock</button>
@@ -556,6 +655,16 @@
     font-weight: 700;
   }
 
+  .reconnect {
+    padding: 6px 12px;
+    border: 1px solid var(--door-line);
+    border-radius: 999px;
+    background: var(--door-tile);
+    color: var(--door-text);
+    font: inherit;
+    cursor: pointer;
+  }
+
   .connection .dot {
     width: 9px;
     height: 9px;
@@ -623,7 +732,13 @@
     background: #e9f4ec;
   }
 
+  .name.asked {
+    border-color: #d9c6ef;
+    background: #f6f1fc;
+  }
+
   .waiting-status,
+  .asked-status,
   .next-status {
     display: flex;
     align-items: center;
@@ -636,6 +751,14 @@
 
   .next-status {
     color: var(--accent);
+  }
+
+  .asked-status {
+    color: #6a4cbb;
+  }
+
+  .denied-status {
+    color: var(--door-out);
   }
 
   /* Readable from across the room, so students can see it isn't time without asking. */

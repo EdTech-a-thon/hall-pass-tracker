@@ -20,8 +20,38 @@ async function dragOnCalendar(page: Page, from: number, to: number) {
   await page.mouse.up();
 }
 
+/** Tips point out what's new on a page. They're closed as they appear, so they never cover what a test clicks next. */
+function skipTips(page: Page) {
+  return page.addLocatorHandler(page.locator('.tip'), async (tip) => {
+    await tip.getByRole('button', { name: /Skip|Got it/ }).click();
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  await skipTips(page);
+});
+
+/** The status box at the top of the sidebar leads Home. */
+async function goHome(page: Page) {
+  await page.locator('.status-box').click();
+  await expect(page.getByRole('button', { name: /^Class on the kiosk:/ })).toBeVisible();
+}
+
+/** Chooses from one of Home's menus: the class on the kiosk, or the schedule. */
+async function choose(page: Page, menu: 'Class on the kiosk' | 'Schedule', option: string) {
+  await page.getByRole('button', { name: new RegExp(`^${menu}:`) }).click();
+  await page.getByRole('menuitemradio', { name: option }).click();
+}
+
+/** Picks the schedule the kiosk follows today, on Home. */
+async function useScheduleOnHome(page: Page, name = 'Schedule 1') {
+  await goHome(page);
+  await choose(page, 'Schedule', name);
+  await expect(page.locator('.status-box')).toContainText(name);
+}
+
 async function setPin(page: Page) {
-  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await page.getByRole('link', { name: 'Kiosk', exact: true }).click();
   await page.getByLabel('PIN (4 to 8 digits)').fill('2468');
   await page.getByRole('button', { name: 'Save PIN' }).click();
 }
@@ -50,13 +80,11 @@ async function scheduleNoPassesUntil930(page: Page, className: string) {
   await page.locator('.grid .period .block-body').click();
   await page.getByLabel('No passes, first').fill('30');
   await page.getByLabel('No passes, first').press('Tab');
-  await page.getByRole('button', { name: 'Use this schedule' }).click();
-  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await useScheduleOnHome(page);
 }
 
 test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await createClassWithRoster(page, 'Period 1');
-  await page.getByRole('link', { name: 'Students' }).click();
   await expect(page.getByText('Maya Ch.')).toBeVisible();
 
   await setPin(page);
@@ -93,12 +121,11 @@ test('a teacher runs the kiosk on their own computer', async ({ page }) => {
   await page.getByLabel('PIN').fill('2468');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
-  await expect(page).toHaveURL(/\/kiosk$/);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("Everyone's in class")).toBeVisible();
+  await expect(page.locator('.activity')).toContainText('Jordan E. came back');
 
   await page.getByRole('link', { name: /^Period 1/ }).click();
-  await expect(page.getByText('Passes today')).toBeVisible();
-  await expect(page.locator('.stat').first()).toContainText('1');
-  await page.getByRole('link', { name: 'Students' }).click();
   await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('1');
 });
 
@@ -115,7 +142,8 @@ test('export and import put the teacher back where they were', async ({ page }) 
   await page.goto('/settings');
   await page.locator('input[type=file]').setInputFiles(file!);
   await page.getByRole('button', { name: 'Replace everything' }).click();
-  await expect(page.getByRole('heading', { name: 'Period 2' })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Period 2');
+  await page.getByRole('link', { name: /^Period 2/ }).click();
   await expect(page.getByText(/3 students/)).toBeVisible();
 });
 
@@ -132,14 +160,15 @@ test('a paired device runs the door and syncs to the laptop', async ({ browser }
   await tablet.goto(`/door?code=${code}`);
   await expect(tablet.getByRole('heading', { name: 'Tap your name' })).toBeVisible({ timeout: 30_000 });
   await expect(laptop.getByRole('heading', { name: 'Connected!' })).toBeVisible({ timeout: 30_000 });
-  await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 10_000 });
+  await expect(laptop.locator('.status-box')).toContainText('Kiosk online', { timeout: 10_000 });
+  await laptop.getByRole('button', { name: 'Close' }).click();
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
   await tablet.getByRole('button', { name: /^Bathroom/ }).click();
   await expect(tablet.getByText('Pass approved', { exact: true })).toBeVisible();
 
-  await laptop.getByRole('link', { name: /^Period 3/ }).click();
-  await expect(laptop.getByText('1 out', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await goHome(laptop);
+  await expect(laptop.locator('.stat', { hasText: 'Out of class now' })).toContainText('1', { timeout: 15_000 });
 
   // The teacher marks the student back from the laptop; the door hears about it.
   await laptop.getByRole('button', { name: 'Mark back' }).click();
@@ -158,27 +187,38 @@ test('a device paired from a second tab connects to the tab already holding the 
   await olderTab.getByRole('button', { name: 'Pair a device' }).click();
   await expect(olderTab.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
   await firstTablet.goto(`/door?code=${(await olderTab.locator('.pair-code').textContent())!.trim()}`);
-  await expect(olderTab.getByText('Paired device · Live')).toBeVisible({ timeout: 30_000 });
+  await expect(olderTab.locator('.status-box')).toContainText('Kiosk online', { timeout: 30_000 });
   await olderTab.getByRole('button', { name: 'Close' }).click();
 
   // A second tab can't claim the address the older tab holds, but can still pair.
   const newerTab = await laptop.newPage();
+  await skipTips(newerTab);
   await newerTab.goto('/kiosk');
-  await expect(newerTab.getByText(/open in another tab/)).toBeVisible({ timeout: 20_000 });
+  // Another tab holds the connection, but the kiosk is still online as far as this tab can tell.
+  await expect(newerTab.locator('.status-box')).toContainText('Kiosk online', { timeout: 20_000 });
   await newerTab.getByRole('button', { name: 'Pair a different device' }).click();
   await expect(newerTab.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
   await newTablet.goto(`/door?code=${(await newerTab.locator('.pair-code').textContent())!.trim()}`);
 
   // The older tab heard about the new pairing, so it lets the new device in.
   await expect(newTablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(olderTab.getByText('Paired device · Live')).toBeVisible({ timeout: 10_000 });
+  await expect(olderTab.locator('.status-box')).toContainText('Kiosk online', { timeout: 10_000 });
 
   // A pass reaches the older tab, and through it the newer one.
   await newTablet.getByRole('button', { name: /Maya Ca\./ }).click();
   await newTablet.getByRole('button', { name: /^Bathroom/ }).click();
   await expect(newTablet.getByText('Pass approved', { exact: true })).toBeVisible();
-  await newerTab.getByRole('link', { name: /^Period 5/ }).click();
-  await expect(newerTab.getByText('1 out', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await goHome(newerTab);
+  await expect(newerTab.locator('.stat', { hasText: 'Out of class now' })).toContainText('1', { timeout: 15_000 });
+
+  // A request approved in the newer tab reaches the kiosk through the older one.
+  await newTablet.getByRole('button', { name: /Jordan E\./ }).click();
+  await newTablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await newTablet.getByRole('button', { name: 'Ask my teacher' }).click();
+  await newTablet.getByRole('button', { name: 'Done' }).click();
+  const request = newerTab.locator('.requests li', { hasText: 'Jordan E.' });
+  await request.getByRole('button', { name: 'Approve' }).click({ timeout: 15_000 });
+  await expect(newTablet.getByRole('button', { name: /Jordan E\..*Out · Bathroom/ })).toBeVisible({ timeout: 15_000 });
 });
 
 test('students line up when the pass limit is reached', async ({ page }) => {
@@ -278,9 +318,10 @@ test('a first visit gets the welcome page, a tour and a checklist', async ({ pag
   await checklist.getByRole('link', { name: 'Set your destinations' }).click();
   await expect(checklist).toContainText('2 of 3');
 
-  // Once welcomed, the app opens straight away.
+  // Once welcomed, the app opens straight to Home.
   await page.goto('/');
-  await expect(page).toHaveURL(/\/classes\//);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator('.status-box')).toContainText('Period 5');
 });
 
 test('a destination can have a time limit', async ({ page }) => {
@@ -298,7 +339,7 @@ test('a destination can have a time limit', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Edit Nurse' })).toBeHidden();
 });
 
-test('the pass allowance stops a student, and the teacher can let them go', async ({ page }) => {
+test('the pass allowance stops a student, and the teacher can let them go with the PIN', async ({ page }) => {
   await createClassWithRoster(page, 'Period 7');
   await page.getByRole('link', { name: 'Pass Options' }).click();
   await page.getByRole('switch', { name: 'Pass Allowance' }).check();
@@ -316,44 +357,38 @@ test('the pass allowance stops a student, and the teacher can let them go', asyn
   await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
   await page.getByRole('button', { name: 'Done' }).click();
 
-  // Used up: stopped, until the teacher enters the PIN.
+  // Used up: stopped, until the teacher enters the PIN. This computer is the kiosk, so there's no one to ask.
   await page.getByRole('button', { name: /Jordan E\./ }).click();
   await expect(page.getByText("You've used all your passes today.")).toBeVisible();
   await page.getByRole('button', { name: /^Bathroom/ }).click();
   await expect(page.getByText('Out of passes')).toBeVisible();
-  await page.getByRole('button', { name: 'Teacher: let them go' }).click();
+  await expect(page.getByRole('button', { name: 'Ask my teacher' })).toBeHidden();
+  await page.getByRole('button', { name: 'Teacher PIN' }).click();
   await page.getByLabel('PIN').fill('2468');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
-  await page.getByRole('button', { name: /Jordan E\..*Out/ }).click();
-  await page.getByRole('button', { name: 'Done' }).click();
 
-  // From the laptop, the teacher gives an Extra Pass for later.
+  // The roster shows who has run out; History shows the pass the teacher approved.
   await page.getByRole('button', { name: 'Teacher' }).click();
   await page.getByLabel('PIN').fill('2468');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
   await page.getByRole('link', { name: /^Period 7/ }).click();
-  await page.getByRole('link', { name: 'Students' }).click();
-  await expect(page).toHaveURL(/\/students$/);
   const row = page.getByRole('row', { name: /Jordan E\./ });
   await expect(row).toContainText('2 of 1');
   await expect(row).toContainText('Out of passes');
-  await row.getByRole('button', { name: 'Let them go' }).click();
-  await expect(row).toContainText('Extra Pass given');
-
-  await page.getByRole('link', { name: /Kiosk/ }).click();
-  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
-  await page.getByRole('button', { name: /Jordan E\./ }).click();
-  await expect(page.getByText('Your teacher gave you an extra pass.')).toBeVisible();
-  await page.getByRole('button', { name: /^Bathroom/ }).click();
-  await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
+  await row.getByRole('link', { name: 'Jordan E.' }).click();
+  await expect(page).toHaveURL(/\/history/);
+  await expect(page.locator('.chip', { hasText: 'Student is Jordan E.' })).toBeVisible();
+  const approved = page.getByRole('row', { name: /Still out/ });
+  await expect(approved).toContainText('Extra');
+  await expect(approved).toContainText('Approved by PIN');
+  await expect(page.getByRole('row', { name: /Signed back in/ })).not.toContainText('Approved');
 });
 
 test('a warn-only allowance, an exempt student and a destination that does not count', async ({ page }) => {
   await createClassWithRoster(page, 'Period 8');
-  await page.getByRole('link', { name: 'Students' }).click();
   await page.getByRole('button', { name: 'Edit Maya Ca.' }).click();
   await page.getByLabel(/Exempt from the Pass Allowance/).check();
   await page.getByRole('button', { name: 'Save' }).click();
@@ -413,7 +448,8 @@ test('a paired kiosk keeps counting passes the laptop already has', async ({ bro
   const code = (await laptop.locator('.pair-code').textContent())!.trim();
   await tablet.goto(`/door?code=${code}`);
   await expect(tablet.getByRole('heading', { name: 'Tap your name' })).toBeVisible({ timeout: 30_000 });
-  await expect(laptop.getByText('Paired device · Live')).toBeVisible({ timeout: 30_000 });
+  await expect(laptop.locator('.status-box')).toContainText('Kiosk online', { timeout: 30_000 });
+  await laptop.getByRole('button', { name: 'Close' }).click();
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
   await tablet.getByRole('button', { name: /^Bathroom/ }).click();
@@ -421,7 +457,7 @@ test('a paired kiosk keeps counting passes the laptop already has', async ({ bro
   await tablet.getByRole('button', { name: /Maya Ca\..*Out/ }).click();
   await tablet.getByRole('button', { name: 'Done' }).click();
   // Wait until the laptop has the trip, so the tablet has let go of its own copy.
-  await laptop.getByRole('link', { name: /^Period 9/ }).click();
+  await laptop.getByRole('link', { name: 'History', exact: true }).click();
   await expect(laptop.getByText('Signed back in')).toBeVisible({ timeout: 15_000 });
 
   await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
@@ -444,7 +480,7 @@ test('the teacher is reminded when a student is overdue', async ({ page }) => {
   await page.getByLabel('PIN').fill('2468');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
-  await expect(page).toHaveURL(/\/kiosk$/);
+  await expect(page).toHaveURL(/\/$/);
 
   // Bathroom expects 5 minutes; nothing is said until the pass runs over.
   const reminder = page.locator('.overdue-reminder');
@@ -511,64 +547,62 @@ test('each destination has its own limit, and only limited ones have a line', as
   await expect(page.getByText('3 out', { exact: true })).toBeVisible();
 });
 
-test('the teacher lets students past no-pass time and a full line, and each is marked', async ({ page }) => {
-  await page.clock.install({ time: new Date('2026-10-05T09:10:00') });
-  await createClassWithRoster(page, 'Period 3');
-  await scheduleNoPassesUntil930(page, 'Period 3');
-  await page.getByRole('link', { name: 'Pass Options' }).click();
-  await page.getByRole('switch', { name: 'Let students line up' }).check();
-  await setPin(page);
-  await page.getByRole('button', { name: 'Use this computer' }).click();
-  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
+test('a blocked student asks, and the teacher approves or denies on Home', async ({ browser }) => {
+  const laptop = await (await browser.newContext()).newPage();
+  const tablet = await (await browser.newContext()).newPage();
+  await skipTips(laptop);
 
-  // At the kiosk, the PIN gets Jordan past the No-Pass Time.
-  await page.getByRole('button', { name: /Jordan E\./ }).click();
-  await page.getByRole('button', { name: /^Bathroom/ }).click();
-  await expect(page.getByText(/Passes open at 9:30 AM. Join/)).toBeVisible();
-  await page.getByRole('button', { name: 'Teacher: let them go' }).click();
-  await page.getByLabel('PIN').fill('2468');
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await expect(page.getByText('Jordan E.: Bathroom')).toBeVisible();
-  await page.getByRole('button', { name: 'Done' }).click();
+  await createClassWithRoster(laptop, 'Period 3');
+  await laptop.getByRole('link', { name: 'Pass Options' }).click();
+  await laptop.getByRole('switch', { name: 'Let students line up' }).check();
+  await setPin(laptop);
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  await tablet.goto(`/door?code=${(await laptop.locator('.pair-code').textContent())!.trim()}`);
+  await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await laptop.getByRole('button', { name: 'Close' }).click();
 
-  // Maya Ch. lines up for the Bathroom while it's full and passes are closed.
-  await page.getByRole('button', { name: /Maya Ch\./ }).click();
-  await page.getByRole('button', { name: /^Bathroom/ }).click();
-  await page.getByRole('button', { name: 'Join the line' }).click();
-  await page.getByRole('button', { name: 'Done' }).click();
+  // The Bathroom takes one at a time, so Maya Ch. is stopped, and asks.
+  await tablet.getByRole('button', { name: /Jordan E\./ }).click();
+  await tablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+  await tablet.getByRole('button', { name: /Maya Ch\./ }).click();
+  await tablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await tablet.getByRole('button', { name: 'Ask my teacher' }).click();
+  await expect(tablet.getByRole('status').getByText('Asked your teacher')).toBeVisible();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+  await expect(tablet.getByRole('button', { name: /Maya Ch\..*Asked your teacher/ })).toBeVisible();
 
-  // From the laptop, one click lets her past both.
-  await page.getByRole('button', { name: 'Teacher' }).click();
-  await page.getByLabel('PIN').fill('2468');
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.getByRole('button', { name: 'Exit kiosk' }).click();
-  await page.getByRole('link', { name: /^Period 3/ }).click();
-  await page.getByRole('button', { name: 'Let a student go' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('listitem').filter({ hasText: 'Maya Ch.' })).toContainText('Waiting for Bathroom (1st)');
-  await expect(dialog.getByRole('listitem').filter({ hasText: 'Maya Ch.' })).toContainText('No-pass time');
-  await dialog.getByRole('button', { name: 'Let Maya Ch. go' }).click();
-  await expect(dialog.getByText(/Let go: they can tap their name/)).toBeVisible();
-  await dialog.getByRole('button', { name: 'Done' }).click();
+  // On Home the teacher sees what she wants and why she was stopped, and says yes. Her pass starts at once.
+  await goHome(laptop);
+  const request = laptop.locator('.requests li', { hasText: 'Maya Ch.' });
+  await expect(request).toContainText('Bathroom is full', { timeout: 15_000 });
+  await expect(laptop).toHaveTitle(/\(1\) Request · /);
+  await expect(laptop.locator('.status-box')).toContainText('1 request');
+  await request.getByRole('button', { name: 'Approve' }).click();
+  await expect(tablet.getByRole('button', { name: /Maya Ch\..*Out · Bathroom/ })).toBeVisible({ timeout: 15_000 });
+  await expect(laptop.locator('.stat', { hasText: 'Out of class now' })).toContainText('2', { timeout: 15_000 });
+  await expect(laptop).not.toHaveTitle(/Request/);
 
-  await page.getByRole('link', { name: /Kiosk/ }).click();
-  await page.getByRole('button', { name: 'Open kiosk screen' }).click();
-  await page.getByRole('button', { name: /Maya Ch\..*Your turn/ }).click();
-  await expect(page.getByText('Maya Ch.: Bathroom')).toBeVisible();
+  // During a No-Pass Time the teacher started, Maya Ca. asks, and is told no.
+  await laptop.getByRole('button', { name: 'No passes now' }).click();
+  await expect(tablet.getByText('No passes right now.')).toBeVisible({ timeout: 15_000 });
+  await tablet.getByRole('button', { name: /Maya Ca\./ }).click();
+  await tablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await tablet.getByRole('button', { name: 'Ask my teacher' }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+  const second = laptop.locator('.requests li', { hasText: 'Maya Ca.' });
+  await expect(second).toContainText('No-pass time', { timeout: 15_000 });
+  await second.getByRole('button', { name: 'Deny' }).click();
+  await expect(tablet.getByRole('button', { name: /Maya Ca\..*Not right now/ })).toBeVisible({ timeout: 15_000 });
+  await expect(laptop.getByText('No requests right now')).toBeVisible();
 
-  // Back on the laptop, both passes show what the teacher let them past.
-  await page.getByRole('button', { name: 'Done' }).click();
-  await page.getByRole('button', { name: 'Teacher' }).click();
-  await page.getByLabel('PIN').fill('2468');
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.getByRole('button', { name: 'Exit kiosk' }).click();
-  await page.getByRole('link', { name: /^Period 3/ }).click();
-  const maya = page.getByRole('row', { name: /Maya Ch\..*Still out/ });
-  await expect(maya).toContainText('No-pass time');
-  await expect(maya).toContainText('Skipped line');
-  const jordan = page.getByRole('row', { name: /Jordan E\..*Still out/ });
-  await expect(jordan).toContainText('No-pass time');
-  await expect(jordan).not.toContainText('Skipped line');
+  // History keeps both answers.
+  await laptop.getByRole('link', { name: 'History', exact: true }).click();
+  const approved = laptop.getByRole('row', { name: /Maya Ch\./ });
+  await expect(approved).toContainText('Skipped line');
+  await expect(approved).toContainText('Approved');
+  await expect(laptop.getByRole('row', { name: /Maya Ca\./ })).toContainText('Request denied');
 });
 
 test("a returning teacher sees what's changed once; a new one never does", async ({ page }) => {
@@ -580,8 +614,7 @@ test("a returning teacher sees what's changed once; a new one never does", async
   // destination, and no-pass times set on the class.
   await page.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem('hallway.account')!);
-    delete saved.seenUpdate;
-    delete saved.permissions;
+    delete saved.seenPopups;
     delete saved.schedules;
     delete saved.currentScheduleId;
     saved.classes[0].noPassTimes = [{ start: '09:00', end: '09:10' }];
@@ -594,7 +627,8 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await expect(page.getByRole('heading', { name: 'Thank you for all your feedback' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Each destination has its own limit' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'The kiosk can follow your schedule' })).toBeVisible();
-  // Both updates stack, each with its own button.
+  await expect(page.getByRole('heading', { name: 'Everything for the day is on Home' })).toBeVisible();
+  // The updates stack, each with its own button.
   await expect(page.getByRole('button', { name: 'Review destinations' })).toBeVisible();
   await page.getByRole('button', { name: 'Set up your schedule' }).click();
   await expect(page).toHaveURL(/\/schedule$/);
@@ -607,6 +641,23 @@ test("a returning teacher sees what's changed once; a new one never does", async
   await expect(page.getByLabel('No passes until')).toHaveValue('09:10');
   await page.getByRole('link', { name: 'Destinations' }).click();
   await expect(page.getByRole('button', { name: /Nurse.*2 at a time/ })).toBeVisible();
+
+  // A teacher who had already seen the first two updates, on the version that remembered only the newest, sees just the latest.
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('hallway.account')!);
+    delete saved.seenPopups;
+    saved.seenUpdate = '2026-10-schedule';
+    localStorage.setItem('hallway.account', JSON.stringify(saved));
+  });
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Everything for the day is on Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Each destination has its own limit' })).toBeHidden();
+  await page.getByRole('button', { name: 'Got it' }).click();
+
+  // Help shows all of it again on request.
+  await page.getByRole('button', { name: 'Help' }).click();
+  await page.getByRole('link', { name: "See what's changed" }).click();
+  await expect(page.getByRole('heading', { name: 'Each destination has its own limit' })).toBeVisible();
 });
 
 test('a kiosk holding settings from the older version keeps its old limit', async ({ page }) => {
@@ -661,9 +712,10 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await newSchedule(page);
   await addPeriod(page, 'Period 1', '09:00', '09:50');
   await addPeriod(page, 'Period 2', '09:55', '10:45');
-  await page.getByRole('button', { name: 'Use this schedule' }).click();
-  await page.getByRole('link', { name: 'All schedules' }).click();
-  await expect(page.locator('.schedule-card').getByText('Live')).toBeVisible();
+  await useScheduleOnHome(page);
+  await expect(page.locator('.status-box')).toContainText('Period 1');
+  await expect(page.getByText('Ends in 10 min')).toBeVisible();
+  await page.getByRole('link', { name: /^Schedule/ }).click();
   // The card marks the period the clock is in, in the same red as the line on its day.
   await expect(page.locator('.schedule-card li', { hasText: 'Period 1' })).toHaveClass(/now-period/);
   await expect(page.locator('.schedule-card li', { hasText: 'Period 2' })).not.toHaveClass(/now-period/);
@@ -696,11 +748,24 @@ test('on schedule, the kiosk changes class by itself until the teacher switches 
   await page.getByLabel('PIN').fill('2468');
   await page.getByRole('button', { name: 'Unlock' }).click();
   await page.getByRole('button', { name: 'Exit kiosk' }).click();
-  await expect(page.getByRole('link', { name: /Schedule.*Off · Manual/ })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Off schedule');
 
   // Jordan's pass ended when Period 1 left the kiosk.
-  await page.getByRole('link', { name: /^Period 1/ }).click();
+  await page.getByRole('link', { name: 'History', exact: true }).click();
   await expect(page.getByRole('row', { name: /Jordan E\./ })).toContainText('Class changed');
+
+  // Home puts the kiosk back on the schedule, at whatever period the clock is in.
+  await goHome(page);
+  await choose(page, 'Schedule', 'Schedule 1');
+  await expect(page.locator('.status-box')).toContainText('Schedule 1');
+  await expect(page.locator('.status-box')).toContainText('Period 2');
+
+  // Switching by hand from Home asks first; saying no leaves everything as it was.
+  await choose(page, 'Class on the kiosk', 'Period 1');
+  await expect(page.getByRole('heading', { name: "You're on Schedule 1. Switch to Period 1 by hand?" })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Class on the kiosk: Period 2' })).toBeVisible();
+  await expect(page.locator('.status-box')).toContainText('Schedule 1');
 });
 
 test('dragging on the calendar adds a no-pass time, and the teacher can stop passes by hand', async ({ page }) => {
@@ -711,13 +776,13 @@ test('dragging on the calendar adds a no-pass time, and the teacher can stop pas
   await expect(page.getByLabel('No passes from')).toHaveValue('09:00');
   await expect(page.getByLabel('No passes until')).toHaveValue('09:30');
 
-  // Off schedule, the teacher stops passes from the Now tab.
+  // Off schedule, the teacher stops passes from Home.
   await setPin(page);
   await page.getByRole('button', { name: 'Use this computer' }).click();
-  await page.getByRole('link', { name: /^Period 1/ }).click();
+  await goHome(page);
   await page.getByRole('button', { name: 'No passes now' }).click();
-  await expect(page.getByText(/Students can't start passes until you open them/)).toBeVisible();
-  await page.getByRole('link', { name: /Kiosk/ }).click();
+  await expect(page.getByText('Passes stay closed until you open them')).toBeVisible();
+  await expect(page.locator('.status-box').getByRole('img', { name: 'No passes' })).toBeVisible();
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
   await expect(page.getByText('Your teacher will open passes again.')).toBeVisible();
 });
@@ -782,10 +847,9 @@ test('a teacher with no schedules draws one: a period appears as they drag, and 
   // It shows on the schedule's card, ready to use.
   await page.getByRole('link', { name: 'All schedules' }).click();
   await expect(page.locator('.schedule-card')).toContainText('9:30');
-  await page.getByRole('button', { name: 'Use this' }).click();
-  await expect(page.locator('.schedule-card').getByText('Live')).toBeVisible();
-  await page.getByRole('button', { name: 'Stop using' }).click();
-  await expect(page.getByText('No schedule in use.')).toBeVisible();
+  await useScheduleOnHome(page);
+  await choose(page, 'Schedule', 'Off schedule');
+  await expect(page.locator('.status-box')).toContainText('Off schedule');
 });
 
 test("a schedule's old first and last minutes rules move onto its periods", async ({ page }) => {
@@ -813,4 +877,48 @@ test("a schedule's old first and last minutes rules move onto its periods", asyn
   await expect(page.getByLabel('No passes, first')).toHaveValue('10');
   await expect(page.getByLabel('No passes, last')).toHaveValue('5');
   await expect(page.locator('.grid .band')).toHaveCount(2);
+});
+
+test('an offline kiosk reconnects with a code, the same way it paired, keeping the passes it saved', async ({ browser }) => {
+  const laptopContext = await browser.newContext();
+  const laptop = await laptopContext.newPage();
+  const tablet = await (await browser.newContext()).newPage();
+  await skipTips(laptop);
+
+  await createClassWithRoster(laptop, 'Period 4');
+  await setPin(laptop);
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  await tablet.goto(`/door?code=${(await laptop.locator('.pair-code').textContent())!.trim()}`);
+  await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // The laptop goes away. The kiosk says so, offers to reconnect, and keeps working.
+  await laptop.close();
+  await expect(tablet.getByRole('button', { name: 'Reconnect' })).toBeVisible({ timeout: 30_000 });
+  await tablet.getByRole('button', { name: /Jordan E\./ }).click();
+  await tablet.getByRole('button', { name: /^Bathroom/ }).click();
+  await tablet.getByRole('button', { name: 'Done' }).click();
+
+  // Back on the laptop, Reconnect shows a code, and the tablet's own Reconnect takes it, the same way pairing does.
+  // (The two may also find each other by themselves first; either way the kiosk ends up connected.)
+  const again = await laptopContext.newPage();
+  await skipTips(again);
+  await again.goto('/');
+  await again.locator('.kiosk-card').getByRole('button', { name: 'Reconnect' }).click();
+  await expect(again.getByRole('heading', { name: 'On the kiosk, tap Reconnect, then type this code' })).toBeVisible();
+  await expect(again.getByText(/Waiting for the device|Connected!/)).toBeVisible({ timeout: 20_000 });
+  const code = (await again.locator('.pair-code').textContent().catch(() => ''))?.trim() ?? '';
+  if (await tablet.getByRole('button', { name: 'Reconnect' }).isVisible()) {
+    await tablet.getByRole('button', { name: 'Reconnect' }).click();
+    await expect(tablet.getByRole('heading', { name: 'Reconnect this kiosk' })).toBeVisible();
+    await tablet.getByLabel('Pairing code').fill(code);
+    await tablet.getByRole('button', { name: 'Connect', exact: true }).click();
+  }
+  await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(tablet.getByRole('button', { name: /Jordan E\..*Out/ })).toBeVisible();
+
+  // The pass made while offline reached the laptop.
+  await expect(again.getByRole('dialog')).toBeHidden({ timeout: 10_000 });
+  await again.getByRole('link', { name: 'History', exact: true }).click();
+  await expect(again.getByRole('row', { name: /Jordan E\./ })).toContainText('Still out', { timeout: 15_000 });
 });

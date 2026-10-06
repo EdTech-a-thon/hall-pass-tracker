@@ -24,6 +24,10 @@
         Step-by-step help is in the <a href="/guides">Guides</a>.
       </p>
       <p>
+        <a href="?popup=news" onclick={() => (open = false)}>See what's changed</a> ·
+        <a href="/?popup=tour" onclick={() => (open = false)}>Show me around Home</a>
+      </p>
+      <p>
         If you're running into trouble or have suggestions, email us at
         <a href={supportMailto('Happy Hallways')}>{supportEmail}</a>.
       </p>

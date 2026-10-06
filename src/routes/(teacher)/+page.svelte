@@ -1,22 +1,225 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
-  import { account, createClass } from '#lib/account.svelte.ts';
+  import {
+    account,
+    activeClassLabel,
+    createClass,
+    endNoPassTime,
+    findClass,
+    findSchedule,
+    liveSchedule,
+    markReturned,
+    moveWarning,
+    noPassNow,
+    openPasses,
+    removeKiosk,
+    passStatus,
+    passStatusIcon,
+    passStatusText,
+    setActiveClass,
+    setDoorLocked,
+    startNoPassTime,
+    stopFollowingSchedule,
+    useSchedule,
+    useThisComputer,
+    useWarning,
+    waitingRequests,
+  } from '#lib/account.svelte.ts';
+  import { clock } from '#lib/clock.svelte.ts';
+  import ConfirmDialog from '#lib/ConfirmDialog.svelte';
+  import DestinationIcon from '#lib/DestinationIcon.svelte';
   import Icon from '#lib/Icon.svelte';
+  import MenuSelect from '#lib/MenuSelect.svelte';
+  import { answerRequest, canAnswer, cancelPairing, kioskOnline, kioskState, refreshLink } from '#lib/link.svelte.ts';
+  import PairingDialog from '#lib/PairingDialog.svelte';
+  import PassMarks from '#lib/PassMarks.svelte';
+  import QuietScene, { seasons, type Season } from '#lib/QuietScene.svelte';
+  import { page } from '$app/state';
+  import SiteFooter from '#lib/SiteFooter.svelte';
+  import { duration, hasRealDuration, isOverdue, now, time } from '#lib/passes.ts';
+  import { nextClassPeriod, periodAt, toMinutes } from '#lib/schedule.ts';
+  import type { Block, PassRequest } from '#lib/types.ts';
 
+  /**
+   * Home: the one page a teacher keeps open all day. The day and whether
+   * students may leave come first; then the class on the kiosk, what's
+   * happening in it, and students' Requests down the side. See CONTEXT.md.
+   */
   let name = $state('');
+  /** `?season=winter` shows that season's scene, to preview it. Otherwise it follows the date. */
+  const season = $derived(seasons.find((each) => each === page.url.searchParams.get('season')) as Season | undefined);
 
-  // Only on arrival: once a class is created here, its own page takes over.
-  onMount(() => {
-    const first = account.classes[0];
-    if (first) goto(`/classes/${first.id}`, { replace: true });
+  const at = $derived(clock.now);
+  const classId = $derived(account.activeClass?.id ?? null);
+  const live = $derived(liveSchedule());
+  const status = $derived(passStatus(at));
+  const noPass = $derived(classId ? noPassNow(classId, at) : null);
+  const tone = $derived({ open: 'ok', 'no-pass': 'warn', between: '', 'no-class': '' }[status]);
+
+  /** "22 min", or "1 hr 5 min", until a clock time today. */
+  function until(clockTime: string) {
+    const nowDate = new Date(at);
+    const minutes = Math.max(1, toMinutes(clockTime) - (nowDate.getHours() * 60 + nowDate.getMinutes()));
+    return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ''}`;
+  }
+
+  /** The second line: when this changes next, in words. */
+  const timing = $derived.by(() => {
+    if (!classId && account.activeClass?.onSchedule) {
+      const upcoming = nextClassPeriod(live, at);
+      const cls = findClass(upcoming?.classId);
+      return upcoming && cls ? `${cls.name} starts in ${until(upcoming.start)}` : 'No more classes today';
+    }
+    if (!classId) return 'Choose a class to put on the kiosk';
+    if (noPass) return noPass.end ? `Passes open in ${until(noPass.end)}` : 'Passes stay closed until you open them';
+    const period = live ? periodAt(live, at) : null;
+    // Off schedule nothing changes by itself, so there's nothing to say; the schedule menu says it's off.
+    return period ? `Ends in ${until(period.end)}` : '';
   });
+
+  const requests = $derived(waitingRequests());
+  const out = $derived(classId ? openPasses(classId).sort((a, b) => a.outAt.localeCompare(b.outAt)) : []);
+  const waiting = $derived(account.line.filter((spot) => spot.classId === classId));
+  /** Each destination has its own line. */
+  const lines = $derived(
+    [...new Set(waiting.map((spot) => spot.destination))].map((destination) => ({
+      destination,
+      spots: waiting.filter((spot) => spot.destination === destination),
+    })),
+  );
+
+  /** "This class" starts when it came on the kiosk, or this morning if that was before today. */
+  const since = $derived.by(() => {
+    const changed = account.activeClass?.changedAt;
+    const midnight = new Date(at);
+    midnight.setHours(0, 0, 0, 0);
+    return changed && changed > midnight.toISOString() ? changed : midnight.toISOString();
+  });
+  const thisClass = $derived(
+    account.passes.filter((pass) => pass.classId === classId && pass.outAt >= since && pass.endedBy !== 'cancelled'),
+  );
+  const classOptions = $derived([
+    ...(classId ? [] : [{ value: '', label: activeClassLabel(), disabled: true }]),
+    ...account.classes.map((cls) => ({ value: cls.id, label: cls.name })),
+  ]);
+  const scheduleOptions = $derived([
+    ...account.schedules.map((schedule) => ({
+      value: schedule.id,
+      label: schedule.name,
+      disabled: !schedule.periods.length,
+      hint: schedule.periods.length ? undefined : 'Add a period first',
+    })),
+    {
+      value: '',
+      label: account.schedules.length ? 'Off schedule' : 'No schedule',
+      hint: 'You choose the class by hand',
+    },
+  ]);
+
+  type Activity = { id: string; at: string; text: string; pass?: (typeof account.passes)[number]; denied?: boolean };
+  /** What has happened in this class so far, newest first. */
+  const activity = $derived.by(() => {
+    const events: Activity[] = [];
+    for (const pass of thisClass) {
+      events.push({ id: `${pass.id}-out`, at: pass.outAt, text: `${pass.studentName} left for ${pass.destination}`, pass });
+      if (pass.inAt && pass.endedBy === 'student') {
+        const minutes = hasRealDuration(pass) ? ` after ${duration(pass)} min` : '';
+        events.push({ id: `${pass.id}-in`, at: pass.inAt, text: `${pass.studentName} came back${minutes}` });
+      }
+      if (pass.inAt && pass.endedBy === 'teacher') {
+        events.push({ id: `${pass.id}-in`, at: pass.inAt, text: `You marked ${pass.studentName} back` });
+      }
+    }
+    for (const request of account.deniedRequests) {
+      if (request.classId !== classId || request.deniedAt < since) continue;
+      events.push({
+        id: request.id,
+        at: request.deniedAt,
+        text: `You said no to ${request.studentName} (${request.destination})`,
+        denied: true,
+      });
+    }
+    return events.sort((a, b) => b.at.localeCompare(a.at));
+  });
+
+  /** A change that needs the teacher's OK first: taking the kiosk off schedule, or ending passes. */
+  let confirming = $state(null as null | { title: string; message: string; label: string; run: () => void });
+
+  function chooseClass(id: string) {
+    if (id === classId) return;
+    const cls = findClass(id);
+    const move = () => setActiveClass({ id, changedAt: now() });
+    const warning = moveWarning(id);
+    if (!warning) return move();
+    confirming = {
+      title: live ? `You're on ${live.name}. Switch to ${cls?.name} by hand?` : `Switch the kiosk to ${cls?.name}?`,
+      message: warning,
+      label: 'Switch class',
+      run: move,
+    };
+  }
+
+  function chooseSchedule(id: string) {
+    if (!id) return stopFollowingSchedule();
+    const warning = useWarning(id);
+    if (!warning) return useSchedule(id);
+    confirming = { title: `Use ${findSchedule(id)?.name}?`, message: warning, label: 'Use this schedule', run: () => useSchedule(id) };
+  }
 
   function create(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     goto(`/classes/${createClass(name.trim())}?add`);
   }
+
+  const kiosk = $derived(kioskState());
+  let pairing = $state(false);
+
+  /** Reconnecting is pairing again with a code, on the same kiosk. */
+  let reconnecting = $state(false);
+
+  function thisComputer() {
+    pairing = false;
+    cancelPairing();
+    useThisComputer();
+    refreshLink();
+  }
+
+  function disconnect() {
+    confirming = {
+      title: account.kiosk?.kind === 'device' ? 'Disconnect the kiosk?' : 'Stop using this computer as the kiosk?',
+      message:
+        account.kiosk?.kind === 'device'
+          ? "Students won't be able to sign out on it. If it's holding passes this computer hasn't received yet, they'll still arrive the next time it connects."
+          : "Students won't be able to sign out until you set up a kiosk again.",
+      label: 'Disconnect',
+      run: () => {
+        cancelPairing();
+        removeKiosk();
+        refreshLink();
+      },
+    };
+  }
+
+  function openDoor() {
+    setDoorLocked(true);
+    goto('/door');
+  }
+
+  const blockText: Record<Block, (request: PassRequest) => string> = {
+    allowance: () => 'Out of passes',
+    'no-pass': () => 'No-pass time',
+    full: (request) => `${request.destination} is full`,
+  };
+
+  function ago(when: string) {
+    const minutes = Math.floor((at - new Date(when).getTime()) / 60_000);
+    return minutes < 1 ? 'just now' : `${minutes} min ago`;
+  }
+
+  const today = $derived(
+    new Intl.DateTimeFormat([], { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(at)),
+  );
 </script>
 
 {#if !account.classes.length}
@@ -46,4 +249,458 @@
       Is this the tablet or Chromebook by the door? <a href="/door">Make this device the kiosk</a>.
     </p>
   </div>
+{:else}
+  <div class="home">
+    <div class="home-main">
+      <header class="home-head">
+        <div class="title-row">
+          <h1>{today}</h1>
+          <span class="badge status-badge {tone}" role="status"><Icon name={passStatusIcon[status]} size={15} />{passStatusText[status]}</span>
+          <span class="schedule-menu" data-tip="tip-switch">
+            <MenuSelect label="Schedule" icon="calendar" value={live?.id ?? ''} options={scheduleOptions} onchoose={chooseSchedule} />
+          </span>
+        </div>
+        <div class="context-row">
+          <MenuSelect label="Class on the kiosk" value={classId ?? ''} options={classOptions} onchoose={chooseClass} />
+          {#if timing}<span class="timing">{timing}</span>{/if}
+        </div>
+      </header>
+
+      {#if classId}
+        <section class="stats this-class" aria-label="Right now">
+          <div class="stat"><strong>{out.length}</strong><span>Out of class now</span></div>
+          <div class="stat"><strong>{waiting.length}</strong><span>Waiting in line</span></div>
+        </section>
+
+        <section class="card">
+          <h2>Right now</h2>
+          {#if !out.length && !lines.length}<p class="muted">Everyone's in class.</p>{/if}
+          {#if out.length}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Student</th><th>Where</th><th>Left</th><th class="num">Minutes</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {#each out as pass (pass.id)}
+                    <tr>
+                      <td><strong>{pass.studentName}</strong> <PassMarks {pass} /></td>
+                      <td><span class="destination-chip"><DestinationIcon label={pass.destination} size={24} />{pass.destination}</span></td>
+                      <td>{time(pass.outAt)}</td>
+                      <td class="num">
+                        {#if isOverdue(pass, at)}<span class="badge warn">Overdue</span>{/if}
+                        {duration(pass, at)}{pass.minutes ? ` of ${pass.minutes}` : ''}
+                      </td>
+                      <td class="num">
+                        <button class="btn btn-small" onclick={() => markReturned(pass.id)}>
+                          <Icon name="check" size={14} />Mark back
+                        </button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+          {#each lines as each (each.destination)}
+            <div class="stack" style="gap:8px">
+              <p class="eyebrow">In line for {each.destination} ({each.spots.length})</p>
+              <ol class="line-list">
+                {#each each.spots as spot, index (spot.studentId)}
+                  <li>
+                    <span class="line-position">{index + 1}</span>
+                    <strong>{spot.studentName}</strong>
+                    <span class="muted small">since {time(spot.joinedAt)}</span>
+                  </li>
+                {/each}
+              </ol>
+            </div>
+          {/each}
+        </section>
+
+        <section class="this-class-log">
+          <div class="log-head">
+            <h2>This class</h2>
+            <a class="btn btn-quiet btn-small" href="/history">All history<Icon name="arrow-right" size={14} /></a>
+          </div>
+          {#if activity.length}
+            <ol class="activity">
+              {#each activity as event (event.id)}
+                <li class:denied={event.denied}>
+                  <span class="when">{time(event.at)}</span>
+                  <span>{event.text}</span>
+                  {#if event.pass}<PassMarks pass={event.pass} />{/if}
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="muted small">Nothing yet. Passes and your answers to requests show up here as they happen.</p>
+          {/if}
+        </section>
+      {:else}
+        <QuietScene {season} message={account.activeClass?.onSchedule ? `No class right now. ${timing}.` : 'No class is on the kiosk. Choose one above.'} />
+      {/if}
+      <div class="footer-slot"><SiteFooter /></div>
+    </div>
+
+    <div class="side">
+    {#if account.manualNoPass}
+      <button class="btn btn-primary" onclick={endNoPassTime}><Icon name="check" size={16} />Open passes</button>
+    {:else}
+      <button class="btn" onclick={startNoPassTime} title="Stop students starting passes until you open them again">
+        <Icon name="ban" size={16} />No passes now
+      </button>
+    {/if}
+
+    <section class="kiosk-card" aria-labelledby="kiosk-title">
+      <div class="panel-head">
+        <h2 id="kiosk-title"><Icon name="tablet" size={18} />Kiosk</h2>
+        <span class="kiosk-state"><span class="status-dot {kiosk.dot}" aria-hidden="true"></span>{kiosk.text.replace(/^Kiosk (\w)/, (_, first) => first.toUpperCase())}</span>
+      </div>
+      {#if !account.kiosk}
+        <p class="muted small">Students sign out on a tablet or Chromebook by the door, or on this computer.</p>
+        {#if account.pin}
+          <div class="kiosk-actions">
+            <button class="btn btn-small btn-primary" onclick={() => (pairing = true)}>Pair a device</button>
+            <button class="btn btn-small" onclick={thisComputer}>Use this computer</button>
+          </div>
+        {:else}
+          <a class="btn btn-small btn-primary" href="/kiosk">Set up the kiosk</a>
+        {/if}
+      {:else if account.kiosk.kind === 'this-computer'}
+        <div class="kiosk-actions">
+          <button class="btn btn-small btn-primary" onclick={openDoor} disabled={!account.activeClass}>
+            <Icon name="lock" size={14} />Open kiosk screen
+          </button>
+          <button class="btn btn-small" onclick={() => (pairing = true)}>Pair a device instead</button>
+          <button class="btn btn-small btn-quiet" onclick={disconnect}>Stop using it</button>
+        </div>
+      {:else if kioskOnline()}
+        <div class="kiosk-actions">
+          <button class="btn btn-small btn-quiet" onclick={disconnect}>Disconnect</button>
+        </div>
+      {:else}
+        <p class="muted small">
+          {account.kiosk.lastSeenAt ? `Last connected at ${time(account.kiosk.lastSeenAt)}. ` : ''}It keeps letting students
+          sign out, and saves their passes until it's back.
+        </p>
+        <div class="kiosk-actions">
+          <button
+            class="btn btn-small btn-primary"
+            onclick={() => {
+              reconnecting = true;
+              pairing = true;
+            }}>Reconnect</button
+          >
+          <button class="btn btn-small btn-quiet" onclick={disconnect}>Disconnect</button>
+        </div>
+      {/if}
+    </section>
+
+    <aside class="requests-panel" aria-labelledby="requests-title" data-tip="tip-requests">
+      <div class="panel-head">
+        <h2 id="requests-title"><Icon name="hand" size={18} />Requests</h2>
+        {#if requests.length}<span class="count">{requests.length}</span>{/if}
+      </div>
+      {#if account.kiosk?.kind !== 'device'}
+        <p class="muted small">
+          Students can ask you from a paired kiosk, like a tablet or Chromebook by the door. When this computer is the
+          kiosk, let them go with your PIN there.
+        </p>
+      {:else}
+        {#if !canAnswer() && requests.length}
+          <div class="notice-bar" role="status">
+            <Icon name="alert-triangle" />
+            The kiosk is offline, so it can’t hear your answer. Let students go at the kiosk with your PIN.
+          </div>
+        {/if}
+        {#if requests.length}
+          <ul class="requests">
+            {#each requests as request (request.id)}
+              <li>
+                <div class="request-who">
+                  <strong>{request.studentName}</strong>
+                  <span class="muted small">{ago(request.askedAt)}</span>
+                </div>
+                <span class="destination-chip"><DestinationIcon label={request.destination} size={22} />{request.destination}</span>
+                <div class="row" style="gap:6px;flex-wrap:wrap">
+                  {#each request.blocks as block (block)}<span class="badge warn">{blockText[block](request)}</span>{/each}
+                </div>
+                <div class="request-answer">
+                  <button class="btn btn-small" disabled={!canAnswer()} onclick={() => answerRequest(request, false)}>Deny</button>
+                  <button class="btn btn-small btn-primary" disabled={!canAnswer()} onclick={() => answerRequest(request, true)}>
+                    <Icon name="check" size={14} />Approve
+                  </button>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted small">
+            No requests right now. When something stops a student at the kiosk, they can ask you, and it shows up here.
+          </p>
+        {/if}
+      {/if}
+    </aside>
+    </div>
+  </div>
 {/if}
+
+{#if pairing}
+  <PairingDialog
+    {reconnecting}
+    onClose={() => {
+      pairing = false;
+      reconnecting = false;
+    }}
+    onUseThisComputer={thisComputer}
+  />
+{/if}
+
+{#if confirming}
+  {@const change = confirming}
+  <ConfirmDialog
+    title={change.title}
+    message={change.message}
+    confirmLabel={change.label}
+    onConfirm={() => {
+      change.run();
+      confirming = null;
+    }}
+    onCancel={() => (confirming = null)}
+  />
+{/if}
+
+<style>
+  /*
+   * Home fits the window: the side column fills it top to bottom, and the
+   * footer sits at the foot of the middle column, so nothing scrolls until the
+   * middle column outgrows the window.
+   */
+  .home {
+    --fit: calc(100vh - 40px - 24px);
+    flex: 1;
+    display: grid;
+    margin-bottom: 24px;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: start;
+    gap: 24px;
+    max-width: 1320px;
+  }
+
+  .home-main {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-height: var(--fit);
+  }
+
+  .footer-slot {
+    margin-top: auto;
+  }
+
+  .footer-slot :global(.site-footer) {
+    padding-bottom: 0;
+  }
+
+  .home-head {
+    display: grid;
+    gap: 8px;
+  }
+
+  .title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+  }
+
+  .title-row h1 {
+    font-size: 30px;
+  }
+
+  .status-badge {
+    padding: 3px 12px;
+    font-size: 13.5px;
+  }
+
+
+  .schedule-menu {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 15px;
+  }
+
+  .context-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-left: -8px;
+    font-size: 17px;
+  }
+
+  .timing {
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .this-class {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .this-class-log {
+    display: grid;
+    gap: 6px;
+  }
+
+  .log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .activity {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .activity li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 9px 0;
+    border-top: 1px solid var(--border);
+    font-size: 14.5px;
+  }
+
+  .activity li:first-child {
+    border-top: 0;
+  }
+
+  .activity .when {
+    width: 72px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .activity li.denied {
+    color: var(--danger);
+  }
+
+  /* The live column: what the teacher can do right now, then what students are asking. */
+  .side {
+    position: sticky;
+    top: 40px;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 12px;
+    height: var(--fit);
+  }
+
+  .kiosk-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .kiosk-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .kiosk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .requests-panel {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    padding: 18px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-head h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .count {
+    display: grid;
+    place-items: center;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #6a4cbb;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .requests {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .requests li {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid #d9c6ef;
+    border-radius: var(--radius);
+    background: #faf7fe;
+  }
+
+  .request-who {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .request-answer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  @media (max-width: 1100px) {
+    .home {
+      grid-template-columns: 1fr;
+    }
+
+    .side {
+      position: static;
+      height: auto;
+      grid-row: 2;
+    }
+  }
+</style>

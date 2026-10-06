@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { updated } from '$app/state';
-  import { account, keepToSchedule } from '#lib/account.svelte.ts';
+  import { afterNavigate, goto } from '$app/navigation';
+  import { page, updated } from '$app/state';
+  import { account, keepToSchedule, waitingRequests } from '#lib/account.svelte.ts';
   import { isPairedDevice } from '#lib/door.svelte.ts';
   import GettingStarted from '#lib/GettingStarted.svelte';
   import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
@@ -11,7 +11,7 @@
   import Sidebar from '#lib/Sidebar.svelte';
   import SiteFooter from '#lib/SiteFooter.svelte';
   import Toast from '#lib/Toast.svelte';
-  import WhatsChanged from '#lib/WhatsChanged.svelte';
+  import Popups from '#lib/Popups.svelte';
 
   let { children } = $props();
 
@@ -56,6 +56,17 @@
   $effect(() => {
     if (updated.current) refreshWhenHidden();
   });
+
+  // Waiting Requests show at the front of the tab's title, so a teacher in another tab sees them.
+  const titlePrefix = /\(\d+\) Requests? · /;
+  let navigated = $state(0);
+  afterNavigate(() => navigated++);
+  $effect(() => {
+    void navigated;
+    const count = belongsAtDoor ? 0 : waitingRequests().length;
+    const base = document.title.replace(titlePrefix, '');
+    document.title = count ? `(${count}) ${count === 1 ? 'Request' : 'Requests'} · ${base}` : base;
+  });
 </script>
 
 <!-- A paired kiosk sends its passes to this page, so closing it asks first. -->
@@ -67,7 +78,8 @@
     <Sidebar />
     <main class="main">
       {@render children()}
-      <SiteFooter />
+      <!-- Home places the footer itself, under its middle column, so the page fits the window without scrolling. -->
+      {#if page.url.pathname !== '/' || !account.classes.length}<SiteFooter />{/if}
     </main>
   </div>
   <!-- Messages for every page float in this corner, above the checklist, so the page never shifts. -->
@@ -83,7 +95,7 @@
     <OverdueReminder />
     {#if onboarding.showChecklist}<GettingStarted />{/if}
   </div>
-  <WhatsChanged />
+  <Popups />
 {/if}
 
 <style>

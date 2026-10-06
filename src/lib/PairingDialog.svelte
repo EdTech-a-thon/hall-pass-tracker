@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { account } from './account.svelte';
   import Icon from './Icon.svelte';
-  import { beginPairing, cancelPairing, link } from './link.svelte';
+  import { beginPairing, cancelPairing, kioskOnline, link, reconnectNow } from './link.svelte';
   import Modal from './Modal.svelte';
   import QrCode from './QrCode.svelte';
   import SupportDetails from './SupportDetails.svelte';
@@ -11,12 +11,23 @@
    * Pairing takes over the screen: show the code, follow the device as it
    * connects, then step aside once it has. `onUseThisComputer` is offered when
    * the network turns out to block device-to-device connections.
+   * `reconnecting` is the same pairing, for a kiosk that went offline: the
+   * same device takes the new code and keeps what it saved meanwhile.
    */
-  let { onClose, onUseThisComputer }: { onClose: () => void; onUseThisComputer: () => void } = $props();
+  let {
+    onClose,
+    onUseThisComputer,
+    reconnecting = false,
+  }: { onClose: () => void; onUseThisComputer: () => void; reconnecting?: boolean } = $props();
 
   // A successful pairing replaces the kiosk; remember which one we started with.
   const before = account.kiosk?.kind === 'device' ? account.kiosk.kioskId : '';
-  const connected = $derived(account.kiosk?.kind === 'device' && account.kiosk.kioskId !== before);
+  // Reconnecting, the kiosk may also find its way back by itself while the code is up.
+  const connected = $derived(
+    account.kiosk?.kind === 'device' && (account.kiosk.kioskId !== before || (reconnecting && kioskOnline())),
+  );
+  // svelte-ignore state_referenced_locally
+  if (reconnecting) reconnectNow();
 
   let clock = $state(Date.now());
   onMount(() => {
@@ -48,7 +59,7 @@
     {#if connected}
       <span class="big-tile done"><Icon name="check" size={40} stroke={2.5} /></span>
       <h1 id="pairing-title">Connected!</h1>
-      <p class="muted">The device by your door is now your kiosk.</p>
+      <p class="muted">{reconnecting ? 'The kiosk is connected again.' : 'The device by your door is now your kiosk.'}</p>
     {:else if account.networkBlocked}
       <span class="big-tile warn"><Icon name="alert-triangle" size={36} /></span>
       <h1 id="pairing-title">This network won't let the devices connect</h1>
@@ -71,12 +82,21 @@
       </div>
       {#if link.problem}<SupportDetails {...link.problem} />{/if}
     {:else}
-      <p class="eyebrow">Pair a device</p>
-      <h1 id="pairing-title">On the door device, scan this or type the code</h1>
-      <p class="muted">
-        Scan with the device's camera, or open <strong>{location.host}/door</strong> on it and type the code. Each code
-        works once.
-      </p>
+      {#if reconnecting}
+        <p class="eyebrow">Reconnect the kiosk</p>
+        <h1 id="pairing-title">On the kiosk, tap Reconnect, then type this code</h1>
+        <p class="muted">
+          Or scan the QR code with the kiosk's camera. Passes the kiosk saved while it was offline are kept. Each code
+          works once.
+        </p>
+      {:else}
+        <p class="eyebrow">Pair a device</p>
+        <h1 id="pairing-title">On the door device, scan this or type the code</h1>
+        <p class="muted">
+          Scan with the device's camera, or open <strong>{location.host}/door</strong> on it and type the code. Each code
+          works once.
+        </p>
+      {/if}
 
       <div class="code-block">
         {#if link.pairing && link.pairing.state !== 'starting'}
