@@ -39,6 +39,7 @@
   import Icon from '#lib/Icon.svelte';
   import { askBeforeLeaving, leaveTo } from '#lib/leaving.ts';
   import Modal from '#lib/Modal.svelte';
+  import SupportDetails from '#lib/SupportDetails.svelte';
   import { formatClock, nextClassPeriod } from '#lib/schedule.ts';
 
   const local = $derived(isLocal());
@@ -225,7 +226,10 @@
           {door.pairing.state === 'connecting' ? 'Connecting…' : 'Connect'}
         </button>
       </form>
-      {#if door.pairing.state === 'error'}<p class="door-error" role="alert">{door.pairing.message}</p>{/if}
+      {#if door.pairing.state === 'error'}
+        <p class="door-error" role="alert">{door.pairing.message}</p>
+        {#if door.pairing.problem}<SupportDetails {...door.pairing.problem} />{/if}
+      {/if}
       {#if door.pairing.state === 'connecting' && door.pairing.slow}
         <p class="lede small" role="status">Still trying… Check that the code matches the one on the teacher's screen.</p>
       {/if}

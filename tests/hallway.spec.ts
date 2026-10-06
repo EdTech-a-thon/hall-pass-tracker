@@ -703,3 +703,38 @@ test('dragging on the calendar adds a no-pass time, and the teacher can stop pas
   await page.getByRole('button', { name: 'Open kiosk screen' }).click();
   await expect(page.getByText('Your teacher will open passes again.')).toBeVisible();
 });
+
+test('when the network blocks pairing, both screens offer details for support, and the next try starts fresh', async ({
+  browser,
+}) => {
+  const laptop = await (await browser.newContext()).newPage();
+  const tablet = await (await browser.newContext()).newPage();
+  // Stand in for a school network that blocks every route between the two devices.
+  await tablet.addInitScript(() => {
+    const Real = RTCPeerConnection;
+    window.RTCPeerConnection = class extends Real {
+      constructor(config?: RTCConfiguration) {
+        super({ ...config, iceServers: [], iceTransportPolicy: 'relay' });
+      }
+    } as typeof RTCPeerConnection;
+  });
+
+  await createClassWithRoster(laptop, 'Period 3');
+  await setPin(laptop);
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+  const code = (await laptop.locator('.pair-code').textContent())!.trim();
+  await tablet.goto(`/door?code=${code}`);
+
+  await expect(laptop.getByRole('heading', { name: "This network won't let the devices connect" })).toBeVisible({
+    timeout: 40_000,
+  });
+  await laptop.getByText(/Details for support/).click();
+  await expect(laptop.locator('.support pre')).toContainText('Routes the other device sent: none');
+  await expect(tablet.getByText('Details for support · RELAY-BLOCKED')).toBeVisible({ timeout: 20_000 });
+
+  // Closing and reopening tries again, instead of showing the old failure.
+  await laptop.getByRole('button', { name: 'Close', exact: true }).click();
+  await laptop.getByRole('button', { name: 'Pair a device' }).click();
+  await expect(laptop.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
+});

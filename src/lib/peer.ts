@@ -35,14 +35,17 @@ const refreshRelayMs = 4 * 60 * 60_000;
 const iceTransportPolicy: RTCIceTransportPolicy = env.VITE_FORCE_TURN === 'true' ? 'relay' : 'all';
 
 let relay: { servers: RTCIceServer[]; fetchedAt: number } | null = null;
+let relayProblem = '';
 
 async function iceServers(): Promise<RTCIceServer[]> {
   if (relay && Date.now() - relay.fetchedAt < refreshRelayMs) return [stun, ...relay.servers];
   try {
     const response = await fetch('/api/turn', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
     if (response.ok) relay = { servers: (await response.json()).iceServers, fetchedAt: Date.now() };
-  } catch {
+    relayProblem = response.ok ? '' : `answered ${response.status}`;
+  } catch (error) {
     // No relay this time; devices can still connect directly where the network allows.
+    relayProblem = String(error);
   }
   return relay ? [stun, ...relay.servers] : [stun];
 }
@@ -68,6 +71,16 @@ async function pickHost(): Promise<string> {
     }
   }
   return hosts[hosts.length - 1];
+}
+
+/** How this page is set up to connect, for a support report. */
+export function connectionSetup() {
+  const relayRoutes = relay?.servers.flatMap((server) => [server.urls].flat()) ?? [];
+  return {
+    matchmakingServer: reachableHost ?? hosts.join(' or ') + ' (not reached yet)',
+    relay: relay ? `${relayRoutes.length} routes` : `no logins (${relayProblem || 'not asked yet'})`,
+    relayOnly: iceTransportPolicy === 'relay',
+  };
 }
 
 /** Every connection this page opened, so they can all be closed when it goes away. */

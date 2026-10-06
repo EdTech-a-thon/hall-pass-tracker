@@ -1,6 +1,7 @@
 import type { DataConnection, Peer } from 'peerjs';
 import { account, doorSetup, keepToSchedule, receivePasses, setActiveClass, setLine } from './account.svelte';
 import { destinationCounts, passesLeftText, usedBy, usedUpText } from './allowance';
+import { connectionReport, watchConnection, type ConnectionWatch } from './diagnostics';
 import { dueTime, endOfDay, endUnseen, mergeInto, newId, now, permissionsUsedBy } from './passes';
 import { createPeer, keepAlive, pairingPrefix } from './peer';
 import { formatClock, noPassAt, scheduledClassAt } from './schedule';
@@ -82,7 +83,13 @@ export const door = $state({
   device: loadDevice(),
   /** Only meaningful on a paired device. */
   status: 'offline' as 'offline' | 'live' | 'replaced',
-  pairing: { state: 'idle' as 'idle' | 'connecting' | 'error', message: '', slow: false },
+  pairing: {
+    state: 'idle' as 'idle' | 'connecting' | 'error',
+    message: '',
+    slow: false,
+    /** Technical details of a failed attempt, for the teacher to send to support. */
+    problem: null as null | { code: string; text: string },
+  },
   notice: null as DoorNotice | null,
 });
 
@@ -650,20 +657,32 @@ export function forgetDevice() {
  * and only the teacher's own computer can be the kiosk.
  */
 export async function pairWithCode(code: string) {
-  door.pairing = { state: 'connecting', message: '', slow: false };
+  door.pairing = { state: 'connecting', message: '', slow: false, problem: null };
   // A wrong code is only reported once the matchmaking server gives up on it,
   // which can take a while; meanwhile, suggest checking the code.
   const slowTimer = setTimeout(() => (door.pairing.slow = true), 6000);
   door.status = 'offline';
   const temporary = await createPeer();
   let done = false;
-  const fail = (message: string) => {
+  let attempt: DataConnection | null = null;
+  let watch: ConnectionWatch | null = null;
+  let peerError = '';
+  /** `report` is off for a mistyped code: the message already says what to do. */
+  const fail = async (message: string, report = true) => {
     if (done) return;
     done = true;
     clearTimeout(timer);
     clearTimeout(slowTimer);
+    // Read the connection's details before destroying it closes it.
+    const problem = !report ? null : await connectionReport({
+      problem: `Pairing with code ${code}: ${message}`,
+      side: 'door device',
+      connection: attempt?.peerConnection,
+      watch,
+      peerError,
+    });
     temporary.destroy();
-    door.pairing = { state: 'error', message, slow: false };
+    door.pairing = { state: 'error', message, slow: false, problem };
   };
   const timer = setTimeout(
     () =>
@@ -673,14 +692,16 @@ export async function pairWithCode(code: string) {
     25_000,
   );
   temporary.on('error', (error) => {
+    peerError = `${error.type}: ${error.message}`;
     if (error.type === 'peer-unavailable') {
-      fail("That code didn't match. Check the code on the teacher's screen. Codes expire after 10 minutes.");
+      fail("That code didn't match. Check the code on the teacher's screen. Codes expire after 10 minutes.", false);
     } else if (error.type === 'network' || error.type === 'server-error' || error.type === 'socket-error') {
       fail("Couldn't reach the internet to look up that code. Check this device's connection and try again.");
     }
   });
   temporary.on('open', () => {
-    const attempt = temporary.connect(pairingPrefix + code, { reliable: true });
+    attempt = temporary.connect(pairingPrefix + code, { reliable: true });
+    watch = watchConnection(attempt.peerConnection);
     attempt.on('data', (data) => {
       const message = data as LaptopMessage;
       if (message.type !== 'paired' || done) return;
@@ -697,7 +718,7 @@ export async function pairWithCode(code: string) {
         outbox: [],
       };
       saveDevice();
-      door.pairing = { state: 'idle', message: '', slow: false };
+      door.pairing = { state: 'idle', message: '', slow: false, problem: null };
       setTimeout(() => temporary.destroy(), 500);
       connectToLaptop();
     });
