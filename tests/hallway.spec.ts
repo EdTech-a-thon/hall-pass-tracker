@@ -11,6 +11,8 @@ async function createClassWithRoster(page: Page, name: string) {
 
 /** Drags down the open schedule's calendar, from and to so many pixels below its top (7 AM, a minute and a half to the pixel). */
 async function dragOnCalendar(page: Page, from: number, to: number) {
+  // The calendar scrolls on its own; start from its top so the pixels line up with what's on screen.
+  await page.locator('.calendar').evaluate((calendar) => calendar.scrollTo(0, 0));
   const box = (await page.locator('.grid').boundingBox())!;
   await page.mouse.move(box.x + box.width / 4, box.y + from);
   await page.mouse.down();

@@ -91,6 +91,23 @@
     change((draft) => Object.assign(draft.periods.find((each) => each.id === id)!, { [field]: input.value }));
   }
 
+  /** A period's first or last no-pass minutes, from the list. */
+  function setPeriodNoPass(input: HTMLInputElement, id: string, edge: 'first' | 'last') {
+    const period = schedule?.periods.find((each) => each.id === id);
+    if (!period) return;
+    const minutes = Math.round(Number(input.value || 0));
+    if (!(minutes >= 0 && minutes <= 120)) {
+      problem = { id, text: 'Pick between 0 and 120 minutes.' };
+      input.value = String(period.noPass?.[edge] ?? 0);
+      return;
+    }
+    problem = null;
+    change((draft) => {
+      const target = draft.periods.find((each) => each.id === id)!;
+      target.noPass = { first: 0, last: 0, ...target.noPass, [edge]: minutes };
+    });
+  }
+
   function setNoPassTime(event: Event & { currentTarget: HTMLInputElement }, id: string, field: 'start' | 'end') {
     const input = event.currentTarget;
     const time = schedule?.noPassTimes.find((each) => each.id === id);
@@ -157,8 +174,8 @@
           <div>
             <h2>Periods</h2>
             <p class="muted small">
-              Which class is on the kiosk, and when. Periods can't overlap. Click a period on the calendar to set
-              no-pass minutes at its start and end.
+              Which class is on the kiosk, and when, and how many minutes at its start and end nobody can leave.
+              Periods can't overlap.
             </p>
           </div>
           {#each sortedPeriods(schedule) as period (period.id)}
@@ -182,6 +199,30 @@
                 <Icon name="x" size={15} />
               </button>
             </div>
+            {#if period.classId}
+              <div class="no-pass-row small">
+                <Icon name="ban" size={14} />
+                <span class="muted">No passes: first</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  aria-label="First minutes with no passes"
+                  value={period.noPass?.first ?? 0}
+                  onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'first')}
+                />
+                <span class="muted">min, last</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  aria-label="Last minutes with no passes"
+                  value={period.noPass?.last ?? 0}
+                  onchange={(event) => setPeriodNoPass(event.currentTarget, period.id, 'last')}
+                />
+                <span class="muted">min</span>
+              </div>
+            {/if}
             {#if problem?.id === period.id}<p class="form-error" role="alert">{problem.text}</p>{/if}
           {:else}
             <p class="muted small">No periods yet. Add one here, or drag across the calendar.</p>
@@ -261,6 +302,57 @@
     max-width: none;
   }
 
+  /*
+   * On a wide screen the editor fills the window exactly, without the footer,
+   * so the page itself never scrolls: the list and the calendar each scroll
+   * on their own.
+   */
+  @media (min-width: 901px) {
+    :global(.main:has(> .editor)) {
+      height: 100dvh;
+      padding-bottom: 20px;
+    }
+
+    :global(.main:has(> .editor) > .site-footer) {
+      display: none;
+    }
+
+    .editor {
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+      margin-bottom: 0;
+    }
+
+    .layout {
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .settings,
+    .calendar-card {
+      min-height: 0;
+      max-height: 100%;
+    }
+
+    .settings {
+      align-content: start;
+      overflow-y: auto;
+      padding: 2px 6px 2px 2px;
+    }
+
+    .calendar-card {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .calendar-card :global(.calendar) {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+
   .editor-head {
     display: flex;
     flex-wrap: wrap;
@@ -315,25 +407,26 @@
     flex: 1;
   }
 
-  .badge .status-dot {
-    margin-right: 4px;
+  .no-pass-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 4px 4px;
+    color: var(--warn);
   }
 
-  .calendar-card {
-    position: sticky;
-    top: 16px;
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
+  .no-pass-row input {
+    width: 64px;
+    padding-block: 4px;
+  }
+
+  .badge .status-dot {
+    margin-right: 4px;
   }
 
   @media (max-width: 900px) {
     .layout {
       grid-template-columns: 1fr;
-    }
-
-    .calendar-card {
-      position: static;
-      max-height: none;
     }
   }
 </style>
