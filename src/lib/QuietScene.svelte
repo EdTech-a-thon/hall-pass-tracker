@@ -1,10 +1,86 @@
+<script lang="ts" module>
+  export type Season = 'spring' | 'summer' | 'fall' | 'winter';
+  export const seasons: Season[] = ['spring', 'summer', 'fall', 'winter'];
+</script>
+
 <script lang="ts">
   /**
    * What Home shows when no class is on the kiosk: the sun over a quiet
    * forest, in flat shapes. No box around it and nothing moves: the hills
-   * round off at their ends, so it sits on the page on its own.
+   * round off at their ends, so it sits on the page on its own. The trees
+   * and hills follow the season: autumn leaves, winter snow, spring blossom.
    */
-  let { message }: { message: string } = $props();
+  let { message, season = seasonOf(new Date()) }: { message: string; season?: Season } = $props();
+
+  /** Seasons by the month, as most schools' year runs (northern hemisphere). */
+  function seasonOf(date: Date): Season {
+    const month = date.getMonth();
+    if (month >= 2 && month <= 4) return 'spring';
+    if (month >= 5 && month <= 7) return 'summer';
+    if (month >= 8 && month <= 10) return 'fall';
+    return 'winter';
+  }
+
+  /** Every color in the scene, for each season. A round tree has two looks, so a row of them isn't all one color. */
+  const looks = {
+    summer: {
+      backHill: '#cfe3cf',
+      frontHill: '#a9cdb0',
+      pine: ['#1f6343', '#2f7a52'],
+      round: [
+        ['#2f6b47', '#4a8a5c', '#6ea978'],
+        ['#2f6b47', '#4a8a5c', '#6ea978'],
+      ],
+      dots: [],
+      snow: false,
+    },
+    fall: {
+      backHill: '#e4e2c4',
+      frontHill: '#c8cf98',
+      pine: ['#2a5e43', '#3a7352'],
+      round: [
+        ['#c0532a', '#e07a3a', '#f3a965'],
+        ['#c68a1c', '#e6b13a', '#f5d06b'],
+      ],
+      dots: ['#e07a3a', '#c0532a', '#e6b13a'],
+      snow: false,
+    },
+    winter: {
+      backHill: '#eef3f6',
+      frontHill: '#dbe6ee',
+      pine: ['#285c47', '#3a7058'],
+      round: [
+        ['#b6c7d3', '#dde8ef', '#ffffff'],
+        ['#b6c7d3', '#dde8ef', '#ffffff'],
+      ],
+      dots: [],
+      snow: true,
+    },
+    spring: {
+      backHill: '#d9edc6',
+      frontHill: '#b2da9c',
+      pine: ['#2b744b', '#3f8f5d'],
+      round: [
+        ['#e295ad', '#f5bccb', '#fde3ea'],
+        ['#4a8a5c', '#6aa86f', '#9ccc8c'],
+      ],
+      dots: ['#f49ac1', '#f7d154', '#ffffff'],
+      snow: false,
+    },
+  } satisfies Record<Season, unknown>;
+  const look = $derived(looks[season]);
+
+  /** Fallen leaves in autumn, flowers in spring: small dots on the front hill. */
+  const dotSpots = [
+    { x: 58, y: 214 },
+    { x: 92, y: 208 },
+    { x: 176, y: 205 },
+    { x: 196, y: 210 },
+    { x: 232, y: 209 },
+    { x: 262, y: 214 },
+    { x: 328, y: 219 },
+    { x: 352, y: 223 },
+  ];
 
   /**
    * Trees stand on the hills' tops, so each has its own height off the
@@ -46,15 +122,19 @@
         {@const top = -tree.h + level * tree.h * 0.26}
         {@const base = top + tree.h * 0.42}
         {@const width = w * (0.62 + level * 0.19)}
-        <path d={tier(top, base, width)} fill="#1f6343" />
-        <path d={litSide(top, base, width)} fill="#2f7a52" />
+        <path d={tier(top, base, width)} fill={look.pine[0]} />
+        <path d={litSide(top, base, width)} fill={look.pine[1]} />
+        {#if look.snow}
+          <path d={tier(top, top + (base - top) * 0.38, width * 0.38)} fill="#ffffff" />
+        {/if}
       {/each}
     {:else}
       {@const cy = -tree.r * 0.6 - tree.r * 0.95}
       <rect x={-tree.r * 0.15} y={-tree.r * 0.75} width={tree.r * 0.3} height={tree.r * 0.8} rx="2" fill="#7a5a3a" />
-      <circle cx="0" {cy} r={tree.r} fill="#2f6b47" />
-      <circle cx={-tree.r * 0.18} cy={cy - tree.r * 0.16} r={tree.r * 0.82} fill="#4a8a5c" />
-      <circle cx={tree.r * 0.42} cy={cy - tree.r * 0.42} r={tree.r * 0.13} fill="#6ea978" />
+      {@const [shade, leaves, light] = look.round[tree.x % 2]}
+      <circle cx="0" {cy} r={tree.r} fill={shade} />
+      <circle cx={-tree.r * 0.18} cy={cy - tree.r * 0.16} r={tree.r * 0.82} fill={leaves} />
+      <circle cx={tree.r * 0.42} cy={cy - tree.r * 0.42} r={tree.r * 0.13} fill={light} />
     {/if}
   </g>
 {/snippet}
@@ -77,14 +157,17 @@
     <!-- The back hill rises to a big hump on the right; the front one is lower, highest on the left. -->
     <path
       d="M20 214c0-18 50-28 110-30 60-2 100-14 160-34 50-17 120-20 156 10 20 17 22 40 12 54-8 14-78 20-218 20S20 230 20 214z"
-      fill="#cfe3cf"
+      fill={look.backHill}
     />
     {#each farTrees as tree (tree.x)}{@render drawTree(tree)}{/each}
 
     <path
       d="M36 228c0-22 54-34 124-32 70 2 130 16 200 18 60 2 92 8 92 18s-72 14-212 14S36 244 36 228z"
-      fill="#a9cdb0"
+      fill={look.frontHill}
     />
+    {#each look.dots.length ? dotSpots : [] as spot, index (spot.x)}
+      <circle cx={spot.x} cy={spot.y} r="2.6" fill={look.dots[index % look.dots.length]} />
+    {/each}
     {#each nearTrees as tree (tree.x)}{@render drawTree(tree)}{/each}
   </svg>
   <figcaption>{message}</figcaption>

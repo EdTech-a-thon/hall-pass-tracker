@@ -33,7 +33,8 @@
   import { answerRequest, canAnswer, cancelPairing, kioskOnline, kioskState, refreshLink } from '#lib/link.svelte.ts';
   import PairingDialog from '#lib/PairingDialog.svelte';
   import PassMarks from '#lib/PassMarks.svelte';
-  import QuietScene from '#lib/QuietScene.svelte';
+  import QuietScene, { seasons, type Season } from '#lib/QuietScene.svelte';
+  import { page } from '$app/state';
   import SiteFooter from '#lib/SiteFooter.svelte';
   import { duration, hasRealDuration, isOverdue, now, time } from '#lib/passes.ts';
   import { nextClassPeriod, periodAt, toMinutes } from '#lib/schedule.ts';
@@ -45,6 +46,8 @@
    * happening in it, and students' Requests down the side. See CONTEXT.md.
    */
   let name = $state('');
+  /** `?season=winter` shows that season's scene, to preview it. Otherwise it follows the date. */
+  const season = $derived(seasons.find((each) => each === page.url.searchParams.get('season')) as Season | undefined);
 
   const at = $derived(clock.now);
   const classId = $derived(account.activeClass?.id ?? null);
@@ -335,7 +338,7 @@
           {/if}
         </section>
       {:else}
-        <QuietScene message={account.activeClass?.onSchedule ? `No class right now. ${timing}.` : 'No class is on the kiosk. Choose one above.'} />
+        <QuietScene {season} message={account.activeClass?.onSchedule ? `No class right now. ${timing}.` : 'No class is on the kiosk. Choose one above.'} />
       {/if}
       <div class="footer-slot"><SiteFooter /></div>
     </div>
