@@ -774,8 +774,7 @@ test('a teacher with no schedules draws one: a period appears as they drag, and 
   await expect(page.locator('.grid .band')).toHaveCount(1);
   await page.getByRole('dialog', { name: 'Period' }).getByRole('button', { name: 'Done' }).click();
 
-  // The Select tool moves the whole period, keeping its length.
-  await page.getByRole('radio', { name: 'Select' }).click();
+  // Dragging the period moves it whole, keeping its length.
   await dragOnCalendar(page, 200, 245);
   await expect(row.getByLabel('Starts')).toHaveValue('09:30');
   await expect(row.getByLabel('Ends')).toHaveValue('10:30');

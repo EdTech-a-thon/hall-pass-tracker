@@ -9,10 +9,11 @@
    * One school day as a single calendar column, like a day view in Google
    * Calendar. Periods are blocks, with their first and last no-pass minutes
    * striped inside them; No-Pass Times drawn on the schedule are striped
-   * blocks of their own. A tool decides what dragging across empty time does:
-   * Select only picks and moves blocks, Period draws a period, No-pass draws a
-   * no-pass time (even across periods). In any tool, a block can be clicked to
-   * open its card, dragged to move it, or dragged by its top or bottom edge.
+   * blocks of their own. A tool decides what dragging does: Period draws a
+   * period on empty time, No-pass draws a no-pass time anywhere, even across
+   * periods. Periods never overlap, so pressing on one with the Period tool can
+   * only mean "open it" (a click) or "move it" (a drag); a block's top or
+   * bottom edge resizes it in either tool.
    * The list beside the calendar does everything this does, by keyboard.
    */
   let {
@@ -25,16 +26,15 @@
   const pixelsPerMinute = 1.5;
   const snapMinutes = 5;
 
-  type Tool = 'select' | 'period' | 'no-pass';
+  type Tool = 'period' | 'no-pass';
   const tools: { id: Tool; label: string; key: string; icon: IconName; hint: string }[] = [
     {
-      id: 'select',
-      label: 'Select',
-      key: 'v',
-      icon: 'pointer',
-      hint: 'Click a period to change it. Drag it to move it, or drag its top or bottom edge.',
+      id: 'period',
+      label: 'Period',
+      key: 'p',
+      icon: 'plus',
+      hint: 'Drag across empty time to add a period. Click a period to change it, or drag it to move it.',
     },
-    { id: 'period', label: 'Period', key: 'p', icon: 'plus', hint: 'Drag across empty time to add a period.' },
     {
       id: 'no-pass',
       label: 'No-pass',
@@ -94,7 +94,6 @@
     if (event.button !== 0 || event.target !== grid) return;
     event.preventDefault();
     selected = null;
-    if (tool === 'select') return;
     const at = minuteAt(event);
     drawing = { kind: tool, anchor: at, at };
     grid?.setPointerCapture(event.pointerId);
@@ -587,12 +586,8 @@
       transparent 1px,
       transparent var(--hour)
     );
-    touch-action: none;
-  }
-
-  .grid.tool-period,
-  .grid.tool-no-pass {
     cursor: crosshair;
+    touch-action: none;
   }
 
   .block,
