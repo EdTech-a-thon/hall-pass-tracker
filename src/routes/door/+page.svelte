@@ -103,36 +103,23 @@
   let pin = $state('');
   let pinError = $state('');
   let confirmForget = $state(false);
-  /** Pairing this device again from the teacher menu, with a new code from the laptop. */
-  let repairing = $state(false);
-  let repairCode = $state('');
-  let repairedFrom = '';
-  // Once the new pairing takes, the menu's job is done.
-  $effect(() => {
-    if (repairing && door.device && door.device.kioskId !== repairedFrom) {
-      repairing = false;
-      teacher = 'closed';
-    }
-  });
-
-  /** "Reconnect" shows it's trying for a few seconds, so a tap never looks ignored. */
+  /**
+   * "Reconnect" on a kiosk that's offline: the same code screen a new device
+   * sees. The teacher shows a code on their laptop; this device keeps what
+   * it saved while offline. If it finds the laptop by itself meanwhile, the
+   * screen steps aside.
+   */
   let reconnecting = $state(false);
+  let reconnectingFrom = '';
   function reconnect() {
     reconnectNow();
+    code = '';
+    reconnectingFrom = door.device?.kioskId ?? '';
     reconnecting = true;
-    setTimeout(() => (reconnecting = false), 8000);
   }
-
-  function startRepair() {
-    repairing = true;
-    repairCode = '';
-    repairedFrom = door.device?.kioskId ?? '';
-  }
-
-  function submitRepair(event: SubmitEvent) {
-    event.preventDefault();
-    if (/^\d{6}$/.test(repairCode)) pairWithCode(repairCode);
-  }
+  $effect(() => {
+    if (reconnecting && (door.status === 'live' || door.device?.kioskId !== reconnectingFrom)) reconnecting = false;
+  });
 
   onMount(() => {
     // Opening the door screen locks it (on the laptop) or connects it (on a paired device).
@@ -142,7 +129,8 @@
     // address so a later reload never retries a code that has been used up.
     if (page.url.searchParams.has('code')) replaceState('/door', {});
     else return;
-    if (!local && !paired && /^\d{6}$/.test(code)) pairWithCode(code);
+    // A kiosk that's already paired can scan a new code too: that reconnects it.
+    if (!local && /^\d{6}$/.test(code)) pairWithCode(code);
   });
 
   // After an update, the kiosk refreshes itself once nobody has touched it for
@@ -198,7 +186,6 @@
     pin = '';
     pinError = '';
     confirmForget = false;
-    repairing = false;
   }
 
   function submitPin(event: SubmitEvent) {
@@ -256,18 +243,26 @@
 <svelte:document onpointerdown={() => (lastTouch = Date.now())} onkeydown={() => (lastTouch = Date.now())} />
 
 <div class="door">
-  {#if !local && !paired}
-    <!-- Not a kiosk yet: pair with the teacher's laptop. -->
+  {#if (!local && !paired) || reconnecting}
+    <!-- Not a kiosk yet, or reconnecting one: pair with the teacher's laptop. -->
     <main class="pairing">
       <span class="mark"><BrandMark size={52} /></span>
-      <h1>Make this device the kiosk</h1>
-      {#if door.status === 'replaced'}
-        <p class="lede">This device is no longer the kiosk. A different one was paired on the teacher's laptop.</p>
+      {#if reconnecting}
+        <h1>Reconnect this kiosk</h1>
+        <p class="lede">
+          On the teacher's laptop, open Happy Hallways and choose <strong>Reconnect</strong> on Home. Then type the 6-digit
+          code here, or scan the QR code with this device's camera. Passes saved on this device are kept.
+        </p>
+      {:else}
+        <h1>Make this device the kiosk</h1>
+        {#if door.status === 'replaced'}
+          <p class="lede">This device is no longer the kiosk. A different one was paired on the teacher's laptop.</p>
+        {/if}
+        <p class="lede">
+          On the teacher's laptop, open Happy Hallways and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
+          code here, or scan the QR code with this device's camera.
+        </p>
       {/if}
-      <p class="lede">
-        On the teacher's laptop, open Happy Hallways and go to <strong>Kiosk → Pair a device</strong>. Then type the 6-digit
-        code here, or scan the QR code with this device's camera.
-      </p>
       <form onsubmit={submitCode}>
         <input
           class="code-input"
@@ -289,7 +284,11 @@
       {#if door.pairing.state === 'connecting' && door.pairing.slow}
         <p class="lede small" role="status">Still trying… Check that the code matches the one on the teacher's screen.</p>
       {/if}
-      <a class="quiet-link" href="/">This is the teacher's computer</a>
+      {#if reconnecting}
+        <button class="quiet-link" onclick={() => (reconnecting = false)}>Back to the kiosk</button>
+      {:else}
+        <a class="quiet-link" href="/">This is the teacher's computer</a>
+      {/if}
     </main>
   {:else}
     <header class="door-head">
@@ -305,9 +304,7 @@
           <span>
             Offline{waitingCount() ? ` · ${waitingCount()} ${waitingCount() === 1 ? 'pass' : 'passes'} saved here` : ''}
           </span>
-          <button class="reconnect" onclick={reconnect} disabled={reconnecting}>
-            {reconnecting ? 'Reconnecting…' : 'Reconnect'}
-          </button>
+          <button class="reconnect" onclick={reconnect}>Reconnect</button>
         </div>
       {/if}
     </header>
@@ -541,31 +538,6 @@
             <button class="door-btn primary">Unlock</button>
           </form>
           {#if pinError}<p class="door-error" role="alert">{pinError}</p>{/if}
-        {:else if repairing}
-          <h2>Pair again</h2>
-          <p class="lede small">
-            On the teacher's laptop, open Happy Hallways and choose <strong>Pair it again</strong> on Home (or
-            <strong>Kiosk → Pair a different device</strong>). Type the 6-digit code here. Passes this device hasn't sent
-            yet are kept.
-          </p>
-          <form onsubmit={submitRepair}>
-            <input
-              class="code-input"
-              inputmode="numeric"
-              autocomplete="off"
-              maxlength="6"
-              aria-label="Pairing code"
-              placeholder="000000"
-              bind:value={repairCode}
-              {@attach focusOnShow}
-            />
-            <button class="door-btn primary" disabled={!/^\d{6}$/.test(repairCode) || door.pairing.state === 'connecting'}>
-              {door.pairing.state === 'connecting' ? 'Connecting…' : 'Connect'}
-            </button>
-          </form>
-          {#if door.pairing.state === 'error'}
-            <p class="door-error" role="alert">{door.pairing.message}</p>
-          {/if}
         {:else if confirmForget}
           <h2>Stop being the kiosk?</h2>
           {#if waitingCount()}
@@ -604,7 +576,6 @@
           {#if local}
             <button class="door-btn" onclick={exitToTeacher}><Icon name="unlock" size={16} />Exit kiosk</button>
           {:else}
-            <button class="door-btn" onclick={startRepair}>Pair again with a code</button>
             <button class="door-btn" onclick={() => (confirmForget = true)}>Unpair this device</button>
           {/if}
         {/if}
@@ -692,11 +663,6 @@
     color: var(--door-text);
     font: inherit;
     cursor: pointer;
-  }
-
-  .reconnect:disabled {
-    color: var(--door-muted);
-    cursor: default;
   }
 
   .connection .dot {

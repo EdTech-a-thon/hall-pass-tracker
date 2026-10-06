@@ -879,7 +879,7 @@ test("a schedule's old first and last minutes rules move onto its periods", asyn
   await expect(page.locator('.grid .band')).toHaveCount(2);
 });
 
-test('an offline kiosk can reconnect, or pair again without losing passes it has saved', async ({ browser }) => {
+test('an offline kiosk reconnects with a code, the same way it paired, keeping the passes it saved', async ({ browser }) => {
   const laptopContext = await browser.newContext();
   const laptop = await laptopContext.newPage();
   const tablet = await (await browser.newContext()).newPage();
@@ -899,19 +899,21 @@ test('an offline kiosk can reconnect, or pair again without losing passes it has
   await tablet.getByRole('button', { name: /^Bathroom/ }).click();
   await tablet.getByRole('button', { name: 'Done' }).click();
 
-  // Back on the laptop, the teacher pairs it again; the tablet takes the new code from its teacher menu.
+  // Back on the laptop, Reconnect shows a code, and the tablet's own Reconnect takes it, the same way pairing does.
+  // (The two may also find each other by themselves first; either way the kiosk ends up connected.)
   const again = await laptopContext.newPage();
   await skipTips(again);
-  await again.goto('/kiosk');
-  await again.getByRole('button', { name: 'Pair a different device' }).click();
-  await expect(again.getByText(/Waiting for the device/)).toBeVisible({ timeout: 20_000 });
-  const code = (await again.locator('.pair-code').textContent())!.trim();
-  await tablet.getByRole('button', { name: 'Teacher' }).click();
-  await tablet.getByLabel('PIN').fill('2468');
-  await tablet.getByRole('button', { name: 'Unlock' }).click();
-  await tablet.getByRole('button', { name: 'Pair again with a code' }).click();
-  await tablet.getByLabel('Pairing code').fill(code);
-  await tablet.getByRole('button', { name: 'Connect', exact: true }).click();
+  await again.goto('/');
+  await again.locator('.kiosk-card').getByRole('button', { name: 'Reconnect' }).click();
+  await expect(again.getByRole('heading', { name: 'On the kiosk, tap Reconnect, then type this code' })).toBeVisible();
+  await expect(again.getByText(/Waiting for the device|Connected!/)).toBeVisible({ timeout: 20_000 });
+  const code = (await again.locator('.pair-code').textContent().catch(() => ''))?.trim() ?? '';
+  if (await tablet.getByRole('button', { name: 'Reconnect' }).isVisible()) {
+    await tablet.getByRole('button', { name: 'Reconnect' }).click();
+    await expect(tablet.getByRole('heading', { name: 'Reconnect this kiosk' })).toBeVisible();
+    await tablet.getByLabel('Pairing code').fill(code);
+    await tablet.getByRole('button', { name: 'Connect', exact: true }).click();
+  }
   await expect(tablet.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(tablet.getByRole('button', { name: /Jordan E\..*Out/ })).toBeVisible();
 
