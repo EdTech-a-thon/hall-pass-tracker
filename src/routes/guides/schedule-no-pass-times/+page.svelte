@@ -1,6 +1,7 @@
 <script lang="ts">
   import GuideHead from '#lib/GuideHead.svelte';
   import GuideStep from '#lib/GuideStep.svelte';
+  import SectionLink from '#lib/SectionLink.svelte';
   import { guideNamed } from '#lib/guides.ts';
 
   const guide = guideNamed('schedule-no-pass-times');
@@ -69,8 +70,8 @@
     </GuideStep>
   {/each}
 
-  <section class="guide-section">
-    <h2>What students see at the kiosk</h2>
+  <section class="guide-section" id="what-students-see">
+    <h2>What students see at the kiosk<SectionLink id="what-students-see" /></h2>
     <p>
       During a no-pass time, the kiosk says <strong>No passes right now</strong> and when passes open. A student who
       taps their name anyway can join the line, and goes first when passes open. (Turn on
@@ -101,8 +102,8 @@
     </figure>
   </section>
 
-  <section class="guide-section">
-    <h2>If it isn’t working</h2>
+  <section class="guide-section" id="if-it-isnt-working">
+    <h2>If it isn’t working<SectionLink id="if-it-isnt-working" /></h2>
     <dl>
       <dt>The kiosk isn’t changing classes or following the no-pass times.</dt>
       <dd>

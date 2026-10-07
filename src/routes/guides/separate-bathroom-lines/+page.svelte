@@ -1,6 +1,7 @@
 <script lang="ts">
   import GuideHead from '#lib/GuideHead.svelte';
   import GuideStep from '#lib/GuideStep.svelte';
+  import SectionLink from '#lib/SectionLink.svelte';
   import { guideNamed } from '#lib/guides.ts';
 
   const guide = guideNamed('separate-bathroom-lines');
@@ -65,8 +66,8 @@
     </GuideStep>
   {/each}
 
-  <section class="guide-section">
-    <h2>What students see at the kiosk</h2>
+  <section class="guide-section" id="what-students-see">
+    <h2>What students see at the kiosk<SectionLink id="what-students-see" /></h2>
     <p>
       Each bathroom shows up as its own choice. When one is full, the kiosk marks it <strong>Full</strong>, and a
       student who taps it can join its line. The other bathroom stays open.
@@ -95,8 +96,8 @@
     </figure>
   </section>
 
-  <section class="guide-section">
-    <h2>If it isn’t working</h2>
+  <section class="guide-section" id="if-it-isnt-working">
+    <h2>If it isn’t working<SectionLink id="if-it-isnt-working" /></h2>
     <dl>
       <dt>Students waiting for one bathroom hold up the other.</dt>
       <dd>

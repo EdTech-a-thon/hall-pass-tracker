@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import SectionLink from './SectionLink.svelte';
 
   /** One numbered step of a guide, with its screenshot and an optional tip. Clicking the picture opens it full size. */
   let {
@@ -13,7 +14,7 @@
 </script>
 
 <section class="step" id="step-{number}">
-  <h2><span class="number" aria-hidden="true">{number}</span>{title}</h2>
+  <h2><span class="number" aria-hidden="true">{number}</span>{title}<SectionLink id="step-{number}" /></h2>
   <div class="text">
     {@render children()}
     {#if tip}<p class="tip"><strong>Tip:</strong> {tip}</p>{/if}
