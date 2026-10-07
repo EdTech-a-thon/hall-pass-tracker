@@ -76,7 +76,14 @@
     gap: 12px;
   }
 
+  main :global(.guide-section) {
+    scroll-margin-top: 20px;
+  }
+
   main :global(.guide-section h2) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 21px;
   }
 
